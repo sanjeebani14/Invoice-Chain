@@ -1,0 +1,23 @@
+# Web Framework & Server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# Database & ORM (Your Infrastructure role)
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Background Tasks & Caching (For your Notification system)
+redis==5.0.1
+celery==5.3.6
+
+# Risk Engine & Analytics (Your Risk Scoring role)
+scikit-learn==1.3.2
+pandas==2.1.4
+numpy==1.26.2
+
+# Security & Auth (Infrastructure foundation)
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+pydantic-settings==2.1.0
