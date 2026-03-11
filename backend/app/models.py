@@ -2,19 +2,6 @@ from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, 
 from sqlalchemy.sql import func
 from .database import Base
 
-# ── Sanjeebani's existing models ─────────────────────────────────
-
-class CreditHistory(Base):
-    __tablename__ = "credit_history"
-
-    id = Column(Integer, primary_key=True, index=True)
-    seller_id = Column(Integer, index=True)
-    payment_history_score = Column(Integer)
-    client_reputation_score = Column(Integer)
-    seller_track_record = Column(Integer)
-    composite_score = Column(Integer, default=0)  # Risk Score (0-100)
-    last_updated = Column(DateTime(timezone=True), onupdate=func.now())
-
 
 # ── Kavya: Invoice Processing Pipeline ───────────────────────────
 
@@ -54,14 +41,25 @@ class Invoice(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+#Sanjeebani
+class CreditHistory(Base):
+    __tablename__ = "credit_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    seller_id = Column(Integer, unique=True, index=True)
+    payment_history_score = Column(Integer) # Normalized 0-100 (from CSV credit_score)
+    client_reputation_score = Column(Integer) # Normalized 0-100
+    seller_track_record = Column(Integer) # Normalized 0-100
+    composite_score = Column(Integer, default=0) # Final Risk Score (0-100)
+    last_updated = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
 class FraudFlag(Base):
     __tablename__ = "fraud_flags"
 
     id = Column(Integer, primary_key=True, index=True)
-    invoice_id = Column(Integer, index=True)            # FK to invoices.id
-    reason = Column(Text)                               # e.g. "Exact duplicate hash detected"
-    severity = Column(String)                           # "HIGH", "MEDIUM", "LOW"
+    invoice_id = Column(Integer, index=True)
+    seller_id = Column(Integer, index=True) # Added to link flags to sellers easily
+    reason = Column(Text)
+    severity = Column(String) # "HIGH", "MEDIUM", "LOW"
     is_resolved = Column(Boolean, default=False)
-    resolved_by = Column(Integer, nullable=True)        # admin user_id
     created_at = Column(DateTime(timezone=True), server_default=func.now())
