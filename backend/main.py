@@ -6,8 +6,9 @@ from app import models
 # Import Routers
 from app.api.risk import router as risk_router
 from app.routers.invoice import router as invoice_router
+from app.routers.auth import router as auth_router
 
-# Create all tables (CreditHistory, FraudFlag, etc.)
+# Create all tables on startup
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -29,14 +30,17 @@ app.add_middleware(
 @app.get("/")
 def read_root():
     return {
-        "message": "InvoiceChain API is Live", 
+        "message": "InvoiceChain API is Live",
         "infrastructure": "Healthy",
         "docs": "/docs"
     }
 
 # ── Include Routers ─────────────────────────────────────────────
-# Sanjeebani's Risk & Fraud logic
+# Risk & Fraud logic
 app.include_router(risk_router, prefix="/api/v1/risk", tags=["Risk & Fraud"])
 
-# Kavya's Invoice logic
+# Invoice logic
 app.include_router(invoice_router, prefix="/api/v1/invoice", tags=["Invoice Processing"])
+
+# Auth
+app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
