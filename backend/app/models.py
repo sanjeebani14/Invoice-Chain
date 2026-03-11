@@ -1,9 +1,40 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, JSON
+import enum
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, JSON, Enum, ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
 
+# ── Enums ─────────────────────────────────────────────────────────
 
-# ── Kavya: Invoice Processing Pipeline ───────────────────────────
+class UserRole(str, enum.Enum): 
+    sme = "sme"
+    investor = "investor"
+    admin = "admin"
+
+
+# ── User & Authentication ──────────────────────────────
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    role = Column(Enum(UserRole), nullable=False, default=UserRole.sme)
+    full_name = Column(String, nullable=True)
+    company_name = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+
+    # Account state
+    email_verified = Column(Boolean, nullable=False, default=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    last_login = Column(DateTime(timezone=True), nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+# ───────Invoice Processing Pipeline ──────────────────────────────
 
 class Invoice(Base):
     __tablename__ = "invoices"
@@ -41,7 +72,8 @@ class Invoice(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-#Sanjeebani
+
+# ────RISK AND ANALYTICS──────────────────────────────
 class CreditHistory(Base):
     __tablename__ = "credit_history"
 
@@ -62,4 +94,5 @@ class FraudFlag(Base):
     reason = Column(Text)
     severity = Column(String) # "HIGH", "MEDIUM", "LOW"
     is_resolved = Column(Boolean, default=False)
+    resolved_by = Column(Integer, nullable=True)        # admin user_id
     created_at = Column(DateTime(timezone=True), server_default=func.now())
