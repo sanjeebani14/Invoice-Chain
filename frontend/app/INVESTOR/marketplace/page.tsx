@@ -28,7 +28,6 @@ interface Invoice {
   price: number;
   sharePrice?: number;
   irr: string;
-  irr: string;
   contractAddr: string;
   riskMetrics: { label: string; score: number }[];
   highestBid?: number;
