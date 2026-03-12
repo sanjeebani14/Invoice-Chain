@@ -1,9 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.database import engine, Base
+from app.database import engine
 from app import models
 
-# Create all tables on startup (existing + new invoice tables)
+# Import Routers
+from app.api.risk import router as risk_router
+from app.routers.invoice import router as invoice_router
+from app.routers.auth import router as auth_router
+
+# Create all tables on startup
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -21,15 +26,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Sanjeebani's existing routes ──────────────────────────────────
+# ── Base Route ──────────────────────────────────────────────────
 @app.get("/")
 def read_root():
-    return {"message": "InvoiceChain API is Live", "tables": "Created Successfully"}
+    return {
+        "message": "InvoiceChain API is Live",
+        "infrastructure": "Healthy",
+        "docs": "/docs"
+    }
 
-@app.get("/risk/score/{seller_id}")
-def get_score(seller_id: int):
-    return {"seller_id": seller_id, "score": 75, "status": "Healthy"}
+# ── Include Routers ─────────────────────────────────────────────
+# Risk & Fraud logic
+app.include_router(risk_router, prefix="/api/v1/risk", tags=["Risk & Fraud"])
 
-# ── Kavya's invoice processing routes ────────────────────────────
-from app.routers.invoice import router as invoice_router
-app.include_router(invoice_router)
+# Invoice logic
+app.include_router(invoice_router, prefix="/api/v1/invoice", tags=["Invoice Processing"])
+
+# Auth
+app.include_router(auth_router, prefix="/auth", tags=["Authentication"])

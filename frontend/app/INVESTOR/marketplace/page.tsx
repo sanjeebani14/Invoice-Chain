@@ -28,6 +28,7 @@ interface Invoice {
   price: number;
   sharePrice?: number;
   irr: string;
+  irr: string;
   contractAddr: string;
   riskMetrics: { label: string; score: number }[];
   highestBid?: number;
@@ -55,9 +56,13 @@ export default function FullMarketplace() {
   const [dueFilter, setDueFilter] = useState("all");
   const [viewingDetails, setViewingDetails] = useState<Invoice | null>(null);
   const [selectedInv, setSelectedInv] = useState<Invoice | null>(null);
-  const [cart, setCart] = useState<(Invoice & { selectedAmount: number, shares?: number })[]>([]);
+  const [cart, setCart] = useState<
+    (Invoice & { selectedAmount: number; shares?: number })[]
+  >([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [purchaseStep, setPurchaseStep] = useState<'idle' | 'processing' | 'success'>('idle');
+  const [purchaseStep, setPurchaseStep] = useState<
+    "idle" | "processing" | "success"
+  >("idle");
   const [fractionalShares, setFractionalShares] = useState<number>(1);
   const [bidAmount, setBidAmount] = useState<number>(0);
   const [bids, setBids] = useState<Bid[]>([]);
@@ -84,14 +89,22 @@ export default function FullMarketplace() {
 
   const handleAddToCart = () => {
     if (!selectedInv) return;
-    let finalPrice = selectedInv.type === 'fractional' ? fractionalShares * (selectedInv.sharePrice || 0) : selectedInv.price;
-    const cartItem = { ...selectedInv, selectedAmount: finalPrice, shares: selectedInv.type === 'fractional' ? fractionalShares : undefined };
+    const finalPrice =
+      selectedInv.type === "fractional"
+        ? fractionalShares * (selectedInv.sharePrice || 0)
+        : selectedInv.price;
+    const cartItem = {
+      ...selectedInv,
+      selectedAmount: finalPrice,
+      shares: selectedInv.type === "fractional" ? fractionalShares : undefined,
+    };
     setCart([...cart, cartItem]);
     setSelectedInv(null);
     setIsCartOpen(true);
   };
 
-  const removeFromCart = (id: string) => setCart(cart.filter(item => item.id !== id));
+  const removeFromCart = (id: string) =>
+    setCart(cart.filter((item) => item.id !== id));
   const cartTotal = cart.reduce((sum, item) => sum + item.selectedAmount, 0);
 
   const handleBatchCheckout = () => {
@@ -159,7 +172,7 @@ export default function FullMarketplace() {
           >
             Marketplace
           </Link>
-          <Link 
+          <Link
             href="/INVESTOR/portfolio"
             className={`px-8 py-3 rounded-xl text-sm font-bold transition-all ${
               pathname === '/INVESTOR/portfolio' 
@@ -660,3 +673,4 @@ export default function FullMarketplace() {
     </div>
   );
 }
+
