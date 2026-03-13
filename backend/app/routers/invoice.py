@@ -9,6 +9,7 @@ from ..models import Invoice, FraudFlag, User
 from ..services.ocr import process_invoice_file
 from ..services.hashing import generate_invoice_hash
 from ..services.duplicate import run_duplicate_detection
+from ..services.fraud_anomaly import InvoiceAnomalyService
 from ..auth.dependencies import get_current_user, require_sme, require_admin
 
 router = APIRouter(prefix="/invoices", tags=["Invoice Processing"])
@@ -18,6 +19,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 MAX_FILE_SIZE_MB = 10
+anomaly_service = InvoiceAnomalyService()
 
 
 # ── POST /invoices/upload ── SME only ────────────────────────────────────────
@@ -254,6 +256,27 @@ def review_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     if action == "approve":
+        anomaly_result = anomaly_service.evaluate_invoice(db, invoice)
+
+        if anomaly_result.should_flag:
+            invoice.status = "flagged"
+            invoice.is_duplicate = False
+            db.add(
+                FraudFlag(
+                    invoice_id=invoice.id,
+                    seller_id=invoice.seller_id,
+                    reason=" | ".join(anomaly_result.reasons),
+                    severity=anomaly_result.severity,
+                    is_resolved=False,
+                )
+            )
+            db.commit()
+            return {
+                "message": "Invoice flagged by anomaly model for manual review.",
+                "status": invoice.status,
+                "anomaly": anomaly_result.to_dict(),
+            }
+
         invoice.status = "approved"
         invoice.is_duplicate = False
         db.query(FraudFlag).filter(
@@ -278,7 +301,7 @@ def get_flagged_invoices(
 ):
     flagged = (
         db.query(Invoice)
-        .filter(Invoice.is_duplicate == True)
+        .filter((Invoice.is_duplicate == True) | (Invoice.status == "flagged"))
         .order_by(Invoice.created_at.desc())
         .all()
     )

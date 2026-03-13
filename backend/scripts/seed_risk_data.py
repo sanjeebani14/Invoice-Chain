@@ -17,11 +17,32 @@ def seed_from_csv():
         track = 100 if row['loan_status'] == 1 else 40
         if row['defaults_on_file'] > 0: track -= 30
 
+        # Basic SME-side metrics
+        seller_id = int(row['customer_id'].replace('CUST', ''))
+        payment_history = norm_credit
+        track_record = max(0, track)
+        client_reputation = np.random.randint(60, 95)  # Placeholder for demo
+        employment_years = float(row['years_employed'])
+        debt_to_income = float(row['debt_to_income_ratio'])
+
+        # Core enterprise + relationship + ESG placeholders
+        core_enterprise_rating = np.random.randint(65, 95)  # Buyer quality
+        relationship_years = np.random.uniform(1.0, 7.0)
+        logistics_consistency = np.random.uniform(80.0, 100.0)
+        # ESG on a 0–10 scale, centred above the 4.73 risk threshold
+        esg_score = np.random.normal(loc=6.0, scale=1.0)
+
         history = CreditHistory(
-            seller_id=int(row['customer_id'].replace('CUST', '')),
-            payment_history_score=norm_credit,
-            seller_track_record=max(0, track),
-            client_reputation_score=np.random.randint(60, 95) # Placeholder for demo
+            seller_id=seller_id,
+            payment_history_score=payment_history,
+            seller_track_record=track_record,
+            client_reputation_score=client_reputation,
+            employment_years=employment_years,
+            debt_to_income=debt_to_income,
+            core_enterprise_rating=int(core_enterprise_rating),
+            transaction_stability=float(relationship_years),
+            logistics_consistency=float(logistics_consistency),
+            esg_score=float(max(0.0, min(10.0, esg_score))),
         )
         db.add(history)
     

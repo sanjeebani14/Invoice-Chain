@@ -18,15 +18,50 @@ export interface SellerScore {
   debt_to_income?: number;
   employment_years?: number;
   last_updated?: string;
+
+  // Trust layer & interpretability
+  insights?: string[];
+  breakdown?: {
+    financial_risk: number;
+    relationship_stability: number;
+    buyer_quality: number;
+    logistics_quality: number;
+    esg_score: number;
+  };
+  risk_contributors?: Record<string, number>;
 }
 
 export interface FraudQueueItem {
   id: number;
+  invoice_id?: number;
   seller_id: number;
   risk_score: number;
+  severity?: "LOW" | "MEDIUM" | "HIGH";
   fraud_reason: string;
   created_at: string;
   status: "Pending" | "Under Review" | "Resolved";
+}
+
+export interface ManualFraudFlagPayload {
+  seller_id: number;
+  invoice_id?: number;
+  reason: string;
+  severity?: "LOW" | "MEDIUM" | "HIGH";
+}
+
+export interface InvoiceAnomalyExplanation {
+  invoice_id: number;
+  seller_id?: number;
+  status: string;
+  anomaly: {
+    should_flag: boolean;
+    severity: "LOW" | "MEDIUM" | "HIGH";
+    model_label: number;
+    anomaly_score: number;
+    amount_velocity_zscore: number;
+    benford_deviation: number;
+    reasons: string[];
+  };
 }
 
 export interface RiskMetrics {
@@ -121,8 +156,11 @@ const generateMockFraudQueue = (): FraudQueueItem[] => {
   ];
   return Array.from({ length: 20 }, (_, i) => ({
     id: i + 1,
+    invoice_id: 5000 + i,
     seller_id: 1001 + Math.floor(Math.random() * 50),
     risk_score: 65 + Math.floor(Math.random() * 35),
+    severity:
+      Math.random() > 0.66 ? "HIGH" : Math.random() > 0.5 ? "MEDIUM" : "LOW",
     fraud_reason: reasons[Math.floor(Math.random() * reasons.length)],
     created_at: new Date(
       Date.now() - Math.random() * 14 * 86400000,
@@ -153,8 +191,21 @@ export const getSellerScore = async (
     const { data } = await api.get(`/score/${sellerId}`);
     return data;
   } catch {
-    const seller = getMockSellers().find((s) => s.seller_id === sellerId);
-    if (seller) return seller;
+    // If direct score lookup fails (e.g. API not running), fall back to the
+    // same data source used by the seller list so composite scores stay
+    // consistent between the table and the detail view.
+    try {
+      const all = await getAllSellers();
+      const fromList = all.find((s) => s.seller_id === sellerId);
+      if (fromList) return fromList;
+    } catch {
+      // ignore and fall through to mocks
+    }
+
+    const mock = getMockSellers().find((s) => s.seller_id === sellerId);
+    if (mock) return mock;
+
+    // As a last resort, throw so the UI can handle the missing seller.
     throw new Error("Seller not found");
   }
 };
@@ -180,10 +231,50 @@ export const getRiskMetrics = async (): Promise<RiskMetrics> => {
 export const getFraudQueue = async (): Promise<FraudQueueItem[]> => {
   try {
     const { data } = await api.get("/admin/fraud-queue");
-    return data;
+    return (data as FraudQueueItem[]).map((item) => ({
+      ...item,
+      severity:
+        item.severity ??
+        (item.risk_score >= 80
+          ? "HIGH"
+          : item.risk_score >= 50
+            ? "MEDIUM"
+            : "LOW"),
+    }));
   } catch {
     return getMockFraudQueue();
   }
+};
+
+export const getSellerFraudFlags = async (
+  sellerId: number,
+): Promise<FraudQueueItem[]> => {
+  const { data } = await api.get("/admin/fraud-queue", {
+    params: { seller_id: sellerId },
+  });
+  return (data as FraudQueueItem[]).map((item) => ({
+    ...item,
+    severity:
+      item.severity ??
+      (item.risk_score >= 80
+        ? "HIGH"
+        : item.risk_score >= 50
+          ? "MEDIUM"
+          : "LOW"),
+  }));
+};
+
+export const manualFraudFlag = async (
+  payload: ManualFraudFlagPayload,
+): Promise<void> => {
+  await api.post("/admin/manual-fraud-flag", payload);
+};
+
+export const explainInvoiceAnomaly = async (
+  invoiceId: number,
+): Promise<InvoiceAnomalyExplanation> => {
+  const { data } = await api.get(`/admin/invoice-anomaly-explain/${invoiceId}`);
+  return data as InvoiceAnomalyExplanation;
 };
 
 export const reviewFraudItem = async (
@@ -197,5 +288,16 @@ export const reviewFraudItem = async (
     const queue = getMockFraudQueue();
     const item = queue.find((q) => q.id === id);
     if (item) item.status = "Resolved";
+  }
+};
+
+export const deleteFraudItem = async (id: number): Promise<void> => {
+  try {
+    await api.delete(`/admin/fraud-queue/${id}`);
+  } catch {
+    // Mock: remove resolved item from local queue
+    const queue = getMockFraudQueue();
+    const idx = queue.findIndex((q) => q.id === id && q.status === "Resolved");
+    if (idx >= 0) queue.splice(idx, 1);
   }
 };

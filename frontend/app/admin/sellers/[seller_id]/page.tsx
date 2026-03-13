@@ -16,12 +16,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RiskBadge } from "@/components/dashboard/RiskBadge";
 import { ChartPanel } from "@/components/dashboard/ChartPanel";
+import { ShapForceChart } from "@/components/dashboard/ShapForceChart";
 import { MetricCardSkeleton } from "@/components/dashboard/LoadingSkeleton";
-import { getSellerScore, type SellerScore } from "@/lib/api";
+import {
+  getSellerScore,
+  getSellerFraudFlags,
+  manualFraudFlag,
+  type SellerScore,
+} from "@/lib/api";
 import { toast } from "sonner";
 
-const GRID_STROKE = "hsl(220, 13%, 90%)";
-const TICK_STYLE = { fill: "hsl(215, 15%, 47%)", fontSize: 11 };
+// Light-mode friendly chart colors
+const GRID_STROKE = "hsl(210, 16%, 90%)";
+const TICK_STYLE = { fill: "hsl(215, 15%, 35%)", fontSize: 11 };
 const TOOLTIP_STYLE = {
   background: "#fff",
   border: "1px solid hsl(220, 13%, 87%)",
@@ -35,6 +42,8 @@ export default function SellerDetails() {
   const router = useRouter();
   const [seller, setSeller] = useState<SellerScore | null>(null);
   const [loading, setLoading] = useState(true);
+  const [inQueue, setInQueue] = useState(false);
+  const [flagging, setFlagging] = useState(false);
 
   const deterministicOffset = (seed: number, index: number) => {
     const n = ((seed * 9301 + (index + 1) * 49297) % 233280) / 233280;
@@ -77,9 +86,6 @@ export default function SellerDetails() {
       .then((data) => {
         if (mounted) setSeller(data);
       })
-      .catch(() => {
-        if (mounted) toast.error("Seller not found");
-      })
       .finally(() => {
         if (mounted) setLoading(false);
       });
@@ -88,6 +94,44 @@ export default function SellerDetails() {
     };
   }, [seller_id]);
 
+  useEffect(() => {
+    if (!seller_id) return;
+    getSellerFraudFlags(Number(seller_id))
+      .then((flags) => {
+        // Consider any non-resolved flag as "in the queue"
+        setInQueue(flags.some((f) => f.status !== "Resolved"));
+      })
+      .catch(() => {
+        // Ignore errors here – queue is an enhancement
+      });
+  }, [seller_id]);
+
+  const handleManualFlag = async () => {
+    if (!seller) return;
+    const reason = window.prompt("Enter fraud reason for this seller:", "");
+    if (reason === null) return;
+
+    const cleanedReason = reason.trim();
+    if (!cleanedReason) {
+      toast.error("Fraud reason is required");
+      return;
+    }
+
+    setFlagging(true);
+    try {
+      await manualFraudFlag({
+        seller_id: seller.seller_id,
+        reason: cleanedReason,
+        severity: "HIGH",
+      });
+      setInQueue(true);
+      toast.success("Seller flagged for fraud review");
+    } catch {
+      toast.error("Failed to flag seller for review");
+    } finally {
+      setFlagging(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -108,19 +152,28 @@ export default function SellerDetails() {
     { label: "Seller ID", value: `#${seller.seller_id}` },
     { label: "Credit Score", value: seller.credit_score ?? "N/A" },
     {
-      label: "Annual Income",
-      value: seller.annual_income
-        ? `$${seller.annual_income.toLocaleString()}`
-        : "N/A",
+      label: "Financial Risk (0-100)",
+      value: seller.breakdown?.financial_risk ?? "N/A",
     },
     {
-      label: "Loan Amount",
-      value: seller.loan_amount
-        ? `$${seller.loan_amount.toLocaleString()}`
-        : "N/A",
+      label: "Relationship Stability (yrs)",
+      value:
+        seller.breakdown?.relationship_stability !== undefined
+          ? seller.breakdown.relationship_stability.toFixed(1)
+          : "N/A",
     },
-    { label: "Debt to Income", value: seller.debt_to_income ?? "N/A" },
-    { label: "Employment Years", value: seller.employment_years ?? "N/A" },
+    {
+      label: "Core Enterprise Quality",
+      value: seller.breakdown?.buyer_quality ?? "N/A",
+    },
+    {
+      label: "Logistics Consistency",
+      value: seller.breakdown?.logistics_quality ?? "N/A",
+    },
+    {
+      label: "ESG Score",
+      value: seller.breakdown?.esg_score ?? "N/A",
+    },
   ];
 
   return (
@@ -180,47 +233,82 @@ export default function SellerDetails() {
               >
                 <RefreshCw className="h-3 w-3 mr-1" /> Recalculate
               </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => toast.success("Flagged for fraud review")}
-              >
-                <Flag className="h-3 w-3 mr-1" /> Flag for Review
-              </Button>
+              {inQueue ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => router.push("/admin/fraud-queue")}
+                >
+                  <Flag className="h-3 w-3 mr-1" /> View in Queue
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={flagging}
+                  onClick={handleManualFlag}
+                >
+                  <Flag className="h-3 w-3 mr-1" />{" "}
+                  {flagging ? "Flagging..." : "Flag for Review"}
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <ChartPanel title="Historical Risk Score">
-        <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={mockHistory}>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke={GRID_STROKE}
-              vertical={false}
-            />
-            <XAxis
-              dataKey="month"
-              tick={TICK_STYLE}
-              axisLine={{ stroke: GRID_STROKE }}
-            />
-            <YAxis
-              tick={TICK_STYLE}
-              domain={[0, 100]}
-              axisLine={{ stroke: GRID_STROKE }}
-            />
-            <Tooltip contentStyle={TOOLTIP_STYLE} />
-            <Line
-              type="monotone"
-              dataKey="score"
-              stroke="hsl(25, 90%, 55%)"
-              strokeWidth={1.5}
-              dot={{ fill: "hsl(25, 90%, 55%)", r: 3 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </ChartPanel>
+      {seller.insights && seller.insights.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">
+              Actionable Insights (Model Explanation)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <ul className="mt-1 space-y-1 text-xs text-muted-foreground list-disc list-inside">
+              {seller.insights.map((line, idx) => (
+                <li key={idx}>{line}</li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <ChartPanel title="Historical Risk Score">
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={mockHistory}>
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke={GRID_STROKE}
+                vertical={false}
+              />
+              <XAxis
+                dataKey="month"
+                tick={TICK_STYLE}
+                axisLine={{ stroke: GRID_STROKE }}
+              />
+              <YAxis
+                tick={TICK_STYLE}
+                domain={[0, 100]}
+                axisLine={{ stroke: GRID_STROKE }}
+              />
+              <Tooltip contentStyle={TOOLTIP_STYLE} />
+              <Line
+                type="monotone"
+                dataKey="score"
+                stroke="hsl(222, 84%, 56%)"
+                strokeWidth={1.5}
+                dot={{ fill: "hsl(222, 84%, 56%)", r: 3 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartPanel>
+
+        <ChartPanel title="Feature Impact on Risk (SHAP-style)">
+          <ShapForceChart contributors={seller.risk_contributors} />
+        </ChartPanel>
+      </div>
     </div>
   );
 }

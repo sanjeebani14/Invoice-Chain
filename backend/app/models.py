@@ -79,10 +79,22 @@ class CreditHistory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     seller_id = Column(Integer, unique=True, index=True)
-    payment_history_score = Column(Integer) # Normalized 0-100 (from CSV credit_score)
-    client_reputation_score = Column(Integer) # Normalized 0-100
-    seller_track_record = Column(Integer) # Normalized 0-100
-    composite_score = Column(Integer, default=0) # Final Risk Score (0-100)
+    payment_history_score = Column(Integer)  # Normalized 0-100 (from CSV credit_score)
+    client_reputation_score = Column(Integer)  # Normalized 0-100
+    seller_track_record = Column(Integer)  # Normalized 0-100
+
+    # Multi-entity indicators (Three-Entity system: SME, core enterprise, relationship)
+    employment_years = Column(Float, nullable=True)  # Years employed from underwriting dataset
+    debt_to_income = Column(Float, nullable=True)  # Debt-to-income ratio from underwriting dataset
+    core_enterprise_rating = Column(Integer, nullable=True)  # Credit of the buyer (0-100)
+    transaction_stability = Column(Float, nullable=True)  # Years or normalized stability metric
+    logistics_consistency = Column(Float, nullable=True)  # Delivery success rate (0-1 or 0-100)
+    esg_score = Column(Float, nullable=True)  # ESG rating (riskier when < ~4.73 or mapped to 0-100)
+
+    # Interpretable ML outputs
+    risk_contributors = Column(JSON, nullable=True)  # Stores SHAP-style attributions per feature
+
+    composite_score = Column(Integer, default=0)  # Final Risk Score (0-100)
     last_updated = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
 class FraudFlag(Base):
