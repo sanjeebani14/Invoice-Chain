@@ -3,6 +3,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional
+from pydantic import BaseModel
 
 from ..database import get_db
 from ..models import Invoice, FraudFlag, User
@@ -20,6 +21,14 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 MAX_FILE_SIZE_MB = 10
 anomaly_service = InvoiceAnomalyService()
+
+
+class InvoiceUpdatePayload(BaseModel):
+    invoice_number: Optional[str] = None
+    seller_name: Optional[str] = None
+    client_name: Optional[str] = None
+    amount: Optional[float] = None
+    due_date: Optional[str] = None
 
 
 # ── POST /invoices/upload ── SME only ────────────────────────────────────────
@@ -203,6 +212,7 @@ def get_invoice(
 @router.put("/{invoice_id}")
 def update_invoice_fields(
     invoice_id: int,
+    payload: Optional[InvoiceUpdatePayload] = None,
     invoice_number: Optional[str] = None,
     seller_name: Optional[str] = None,
     client_name: Optional[str] = None,
@@ -218,6 +228,18 @@ def update_invoice_fields(
     # Only the owner can edit their invoice
     if invoice.seller_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorised to edit this invoice")
+
+    if payload is not None:
+        if payload.invoice_number is not None:
+            invoice_number = payload.invoice_number
+        if payload.seller_name is not None:
+            seller_name = payload.seller_name
+        if payload.client_name is not None:
+            client_name = payload.client_name
+        if payload.amount is not None:
+            amount = payload.amount
+        if payload.due_date is not None:
+            due_date = payload.due_date
 
     if invoice_number is not None: invoice.invoice_number = invoice_number
     if seller_name is not None:    invoice.seller_name = seller_name

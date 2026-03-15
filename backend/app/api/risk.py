@@ -16,6 +16,41 @@ risk_engine = RiskScoringEngine()
 anomaly_explainer = InvoiceAnomalyService()
 
 
+def _ensure_credit_history_schema_compatibility() -> None:
+    """Add newly introduced credit_history columns to existing DBs without migrations."""
+    inspector = inspect(engine)
+    if "credit_history" not in inspector.get_table_names():
+        return
+
+    existing = {c["name"] for c in inspector.get_columns("credit_history")}
+    statements: list[str] = []
+
+    if "employment_years" not in existing:
+        statements.append("ALTER TABLE credit_history ADD COLUMN employment_years DOUBLE PRECISION")
+    if "debt_to_income" not in existing:
+        statements.append("ALTER TABLE credit_history ADD COLUMN debt_to_income DOUBLE PRECISION")
+    if "core_enterprise_rating" not in existing:
+        statements.append("ALTER TABLE credit_history ADD COLUMN core_enterprise_rating INTEGER")
+    if "transaction_stability" not in existing:
+        statements.append("ALTER TABLE credit_history ADD COLUMN transaction_stability DOUBLE PRECISION")
+    if "logistics_consistency" not in existing:
+        statements.append("ALTER TABLE credit_history ADD COLUMN logistics_consistency DOUBLE PRECISION")
+    if "esg_score" not in existing:
+        statements.append("ALTER TABLE credit_history ADD COLUMN esg_score DOUBLE PRECISION")
+    if "risk_contributors" not in existing:
+        statements.append("ALTER TABLE credit_history ADD COLUMN risk_contributors JSON")
+
+    if not statements:
+        return
+
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+
+
+_ensure_credit_history_schema_compatibility()
+
+
 def _ensure_fraud_flags_schema_compatibility() -> None:
     """Add newly introduced columns to existing DBs without migrations."""
     inspector = inspect(engine)
