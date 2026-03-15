@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import { getToken } from "@/lib/auth";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (data: any) => void }) {
@@ -23,13 +24,22 @@ export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (d
     setIsUploading(true);
     setError("");
 
+    const token = getToken();
+    if (!token) {
+      setError("Please log in as an SME before uploading an invoice.");
+      setIsUploading(false);
+      return;
+    }
+
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("seller_id", "1"); 
 
     try {
-      const response = await fetch("http://localhost:8000/invoices/upload", {
+      const response = await fetch("http://localhost:8000/api/v1/invoice/invoices/upload", {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formData,
       });
 

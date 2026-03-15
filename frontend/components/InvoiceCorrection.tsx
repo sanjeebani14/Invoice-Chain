@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import { getToken } from "@/lib/auth";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default function InvoiceCorrection({ data }: { data: any }) {
@@ -21,17 +22,30 @@ export default function InvoiceCorrection({ data }: { data: any }) {
   const saveCorrections = async () => {
     setIsSaving(true);
     try {
-      const response = await fetch(`http://localhost:8000/invoices/${data.invoice_id}`, {
+      const token = getToken();
+      if (!token) {
+        throw new Error("Please log in before saving invoice corrections.");
+      }
+
+      const response = await fetch(`http://localhost:8000/api/v1/invoice/invoices/${data.invoice_id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(fields),
       });
-      
-      if (response.ok) {
-        alert("Invoice finalized and saved to the database!");
+
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(responseData.detail || responseData.message || "Failed to save invoice corrections");
       }
+      
+      alert("Invoice finalized and saved to the database!");
     } catch (error) {
       console.error("Save failed", error);
+      alert(error instanceof Error ? error.message : "Save failed");
     } finally {
       setIsSaving(false);
     }
