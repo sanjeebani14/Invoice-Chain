@@ -54,6 +54,13 @@ class Invoice(Base):
     issue_date = Column(String)                         # stored as string for flexibility
     due_date = Column(String)
 
+    # Marketplace Selling Strategy
+    sector = Column(String, nullable=True)
+    financing_type = Column(String, default="fixed") # "fixed", "auction", "fractional"
+    ask_price = Column(Float, nullable=True)
+    share_price = Column(Float, nullable=True)
+    min_bid_increment = Column(Float, nullable=True)
+
     # OCR confidence scores (0.0 - 1.0 per field)
     ocr_confidence = Column(JSON)                       # e.g. {"amount": 0.95, "due_date": 0.71}
 
