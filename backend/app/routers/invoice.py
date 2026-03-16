@@ -6,7 +6,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from ..database import get_db
-from ..models import Invoice, FraudFlag, User
+from ..models import Invoice, FraudFlag, User, UserRole
 from ..services.ocr import process_invoice_file
 from ..services.hashing import generate_invoice_hash
 from ..services.duplicate import run_duplicate_detection
@@ -29,6 +29,11 @@ class InvoiceUpdatePayload(BaseModel):
     client_name: Optional[str] = None
     amount: Optional[float] = None
     due_date: Optional[str] = None
+    sector: Optional[str] = None
+    financing_type: Optional[str] = None
+    ask_price: Optional[float] = None
+    share_price: Optional[float] = None
+    min_bid_increment: Optional[float] = None
 
 
 # ── POST /invoices/upload ── SME only ────────────────────────────────────────
@@ -188,6 +193,30 @@ def list_invoices(
     return {"invoices": [_invoice_to_dict(inv) for inv in invoices], "total": query.count()}
 
 
+@router.get("/marketplace")
+def list_marketplace_invoices(
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Investor marketplace feed. Investors and admins can see listed inventory.
+    """
+    if current_user.role not in {UserRole.investor, UserRole.admin}:
+        raise HTTPException(status_code=403, detail="Only investors can access marketplace invoices")
+
+    listed_statuses = ["approved", "listed", "minted"]
+    query = (
+        db.query(Invoice)
+        .filter(Invoice.status.in_(listed_statuses))
+        .order_by(Invoice.created_at.desc())
+    )
+
+    invoices = query.offset(skip).limit(limit).all()
+    return {"invoices": [_invoice_to_dict(inv) for inv in invoices], "total": query.count()}
+
+
 # ── GET /invoices/{invoice_id} ── owner or admin ──────────────────────────────
 
 @router.get("/{invoice_id}")
@@ -212,12 +241,7 @@ def get_invoice(
 @router.put("/{invoice_id}")
 def update_invoice_fields(
     invoice_id: int,
-    payload: Optional[InvoiceUpdatePayload] = None,
-    invoice_number: Optional[str] = None,
-    seller_name: Optional[str] = None,
-    client_name: Optional[str] = None,
-    amount: Optional[float] = None,
-    due_date: Optional[str] = None,
+    payload: InvoiceUpdatePayload,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_sme),        # SME only
 ):
@@ -229,23 +253,26 @@ def update_invoice_fields(
     if invoice.seller_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorised to edit this invoice")
 
-    if payload is not None:
-        if payload.invoice_number is not None:
-            invoice_number = payload.invoice_number
-        if payload.seller_name is not None:
-            seller_name = payload.seller_name
-        if payload.client_name is not None:
-            client_name = payload.client_name
-        if payload.amount is not None:
-            amount = payload.amount
-        if payload.due_date is not None:
-            due_date = payload.due_date
-
-    if invoice_number is not None: invoice.invoice_number = invoice_number
-    if seller_name is not None:    invoice.seller_name = seller_name
-    if client_name is not None:    invoice.client_name = client_name
-    if amount is not None:         invoice.amount = amount
-    if due_date is not None:       invoice.due_date = due_date
+    if payload.invoice_number is not None:
+        invoice.invoice_number = payload.invoice_number
+    if payload.seller_name is not None:
+        invoice.seller_name = payload.seller_name
+    if payload.client_name is not None:
+        invoice.client_name = payload.client_name
+    if payload.amount is not None:
+        invoice.amount = payload.amount
+    if payload.due_date is not None:
+        invoice.due_date = payload.due_date
+    if payload.sector is not None:
+        invoice.sector = payload.sector
+    if payload.financing_type is not None:
+        invoice.financing_type = payload.financing_type
+    if payload.ask_price is not None:
+        invoice.ask_price = payload.ask_price
+    if payload.share_price is not None:
+        invoice.share_price = payload.share_price
+    if payload.min_bid_increment is not None:
+        invoice.min_bid_increment = payload.min_bid_increment
 
     hash_result = generate_invoice_hash(
         invoice_number=invoice.invoice_number or "",
@@ -343,6 +370,11 @@ def _invoice_to_dict(invoice: Invoice) -> dict:
         "currency": invoice.currency,
         "issue_date": invoice.issue_date,
         "due_date": invoice.due_date,
+        "sector": invoice.sector,
+        "financing_type": invoice.financing_type,
+        "ask_price": invoice.ask_price,
+        "share_price": invoice.share_price,
+        "min_bid_increment": invoice.min_bid_increment,
         "canonical_hash": invoice.canonical_hash,
         "is_duplicate": invoice.is_duplicate,
         "status": invoice.status,

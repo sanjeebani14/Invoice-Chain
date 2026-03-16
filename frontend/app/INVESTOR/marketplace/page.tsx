@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { getToken } from '@/lib/auth';
 import { 
   Search, ShieldCheck, X, ShoppingCart, Clock, 
   CheckCircle2, Loader2, Trash2, Database, 
@@ -36,16 +37,63 @@ interface Invoice {
   bids?: Bid[];
 }
 
-const MOCK_DATA: Invoice[] = [
-  { id: "1", client: "TechCorp Inc.", sector: "Technology", amount: 5000, risk: 85, type: "fixed", price: 4800, dueDate: "2026-04-05", irr: "12.4%", contractAddr: "0x71C...a291", riskMetrics: [{label: "Financials", score: 92}, {label: "History", score: 88}, {label: "Outlook", score: 75}] },
-  { id: "2", client: "Global Logistics", sector: "Supply Chain", amount: 12000, risk: 72, type: "auction", price: 10500, highestBid: 10500, minIncrement: 200, auctionEnd: "2026-06-01T18:00:00", bids: [{ user: "Alice", amount: 10700, time: "2m ago" }, { user: "Bob", amount: 10500, time: "5m ago" }], dueDate: "2026-06-01", irr: "15.1%", contractAddr: "0x32A...f842", riskMetrics: [{label: "Financials", score: 70}, {label: "History", score: 65}, {label: "Outlook", score: 82}] },
-  { id: "3", client: "Sunrise Retail", sector: "Consumer Goods", amount: 2500, risk: 94, type: "fractional", price: 2500, sharePrice: 25, dueDate: "2026-03-20", irr: "9.8%", contractAddr: "0x99B...e110", riskMetrics: [{label: "Financials", score: 96}, {label: "History", score: 98}, {label: "Outlook", score: 90}] },
-  { id: "4", client: "Apex Energy", sector: "Renewables", amount: 25000, risk: 89, type: "fixed", price: 23500, dueDate: "2026-08-12", irr: "13.2%", contractAddr: "0x44D...c221", riskMetrics: [{label: "Financials", score: 85}, {label: "History", score: 90}, {label: "Outlook", score: 92}] },
-  { id: "5", client: "BioHealth Labs", sector: "Healthcare", amount: 8400, risk: 68, type: "fixed", price: 7900, dueDate: "2026-05-30", irr: "11.5%", contractAddr: "0x88F...a332", riskMetrics: [{label: "Financials", score: 60}, {label: "History", score: 72}, {label: "Outlook", score: 70}] },
-  { id: "6", client: "Nordic Shipping", sector: "Maritime", amount: 45000, risk: 91, type: "fractional", price: 45000, sharePrice: 100, dueDate: "2026-04-15", irr: "10.1%", contractAddr: "0x11E...b998", riskMetrics: [{label: "Financials", score: 94}, {label: "History", score: 95}, {label: "Outlook", score: 85}] },
-  { id: "7", client: "Swift Automotives", sector: "Manufacturing", amount: 15600, risk: 78, type: "fixed", price: 14200, dueDate: "2026-09-20", irr: "14.8%", contractAddr: "0x55G...d443", riskMetrics: [{label: "Financials", score: 75}, {label: "History", score: 80}, {label: "Outlook", score: 78}] },
-  { id: "8", client: "Urban Build Co.", sector: "Construction", amount: 32000, risk: 62, type: "auction", price: 29000, dueDate: "2026-03-25", irr: "16.5%", contractAddr: "0x22H...e554", riskMetrics: [{label: "Financials", score: 55}, {label: "History", score: 60}, {label: "Outlook", score: 70}] }
-];
+interface BackendInvoice {
+  id: number;
+  client_name?: string | null;
+  amount?: number | null;
+  due_date?: string | null;
+  sector?: string | null;
+  financing_type?: 'fixed' | 'auction' | 'fractional' | null;
+  ask_price?: number | null;
+  share_price?: number | null;
+  min_bid_increment?: number | null;
+  canonical_hash?: string | null;
+  ocr_confidence?: { overall?: number } | null;
+}
+
+const safeDate = (value?: string | null): string => {
+  if (!value) return new Date().toISOString().slice(0, 10);
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return new Date().toISOString().slice(0, 10);
+  return parsed.toISOString().slice(0, 10);
+};
+
+const calculateIrr = (amount: number, price: number, dueDate: string): string => {
+  if (!amount || !price || price <= 0) return "-";
+  const days = Math.max(1, Math.ceil((new Date(dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+  const annualized = ((amount / price) - 1) * (365 / days) * 100;
+  const bounded = Math.max(-99, Math.min(250, annualized));
+  return `${bounded.toFixed(1)}%`;
+};
+
+const toMarketplaceInvoice = (inv: BackendInvoice): Invoice => {
+  const amount = Number(inv.amount ?? 0);
+  const dueDate = safeDate(inv.due_date);
+  const price = Number(inv.ask_price ?? amount);
+  const type = inv.financing_type ?? 'fixed';
+  const risk = Math.max(1, Math.min(99, Math.round((inv.ocr_confidence?.overall ?? 0.75) * 100)));
+
+  return {
+    id: String(inv.id),
+    client: inv.client_name || `Invoice #${inv.id}`,
+    sector: inv.sector || "General",
+    amount,
+    risk,
+    type,
+    dueDate,
+    price,
+    sharePrice: inv.share_price ?? undefined,
+    irr: calculateIrr(amount, price, dueDate),
+    contractAddr: inv.canonical_hash ? `0x${inv.canonical_hash.slice(0, 10)}...` : "Not minted",
+    riskMetrics: [
+      { label: "OCR Trust", score: risk },
+      { label: "Amount Quality", score: amount > 0 ? 80 : 40 },
+      { label: "Tenor Health", score: new Date(dueDate) >= new Date() ? 85 : 50 },
+    ],
+    highestBid: type === 'auction' ? Number(inv.ask_price ?? amount) : undefined,
+    minIncrement: inv.min_bid_increment ?? 100,
+  };
+};
 
 export default function FullMarketplace() {
   const pathname = usePathname();
@@ -66,6 +114,41 @@ export default function FullMarketplace() {
   const [bidAmount, setBidAmount] = useState<number>(0);
   const [bids, setBids] = useState<Bid[]>([]);
   const [highestBid, setHighestBid] = useState<number>(0);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchMarketplaceInvoices = async () => {
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const token = getToken();
+        if (!token) throw new Error("Please log in as an investor to view marketplace invoices.");
+
+        const response = await fetch("http://localhost:8000/api/v1/invoice/invoices/marketplace", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.detail || "Unable to load marketplace invoices");
+        }
+
+        const mapped = (payload?.invoices ?? []).map((item: BackendInvoice) => toMarketplaceInvoice(item));
+        setInvoices(mapped);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to load marketplace invoices";
+        setLoadError(message);
+        setInvoices([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchMarketplaceInvoices();
+  }, []);
 
   React.useEffect(() => {
     if (selectedInv?.type === "auction") {
@@ -77,14 +160,15 @@ export default function FullMarketplace() {
   }, [selectedInv]);
 
   const filteredData = useMemo(() => {
-    return MOCK_DATA.filter(inv => {
+    return invoices.filter(inv => {
       const matchesSearch = inv.client.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesRisk = riskFilter === "all" ? true : riskFilter === "high" ? inv.risk >= 80 : inv.risk < 80;
       const matchesAmount = amountFilter === "all" ? true : amountFilter === "small" ? inv.amount < 10000 : amountFilter === "mid" ? (inv.amount >= 10000 && inv.amount <= 25000) : inv.amount > 25000;
-      const matchesDue = dueFilter === "all" ? true : dueFilter === "30" ? new Date(inv.dueDate) <= new Date("2026-04-11") : true;
+      const daysToDue = (new Date(inv.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+      const matchesDue = dueFilter === "all" ? true : dueFilter === "30" ? (daysToDue >= 0 && daysToDue <= 30) : true;
       return matchesSearch && matchesRisk && matchesAmount && matchesDue;
     });
-  }, [searchTerm, riskFilter, amountFilter, dueFilter]);
+  }, [invoices, searchTerm, riskFilter, amountFilter, dueFilter]);
 
   const handleAddToCart = () => {
     if (!selectedInv) return;
@@ -198,7 +282,11 @@ export default function FullMarketplace() {
 
           <div className="flex items-center gap-3 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3.5 rounded-xl border border-blue-200">
             <BarChart3 size={18} className="text-blue-600" />
-            <select className="bg-transparent w-full text-xs font-bold text-slate-700 outline-none cursor-pointer">
+            <select
+              value={riskFilter}
+              onChange={(e) => setRiskFilter(e.target.value)}
+              className="bg-transparent w-full text-xs font-bold text-slate-700 outline-none cursor-pointer"
+            >
               <option value="all">All Risk Levels</option>
               <option value="high">Low Risk (80+)</option>
               <option value="low">Higher Risk (&lt;80)</option>
@@ -207,7 +295,11 @@ export default function FullMarketplace() {
 
           <div className="flex items-center gap-3 bg-gradient-to-r from-emerald-50 to-green-50 px-4 py-3.5 rounded-xl border border-emerald-200">
             <Banknote size={18} className="text-emerald-600" />
-            <select className="bg-transparent w-full text-xs font-bold text-slate-700 outline-none cursor-pointer">
+            <select
+              value={amountFilter}
+              onChange={(e) => setAmountFilter(e.target.value)}
+              className="bg-transparent w-full text-xs font-bold text-slate-700 outline-none cursor-pointer"
+            >
               <option value="all">Any Amount</option>
               <option value="small">&lt; $10k</option>
               <option value="mid">$10k - $25k</option>
@@ -217,12 +309,29 @@ export default function FullMarketplace() {
 
           <div className="flex items-center gap-3 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3.5 rounded-xl border border-amber-200">
             <Calendar size={18} className="text-amber-600" />
-            <select className="bg-transparent w-full text-xs font-bold text-slate-700 outline-none cursor-pointer">
+            <select
+              value={dueFilter}
+              onChange={(e) => setDueFilter(e.target.value)}
+              className="bg-transparent w-full text-xs font-bold text-slate-700 outline-none cursor-pointer"
+            >
               <option value="all">Any Maturity</option>
               <option value="30">Next 30 Days</option>
             </select>
           </div>
         </div>
+
+        {isLoading && (
+          <div className="mb-8 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3 text-slate-600">
+            <Loader2 size={18} className="animate-spin" />
+            Loading marketplace invoices...
+          </div>
+        )}
+
+        {loadError && (
+          <div className="mb-8 bg-red-50 p-5 rounded-2xl border border-red-200 text-red-700 text-sm font-semibold">
+            {loadError}
+          </div>
+        )}
 
         {/* STATS BAR */}
         <div className="grid grid-cols-4 gap-4 mb-8">

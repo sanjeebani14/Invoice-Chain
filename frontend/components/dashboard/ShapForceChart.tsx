@@ -93,7 +93,10 @@ export const ShapForceChart: FC<ShapForceChartProps> = ({ contributors }) => {
           <LabelList
             dataKey="impact"
             position="right"
-            formatter={(v: number) => v.toFixed(1)}
+            formatter={(label) => {
+              const numeric = typeof label === "number" ? label : Number(label ?? 0);
+              return Number.isFinite(numeric) ? numeric.toFixed(1) : "0.0";
+            }}
             className="text-[10px] fill-foreground"
           />
         </Bar>
