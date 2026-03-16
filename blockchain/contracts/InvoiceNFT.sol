@@ -6,14 +6,6 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
-/**
- * @title InvoiceNFT
- * @notice ERC-1155 token representing invoices on InvoiceChain.
- *         Each tokenId = one invoice. Supply of 1 = whole ownership.
- *         Supply > 1 = fractional (handled by FractionalVault).
- *         The keccak256 hash of the invoice is stored on-chain to
- *         prevent duplicate submissions.
- */
 contract InvoiceNFT is ERC1155, AccessControl, ReentrancyGuard, Pausable {
 
     // roles
@@ -71,11 +63,11 @@ contract InvoiceNFT is ERC1155, AccessControl, ReentrancyGuard, Pausable {
      * @notice Mint an invoice NFT.
      * @param to          The SME wallet receiving the token.
      * @param invoiceHash keccak256 hash of the canonical invoice string
-     *                    (computed off-chain by Kavya's pipeline).
+     *                    (computed off-chain).
      * @param faceValue   Invoice amount in wei.
      * @param dueDate     Unix timestamp of invoice due date.
      * @param supply      1 for whole ownership; N for fractional shares.
-     * @param uri         IPFS URI of the invoice document.
+     * @param tokenURI    IPFS URI of the invoice document.
      */
     function mint(
         address to,
@@ -83,7 +75,7 @@ contract InvoiceNFT is ERC1155, AccessControl, ReentrancyGuard, Pausable {
         uint256 faceValue,
         uint256 dueDate,
         uint256 supply,
-        string calldata uri
+        string calldata tokenURI
     ) external onlyRole(MINTER_ROLE) nonReentrant whenNotPaused returns (uint256) {
         require(hashToTokenId[invoiceHash] == 0, "InvoiceNFT: duplicate invoice hash");
         require(to != address(0), "InvoiceNFT: mint to zero address");
@@ -95,7 +87,7 @@ contract InvoiceNFT is ERC1155, AccessControl, ReentrancyGuard, Pausable {
 
         hashToTokenId[invoiceHash] = tokenId;
         tokenIdToHash[tokenId] = invoiceHash;
-        _tokenURIs[tokenId] = uri;
+        _tokenURIs[tokenId] = tokenURI;
         originalMinter[tokenId] = to;
         invoiceFaceValue[tokenId] = faceValue;
         invoiceDueDate[tokenId] = dueDate;
@@ -103,7 +95,7 @@ contract InvoiceNFT is ERC1155, AccessControl, ReentrancyGuard, Pausable {
 
         _mint(to, tokenId, supply, "");
 
-        emit InvoiceMinted(tokenId, to, invoiceHash, faceValue, dueDate, supply, uri);
+        emit InvoiceMinted(tokenId, to, invoiceHash, faceValue, dueDate, supply, tokenURI);
 
         return tokenId;
     }
@@ -115,7 +107,7 @@ contract InvoiceNFT is ERC1155, AccessControl, ReentrancyGuard, Pausable {
         return _tokenURIs[tokenId];
     }
 
-    // ─── Hash Registry (for Kavya's duplicate detection) ─────────────────────
+    // hash registry
 
     /**
      * @notice Check if an invoice hash is already registered on-chain.
