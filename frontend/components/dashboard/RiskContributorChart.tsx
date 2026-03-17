@@ -12,11 +12,11 @@ import {
   LabelList,
 } from "recharts";
 
-type ShapForceChartProps = {
+type RiskContributorChartProps = {
   contributors?: Record<string, number> | null;
 };
 
-type ShapPoint = {
+type ContributorPoint = {
   feature: string;
   impact: number;
   direction: "push_up" | "push_down";
@@ -32,8 +32,10 @@ const TT = {
   color: "hsl(220, 20%, 14%)",
 };
 
-export const ShapForceChart: FC<ShapForceChartProps> = ({ contributors }) => {
-  const data: ShapPoint[] = useMemo(() => {
+export const RiskContributorChart: FC<RiskContributorChartProps> = ({
+  contributors,
+}) => {
+  const data: ContributorPoint[] = useMemo(() => {
     if (!contributors) return [];
     const entries = Object.entries(contributors);
     // Sort by absolute impact and take top 7 for readability
@@ -51,7 +53,7 @@ export const ShapForceChart: FC<ShapForceChartProps> = ({ contributors }) => {
   if (!data.length) {
     return (
       <div className="text-xs text-muted-foreground">
-        No feature attributions available yet for this seller.
+        No contributor data available yet for this seller.
       </div>
     );
   }
@@ -82,7 +84,7 @@ export const ShapForceChart: FC<ShapForceChartProps> = ({ contributors }) => {
           formatter={(value, _name, item) => {
             const v = value as number;
             const dir =
-              (item.payload as ShapPoint).direction === "push_up"
+              (item.payload as ContributorPoint).direction === "push_up"
                 ? "increases"
                 : "reduces";
             return [`${v.toFixed(2)} pts (${dir} risk)`, "Impact"];
@@ -94,7 +96,8 @@ export const ShapForceChart: FC<ShapForceChartProps> = ({ contributors }) => {
             dataKey="impact"
             position="right"
             formatter={(label) => {
-              const numeric = typeof label === "number" ? label : Number(label ?? 0);
+              const numeric =
+                typeof label === "number" ? label : Number(label ?? 0);
               return Number.isFinite(numeric) ? numeric.toFixed(1) : "0.0";
             }}
             className="text-[10px] fill-foreground"
@@ -104,4 +107,3 @@ export const ShapForceChart: FC<ShapForceChartProps> = ({ contributors }) => {
     </ResponsiveContainer>
   );
 };
-

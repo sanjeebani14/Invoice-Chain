@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RiskBadge } from "@/components/dashboard/RiskBadge";
 import { ChartPanel } from "@/components/dashboard/ChartPanel";
-import { ShapForceChart } from "@/components/dashboard/ShapForceChart";
+import { RiskContributorChart } from "@/components/dashboard/RiskContributorChart";
 import { MetricCardSkeleton } from "@/components/dashboard/LoadingSkeleton";
 import {
   getSellerScore,
@@ -305,8 +305,8 @@ export default function SellerDetails() {
           </ResponsiveContainer>
         </ChartPanel>
 
-        <ChartPanel title="Feature Impact on Risk (SHAP-style)">
-          <ShapForceChart contributors={seller.risk_contributors} />
+        <ChartPanel title="Feature Impact on Risk">
+          <RiskContributorChart contributors={seller.risk_contributors} />
         </ChartPanel>
       </div>
     </div>

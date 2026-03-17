@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Pages anyone can visit without being logged in:
-<<<<<<< Updated upstream
-const PUBLIC_PATHS = ["/", "/login", "/register", "/verify-email"];
-=======
-const PUBLIC_PATHS = ["/login", "/register","/INVESTOR","/upload","/admin"];
->>>>>>> Stashed changes
+const PUBLIC_PATHS = [
+  "/",
+  "/login",
+  "/register",
+  "/verify-email",
+  "/INVESTOR",
+  "/upload",
+  "/admin",
+];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -22,7 +26,7 @@ export function middleware(request: NextRequest) {
   if (!token) {
     // No token → redirect to login
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("from", pathname);  // remember where they were going
+    loginUrl.searchParams.set("from", pathname); // remember where they were going
     return NextResponse.redirect(loginUrl);
   }
 

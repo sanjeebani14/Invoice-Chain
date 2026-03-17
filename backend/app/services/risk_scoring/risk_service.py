@@ -1,19 +1,22 @@
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 import xgboost as xgb
-import shap
 from sqlalchemy.orm import Session
 
 from app import models
 
+logger = logging.getLogger(__name__)
+
 
 class RiskScoringEngine:
     """
-    ML-ready risk engine built around XGBoost + SHAP.
+    ML-ready risk engine built around XGBoost with z-score-based explanations.
 
     In production you should:
     - Train an XGBoost model on your SCF-style dataset.
@@ -22,13 +25,19 @@ class RiskScoringEngine:
 
     This implementation is defensive:
     - If the model cannot be loaded, it falls back to a
-      deterministic rules-based score using the same features.
+            deterministic z-score algorithm using the same features.
     """
 
     def __init__(self, model_path: str | None = None) -> None:
         self.model: Optional[xgb.Booster] = None
-        self._explainer: Optional[shap.TreeExplainer] = None
-        self.model_path = model_path or "model.json"
+
+        # Resolve default model path to the same directory as this file so that
+        # `backend/app/services/risk_scoring/model.json` is picked up
+        # without needing extra configuration.
+        base_dir = os.path.dirname(__file__)
+        default_model_path = os.path.join(base_dir, "model.json")
+
+        self.model_path = model_path or default_model_path
         self._try_load_model()
 
     # ── Model loading ──────────────────────────────────────────────
@@ -37,11 +46,21 @@ class RiskScoringEngine:
             booster = xgb.Booster()
             booster.load_model(self.model_path)
             self.model = booster
+            logger.info(f"✓ XGBoost model loaded successfully from {self.model_path}")
             # Explainer will be created lazily when first used
-        except Exception:
-            # Keep model as None – engine will fall back to heuristic
+        except FileNotFoundError as e:
+            logger.warning(
+                f"⚠ Model file not found at {self.model_path}. "
+                f"Will fall back to z-score scoring. Error: {e}"
+            )
             self.model = None
-            self._explainer = None
+        except Exception as e:
+            logger.error(
+                f"✗ Failed to load XGBoost model from {self.model_path}. "
+                f"Will fall back to z-score scoring. Error: {type(e).__name__}: {e}"
+            )
+            # Keep model as None – engine will fall back to z-score scoring
+            self.model = None
 
     # ── Public API ────────────────────────────────────────────────
     def calculate_score(
@@ -68,15 +87,50 @@ class RiskScoringEngine:
         features_df = self._build_feature_vector(seller, invoice_data)
 
         if self.model is not None:
-            score, shap_summary, shap_vector = self._score_with_model(features_df)
+            logger.debug(f"Using XGBoost model for seller_id={seller_id}")
+            try:
+                score, insights, contributors = self._score_with_model(features_df)
+                scoring_method = "xgboost"
+                model_used = True
+                fallback_used = False
+            except Exception as e:
+                logger.error(
+                    f"XGBoost inference failed for seller_id={seller_id}. "
+                    f"Falling back to z-score scoring. Error: {type(e).__name__}: {e}"
+                )
+                score, insights, contributors = self._fallback_score(features_df)
+                scoring_method = "zscore_fallback"
+                model_used = False
+                fallback_used = True
         else:
-            score, shap_summary, shap_vector = self._fallback_score(features_df)
+            logger.warning(
+                f"Using fallback z-score for seller_id={seller_id} "
+                f"(model unavailable at {self.model_path})"
+            )
+            score, insights, contributors = self._fallback_score(features_df)
+            scoring_method = "zscore_fallback"
+            model_used = False
+            fallback_used = True
 
-        score_int = int(max(0, min(100, score)))
+        bounded_score = float(max(0.0, min(100.0, score)))
+        score_int = int(round(bounded_score))
+        if model_used and score_int == 0 and bounded_score > 0.0:
+            # Avoid collapsing tiny-but-positive model probabilities to 0 after integer conversion.
+            score_int = 1
         risk_level = "High" if score_int > 70 else "Medium" if score_int > 40 else "Low"
 
-        # Persist SHAP / attribution vector for future analytics
-        seller.risk_contributors = shap_vector
+        logger.info(
+            "Risk scoring completed | seller_id=%s model_used=%s fallback_used=%s scoring_method=%s raw_score=%.4f score=%s",
+            seller_id,
+            model_used,
+            fallback_used,
+            scoring_method,
+            bounded_score,
+            score_int,
+        )
+
+        # Persist attribution vector for future analytics
+        seller.risk_contributors = contributors
         seller.composite_score = score_int
 
         # Automatically open a fraud review flag whenever a newly
@@ -112,11 +166,54 @@ class RiskScoringEngine:
         return {
             "composite_score": score_int,
             "risk_level": risk_level,
-            "insights": shap_summary,
+            "insights": insights,
+            "scoring_method": scoring_method,
+            "model_used": model_used,
+            "fallback_used": fallback_used,
             "breakdown": self._build_breakdown(seller, features_df.iloc[0].to_dict()),
         }
 
     # ── Feature engineering ───────────────────────────────────────
+    def _extract_numeric(
+        self,
+        payload: Dict[str, Any],
+        keys: List[str],
+        default: float,
+    ) -> float:
+        for key in keys:
+            if key in payload and payload[key] is not None:
+                value = payload[key]
+                if isinstance(value, (int, float)):
+                    return float(value)
+                if isinstance(value, str):
+                    try:
+                        return float(value.strip())
+                    except ValueError:
+                        continue
+        return float(default)
+
+    def _extract_category(
+        self,
+        payload: Dict[str, Any],
+        keys: List[str],
+        default: str,
+    ) -> str:
+        for key in keys:
+            if key in payload and payload[key] is not None:
+                value = str(payload[key]).strip()
+                if value:
+                    return value
+        return default
+
+    def _normalise_feature_name(self, key: str) -> str:
+        out = key.strip().replace("-", "_").replace(" ", "_")
+        buf: List[str] = []
+        for idx, ch in enumerate(out):
+            if ch.isupper() and idx > 0 and out[idx - 1] != "_":
+                buf.append("_")
+            buf.append(ch.lower())
+        return "".join(buf)
+
     def _build_feature_vector(
         self,
         seller: models.CreditHistory,
@@ -129,13 +226,144 @@ class RiskScoringEngine:
         - Relationship & logistics (transaction_stability, logistics_consistency)
         - ESG signal (esg_score)
         """
+        invoice_data = invoice_data or {}
+        normalised_invoice_data: Dict[str, Any] = {}
+        for k, v in invoice_data.items():
+            if isinstance(k, str):
+                normalised_invoice_data[self._normalise_feature_name(k)] = v
+
+        # If the loaded model expects a different schema (e.g., loan-approval style),
+        # generate exactly those feature names so inference matches training.
+        expected = list(getattr(self.model, "feature_names", None) or []) if self.model is not None else []
+        if expected:
+            years_employed = self._extract_numeric(
+                normalised_invoice_data,
+                ["years_employed", "employment_years"],
+                float(getattr(seller, "employment_years", 3.0) or 3.0),
+            )
+            debt_to_income = self._extract_numeric(
+                normalised_invoice_data,
+                ["debt_to_income_ratio", "debt_to_income", "dti"],
+                float(getattr(seller, "debt_to_income", 0.35) or 0.35),
+            )
+            debt_to_income = max(0.0, min(2.0, debt_to_income))
+
+            annual_income = self._extract_numeric(
+                normalised_invoice_data,
+                ["annual_income", "income", "yearly_income"],
+                0.0,
+            )
+            if annual_income <= 0.0:
+                annual_income = max(15000.0, 18000.0 + years_employed * 9000.0)
+
+            loan_amount = self._extract_numeric(
+                normalised_invoice_data,
+                ["loan_amount", "amount", "invoice_amount", "ask_price"],
+                0.0,
+            )
+            if loan_amount <= 0.0:
+                loan_amount = max(1500.0, annual_income * 0.18)
+
+            current_debt = self._extract_numeric(
+                normalised_invoice_data,
+                ["current_debt", "debt", "total_debt"],
+                annual_income * debt_to_income,
+            )
+            savings_assets = self._extract_numeric(
+                normalised_invoice_data,
+                ["savings_assets", "savings", "assets"],
+                annual_income * 0.2,
+            )
+
+            mapped: Dict[str, float] = {
+                "age": self._extract_numeric(
+                    normalised_invoice_data,
+                    ["age"],
+                    max(18.0, min(75.0, 22.0 + years_employed)),
+                ),
+                "years_employed": years_employed,
+                "annual_income": annual_income,
+                "credit_score": self._extract_numeric(
+                    normalised_invoice_data,
+                    ["credit_score", "payment_history_score"],
+                    float(getattr(seller, "payment_history_score", 60.0) or 60.0),
+                ),
+                "credit_history_years": self._extract_numeric(
+                    normalised_invoice_data,
+                    ["credit_history_years", "history_years"],
+                    max(1.0, years_employed + 1.0),
+                ),
+                "savings_assets": savings_assets,
+                "current_debt": current_debt,
+                "defaults_on_file": self._extract_numeric(
+                    normalised_invoice_data,
+                    ["defaults_on_file", "defaults"],
+                    0.0,
+                ),
+                "delinquencies_last_2yrs": self._extract_numeric(
+                    normalised_invoice_data,
+                    ["delinquencies_last_2yrs", "delinquencies"],
+                    0.0,
+                ),
+                "derogatory_marks": self._extract_numeric(
+                    normalised_invoice_data,
+                    ["derogatory_marks"],
+                    0.0,
+                ),
+                "loan_amount": loan_amount,
+                "interest_rate": self._extract_numeric(
+                    normalised_invoice_data,
+                    ["interest_rate", "apr"],
+                    11.5,
+                ),
+                "debt_to_income_ratio": debt_to_income,
+                "loan_to_income_ratio": self._extract_numeric(
+                    normalised_invoice_data,
+                    ["loan_to_income_ratio", "lti"],
+                    (loan_amount / annual_income) if annual_income > 0 else 0.0,
+                ),
+                "payment_to_income_ratio": self._extract_numeric(
+                    normalised_invoice_data,
+                    ["payment_to_income_ratio", "pti"],
+                    ((loan_amount / 12.0) / annual_income) if annual_income > 0 else 0.0,
+                ),
+            }
+
+            occupation_status = self._extract_category(
+                normalised_invoice_data,
+                ["occupation_status", "employment_type"],
+                "Employed",
+            )
+            product_type = self._extract_category(
+                normalised_invoice_data,
+                ["product_type", "loan_product_type"],
+                "Personal Loan",
+            )
+            loan_intent = self._extract_category(
+                normalised_invoice_data,
+                ["loan_intent", "purpose", "loan_purpose"],
+                "Business",
+            )
+
+            for name in expected:
+                if name.startswith("occupation_status_"):
+                    mapped[name] = 1.0 if occupation_status == name.split("occupation_status_", 1)[1] else 0.0
+                elif name.startswith("product_type_"):
+                    mapped[name] = 1.0 if product_type == name.split("product_type_", 1)[1] else 0.0
+                elif name.startswith("loan_intent_"):
+                    mapped[name] = 1.0 if loan_intent == name.split("loan_intent_", 1)[1] else 0.0
+
+            # Build the final feature row in the exact expected order.
+            row = {k: float(mapped.get(k, 0.0)) for k in expected}
+            return pd.DataFrame([row], columns=expected)
+
+        # Default feature set for the built-in SCF-style heuristic / model.
         # Simple defaults when new fields are still being backfilled
         core_rating = seller.core_enterprise_rating or 70
         relationship_years = float(seller.transaction_stability or 1.0)
         logistics_score = float(seller.logistics_consistency or 80.0)
         esg_score = float(seller.esg_score or 5.5)  # above 4.73 = safer
 
-        # Optional extra invoice-level risk drivers can be merged in later
         base_features: Dict[str, Any] = {
             "payment_history": seller.payment_history_score or 0,
             "client_reputation": seller.client_reputation_score or 0,
@@ -146,91 +374,117 @@ class RiskScoringEngine:
             "esg_score": esg_score,
         }
 
-        if invoice_data:
-            for k, v in invoice_data.items():
+        if normalised_invoice_data:
+            for k, v in normalised_invoice_data.items():
                 if isinstance(v, (int, float)):
                     base_features[f"invoice_{k}"] = v
 
         return pd.DataFrame([base_features])
 
-    # ── XGBoost + SHAP scoring ────────────────────────────────────
+    # ── XGBoost scoring ───────────────────────────────────────────
+    def _align_features_for_model(self, features: pd.DataFrame) -> pd.DataFrame:
+        """
+        Align inference features to the exact feature order/names the loaded model expects.
+
+        This allows the service to run even if the current backend feature schema differs
+        from the schema used during training. Missing features are filled with 0.0 and
+        extra features are dropped.
+        """
+        if self.model is None:
+            return features
+
+        expected = list(getattr(self.model, "feature_names", None) or [])
+        if not expected:
+            # Some models may not store feature names; in that case we keep the input as-is.
+            return features
+
+        aligned = features.reindex(columns=expected, fill_value=0.0)
+
+        missing = [c for c in expected if c not in features.columns]
+        extra = [c for c in features.columns if c not in expected]
+        if missing or extra:
+            logger.warning(
+                "Aligning features for XGBoost inference. "
+                f"Missing filled with 0: {len(missing)}; Extra dropped: {len(extra)}"
+            )
+
+        return aligned
+
     def _score_with_model(
         self,
         features: pd.DataFrame,
     ) -> tuple[float, List[str], Dict[str, float]]:
-        dmat = xgb.DMatrix(features)
+        aligned_features = self._align_features_for_model(features)
+        dmat = xgb.DMatrix(aligned_features)
         # Assuming binary classification – model outputs PD in [0, 1]
         prob_default = float(self.model.predict(dmat)[0])
 
         # Convert PD into 0-100 risk score (higher = riskier)
         score = prob_default * 100.0
+        _, contributors = self._zscore_algorithm(aligned_features.iloc[0].to_dict())
 
-        # Lazily build SHAP explainer
-        if self._explainer is None:
-            self._explainer = shap.TreeExplainer(self.model)
+        summary = self._summarise_contributors(prob_default, contributors)
+        return score, summary, contributors
 
-        shap_values = self._explainer.shap_values(features)
-
-        # For binary classification, shap_values can be 2D – we take class 1
-        if isinstance(shap_values, list):
-            shap_vec = np.array(shap_values[1][0])
-        else:
-            shap_vec = np.array(shap_values[0])
-
-        shap_dict = {
-            feature_name: float(val)
-            for feature_name, val in zip(features.columns, shap_vec, strict=False)
-        }
-        summary = self._summarise_shap(prob_default, shap_dict)
-        return score, summary, shap_dict
-
-    # ── Fallback rules-based scoring (no model yet) ───────────────
+    # ── Fallback z-score scoring (no model yet) ───────────────────
     def _fallback_score(
         self,
         features: pd.DataFrame,
     ) -> tuple[float, List[str], Dict[str, float]]:
-        row = features.iloc[0]
+        score, contributors = self._zscore_algorithm(features.iloc[0].to_dict())
+        insights = self._summarise_contributors(None, contributors)
+        return score, insights, contributors
 
-        # Start from base risk informed by payment history (better history → lower risk)
-        base_risk = 100 - (row["payment_history"] * 0.6)
-
-        # Better core enterprise rating reduces risk
-        core_adjustment = (100 - row["core_enterprise_rating"]) * 0.2
-
-        # Longer relationships and better logistics reduce risk
-        relationship_adjustment = max(0.0, 5.0 - row["relationship_years"]) * 2.0
-        logistics_adjustment = (100 - row["logistics_consistency"]) * 0.1
-
-        # ESG penalty when below threshold (~4.73). Here we map 0–10 ESG to penalty.
-        esg_raw = row["esg_score"]
-        esg_penalty = 0.0
-        if esg_raw < 4.73:
-            esg_penalty = (4.73 - esg_raw) * 4.0
-
-        # Raw score before scaling / clipping
-        raw_score = base_risk + core_adjustment + relationship_adjustment + logistics_adjustment + esg_penalty
-
-        # Compress scores into a more realistic band [20, 80] instead of
-        # regularly hitting the extremes 0 and 100 when using heuristic mode.
-        clipped = max(0.0, min(100.0, raw_score))
-        score = 20.0 + 0.6 * clipped
-
-        shap_like_vector: Dict[str, float] = {
-            "payment_history": float(-base_risk),
-            "core_enterprise_rating": float(core_adjustment),
-            "relationship_years": float(relationship_adjustment),
-            "logistics_consistency": float(logistics_adjustment),
-            "esg_score": float(esg_penalty),
+    def _zscore_algorithm(self, row: Dict[str, Any]) -> tuple[float, Dict[str, float]]:
+        profile: Dict[str, tuple[float, float, float]] = {
+            # feature: (mean, std, direction) where direction=+1 means higher value => higher risk.
+            "payment_history": (70.0, 15.0, -1.0),
+            "client_reputation": (70.0, 15.0, -1.0),
+            "seller_track_record": (70.0, 15.0, -1.0),
+            "core_enterprise_rating": (75.0, 12.0, -1.0),
+            "relationship_years": (3.0, 2.0, -1.0),
+            "logistics_consistency": (85.0, 10.0, -1.0),
+            "esg_score": (5.5, 1.5, -1.0),
+            "credit_score": (650.0, 80.0, -1.0),
+            "debt_to_income_ratio": (0.35, 0.15, 1.0),
+            "loan_to_income_ratio": (0.25, 0.12, 1.0),
+            "payment_to_income_ratio": (0.05, 0.03, 1.0),
+            "current_debt": (30000.0, 20000.0, 1.0),
+            "defaults_on_file": (0.2, 0.6, 1.0),
+            "delinquencies_last_2yrs": (0.4, 1.0, 1.0),
+            "derogatory_marks": (0.2, 0.8, 1.0),
+            "interest_rate": (11.0, 4.0, 1.0),
+            "years_employed": (5.0, 4.0, -1.0),
         }
 
-        insights = self._summarise_shap(None, shap_like_vector)
-        return score, insights, shap_like_vector
+        contributions: Dict[str, float] = {}
+        values: List[float] = []
+
+        for feature, (mean, std, direction) in profile.items():
+            if feature not in row:
+                continue
+            val = row.get(feature)
+            if not isinstance(val, (int, float)):
+                continue
+            z = (float(val) - mean) / max(std, 1e-6)
+            risk_z = float(np.clip(direction * z, -3.0, 3.0))
+            contribution = risk_z * 10.0
+            contributions[feature] = contribution
+            values.append(risk_z)
+
+        if not values:
+            return 50.0, {"zscore_baseline": 0.0}
+
+        avg_risk_z = float(np.mean(values))
+        score = float(np.clip(50.0 + (avg_risk_z * 15.0), 0.0, 100.0))
+        top = sorted(contributions.items(), key=lambda kv: abs(kv[1]), reverse=True)[:8]
+        return score, {k: float(v) for k, v in top}
 
     # ── Interpretability text ─────────────────────────────────────
-    def _summarise_shap(
+    def _summarise_contributors(
         self,
         prob_default: Optional[float],
-        shap_vector: Dict[str, float],
+        contributors: Dict[str, float],
     ) -> List[str]:
         messages: List[str] = []
 
@@ -241,7 +495,7 @@ class RiskScoringEngine:
 
         # Sort contributors by absolute impact
         top_items = sorted(
-            shap_vector.items(),
+            contributors.items(),
             key=lambda kv: abs(kv[1]),
             reverse=True,
         )[:5]
