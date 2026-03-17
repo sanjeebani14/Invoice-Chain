@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { getToken } from "@/lib/auth";
+import axios from "axios";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (data: any) => void }) {
@@ -24,36 +24,23 @@ export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (d
     setIsUploading(true);
     setError("");
 
-    const token = getToken();
-    if (!token) {
-      setError("Please log in as an SME before uploading an invoice.");
-      setIsUploading(false);
-      return;
-    }
-
     const formData = new FormData();
     formData.append("file", file);
 
     try {
-      const response = await fetch("http://localhost:8000/api/v1/invoice/invoices/upload", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.detail || "Upload failed");
-      }
+      const response = await axios.post(
+        "http://localhost:8000/api/v1/invoice/invoices/upload",
+        formData,
+        { withCredentials: true }
+      );
+      const data = response.data;
 
       onUploadSuccess(data);
 
     } catch (err: any) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setError((err as any).message || "An error occurred");
+      const message = err?.response?.data?.detail ?? (err as any).message ?? "An error occurred";
+      setError(message);
     } finally {
       setIsUploading(false);
     }

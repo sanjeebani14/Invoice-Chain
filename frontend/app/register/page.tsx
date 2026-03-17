@@ -16,11 +16,14 @@ import {
 } from "@/components/ui/select";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { register } from "@/lib/auth";
+import { Eye, EyeOff } from "lucide-react";
+import { getMyKyc } from "@/lib/kyc";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState<"sme" | "investor">("sme");
   const [loading, setLoading] = useState(false);
 
@@ -30,7 +33,7 @@ export default function RegisterPage() {
 
     try {
       await register({ email, password, role });
-      toast.success("Account created! Please sign in.");
+      toast.success("Account created! Please verify your email before logging in.");
       router.push("/login");
     } catch (err: unknown) {
       const message =
@@ -63,20 +66,31 @@ export default function RegisterPage() {
 
         <div className="space-y-2">
           <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            placeholder="Min. 8 characters"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={8}
-            autoComplete="new-password"
-          />
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="Min. 8 characters"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={8}
+              autoComplete="new-password"
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-700"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="role">I am a...</Label>
+          <Label htmlFor="role">Role</Label>
           {/* Uses the exact same Select component as admin/sellers/page.tsx */}
           <Select value={role} onValueChange={(v: string) => setRole(v as "sme" | "investor")}>
             <SelectTrigger id="role" className="bg-card border-border">
@@ -89,7 +103,7 @@ export default function RegisterPage() {
           </Select>
         </div>
 
-        <Button type="submit" className="w-full" disabled={loading}>
+        <Button type="submit" className="w-full" variant="default" size="lg" disabled={loading}>
           {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {loading ? "Creating account..." : "Create account"}
         </Button>

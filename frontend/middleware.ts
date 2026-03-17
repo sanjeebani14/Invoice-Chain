@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Pages anyone can visit without being logged in:
-const PUBLIC_PATHS = ["/login", "/register"];
+const PUBLIC_PATHS = ["/", "/login", "/register", "/verify-email"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -12,8 +12,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check for token in cookies (localStorage isn't available in middleware)
-  const token = request.cookies.get("invoicechain_token")?.value;
+  // Backend uses HTTP-only cookies `access_token`/`refresh_token`
+  const token = request.cookies.get("access_token")?.value;
 
   if (!token) {
     // No token → redirect to login

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Database Service [cite: 10, 92]
   db:
@@ -23,5 +21,17 @@ services:
     ports:
       - "6379:6379"
 
+  # MinIO Service [cite: 10, 90]
+  minio:
+    image: quay.io/minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: invoicechain
+      MINIO_ROOT_PASSWORD: invoicechain123
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./minio_data:/data
 volumes:
   postgres_data:

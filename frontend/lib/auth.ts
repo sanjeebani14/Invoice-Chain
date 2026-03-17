@@ -2,6 +2,9 @@ import axios from "axios";
 
 const AUTH_BASE = "http://localhost:8000/auth";
 
+// Configure axios to send cookies with requests
+axios.defaults.withCredentials = true;
+
 // ── Types ─────────────────────────────────────────────────────
 export interface RegisterData {
   email: string;
@@ -14,9 +17,8 @@ export interface LoginData {
   password: string;
 }
 
-export interface TokenResponse {
-  access_token: string;
-  token_type: string;
+export interface MessageResponse {
+  message: string;
 }
 
 export interface UserOut {
@@ -24,45 +26,50 @@ export interface UserOut {
   email: string;
   role: string;
   is_active: boolean;
-}
-
-// ── Token helpers ─────────────────────────────────────────────
-export const TOKEN_KEY = "invoicechain_token";
-
-export function saveToken(token: string) {
-  document.cookie = `${TOKEN_KEY}=${token}; path=/; max-age=3600`;
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;  // SSR guard
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-
-export function removeToken() {
-  document.cookie = `${TOKEN_KEY}=; path=/; max-age=0`;
-  localStorage.removeItem(TOKEN_KEY);
-}
-
-export function isLoggedIn(): boolean {
-  return !!getToken();
+  full_name?: string | null;
+  phone?: string | null;
+  email_verified: boolean;
+  verified_at?: string | null;
 }
 
 // ── API calls ─────────────────────────────────────────────────
-export async function register(data: RegisterData): Promise<UserOut> {
-  const response = await axios.post<UserOut>(`${AUTH_BASE}/register`, data);
+export async function register(data: RegisterData): Promise<MessageResponse> {
+  const response = await axios.post<MessageResponse>(
+    `${AUTH_BASE}/register`,
+    data
+  );
   return response.data;
 }
 
-export async function login(data: LoginData): Promise<TokenResponse> {
-  const response = await axios.post<TokenResponse>(`${AUTH_BASE}/login`, data);
-  saveToken(response.data.access_token);   // ← auto-saves on login
+export async function login(data: LoginData): Promise<MessageResponse> {
+  const response = await axios.post<MessageResponse>(
+    `${AUTH_BASE}/login`,
+    data
+  );
+  // Tokens are automatically set in HTTP-only cookies by the backend
+  // No need to save them manually
   return response.data;
 }
 
-export function logout() {
-  removeToken();
-  window.location.href = "/login";
+export async function logout(): Promise<MessageResponse> {
+  try {
+    const response = await axios.post<MessageResponse>(
+      `${AUTH_BASE}/logout`
+    );
+    // Cookies are automatically cleared by the backend
+    window.location.href = "/login";
+    return response.data;
+  } catch (error) {
+    // Even if logout fails, clear local state and redirect
+    window.location.href = "/login";
+    throw error;
+  }
+}
+
+export async function refreshToken(): Promise<MessageResponse> {
+  const response = await axios.post<MessageResponse>(
+    `${AUTH_BASE}/refresh`
+  );
+  // New access token is automatically set in cookie by the backend
+  return response.data;
 }

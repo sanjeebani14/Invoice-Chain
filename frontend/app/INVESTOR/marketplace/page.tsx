@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { getToken } from '@/lib/auth';
+import axios from "axios";
 import { 
   Search, ShieldCheck, X, ShoppingCart, Clock, 
   CheckCircle2, Loader2, Trash2, Database, 
@@ -123,18 +123,11 @@ export default function FullMarketplace() {
       setIsLoading(true);
       setLoadError(null);
       try {
-        const token = getToken();
-        if (!token) throw new Error("Please log in as an investor to view marketplace invoices.");
-
-        const response = await fetch("http://localhost:8000/api/v1/invoice/invoices/marketplace", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload?.detail || "Unable to load marketplace invoices");
-        }
+        const response = await axios.get(
+          "http://localhost:8000/api/v1/invoice/invoices/marketplace",
+          { withCredentials: true }
+        );
+        const payload = response.data;
 
         const mapped = (payload?.invoices ?? []).map((item: BackendInvoice) => toMarketplaceInvoice(item));
         setInvoices(mapped);

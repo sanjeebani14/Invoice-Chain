@@ -26,8 +26,10 @@ class User(Base):
 
     # Account state
     email_verified = Column(Boolean, nullable=False, default=False)
+    verified_at = Column(DateTime(timezone=True), nullable=True)  # When email was verified
     is_active = Column(Boolean, nullable=False, default=True)
     last_login = Column(DateTime(timezone=True), nullable=True)
+    last_refresh_token_issued_at = Column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -115,3 +117,65 @@ class FraudFlag(Base):
     is_resolved = Column(Boolean, default=False)
     resolved_by = Column(Integer, nullable=True)        # admin user_id
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+# ────TOKEN MANAGEMENT──────────────────────────────
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    token_hash = Column(String, nullable=False)  # Hashed version of actual token
+    fingerprint = Column(String, nullable=True)  # Browser/device fingerprint for extra security
+    is_revoked = Column(Boolean, default=False, index=True)
+    issued_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+# ────EMAIL VERIFICATION──────────────────────────────
+class EmailVerificationToken(Base):
+    __tablename__ = "email_verification_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    token_hash = Column(String, unique=True, index=True, nullable=False)  # Hashed version of token
+    is_used = Column(Boolean, default=False, index=True)  # Mark as used after verification
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)  # Typically 24 hours
+    used_at = Column(DateTime(timezone=True), nullable=True)  # When token was used for verification
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+# ────KYC──────────────────────────────────────────────────────────
+class KycDocType(str, enum.Enum):
+    pan = "pan"
+
+
+class KycStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class KycSubmission(Base):
+    __tablename__ = "kyc_submissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+
+    doc_type = Column(Enum(KycDocType), nullable=False, default=KycDocType.pan)
+    status = Column(Enum(KycStatus), nullable=False, default=KycStatus.pending, index=True)
+
+    s3_bucket = Column(String, nullable=False)
+    s3_key = Column(String, nullable=False, unique=True, index=True)
+    content_type = Column(String, nullable=True)
+    original_filename = Column(String, nullable=True)
+    size_bytes = Column(Integer, nullable=False, default=0)
+
+    submitted_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+    reviewer = relationship("User", foreign_keys=[reviewed_by])
