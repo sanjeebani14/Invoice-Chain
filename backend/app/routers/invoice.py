@@ -183,7 +183,7 @@ def list_invoices(
     query = db.query(Invoice)
 
     # Admins see everything, SMEs only see their own
-    if current_user.role != "admin":
+    if current_user.role != UserRole.ADMIN:
         query = query.filter(Invoice.seller_id == current_user.id)
 
     if status:
@@ -203,7 +203,7 @@ def list_marketplace_invoices(
     """
     Investor marketplace feed. Investors and admins can see listed inventory.
     """
-    if current_user.role not in {UserRole.investor, UserRole.admin}:
+    if current_user.role not in {UserRole.INVESTOR, UserRole.ADMIN}:
         raise HTTPException(status_code=403, detail="Only investors can access marketplace invoices")
 
     listed_statuses = ["approved", "listed", "minted"]
@@ -230,7 +230,7 @@ def get_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     # Only owner or admin can view
-    if invoice.seller_id != current_user.id and current_user.role != "admin":
+    if invoice.seller_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Not authorised to view this invoice")
 
     return _invoice_to_dict(invoice)

@@ -10,6 +10,7 @@ import {
   ExternalLink, Filter, Calendar, BarChart3, Banknote,
   TrendingUp, AlertCircle, Zap, Users, Trophy, Activity
 } from 'lucide-react';
+import { MarketplaceStats } from "@/components/dashboard/MarketplaceStats";
 
 // --- TYPES ---
 interface Bid {
@@ -340,52 +341,7 @@ export default function FullMarketplace() {
         )}
 
         {/* STATS BAR */}
-        <div className="grid grid-cols-4 gap-4 mb-8">
-          <div className="bg-white backdrop-blur-sm p-4 rounded-2xl border border-white shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Activity size={16} className="text-blue-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-black text-slate-900">{filteredData.length}</p>
-                <p className="text-xs text-slate-500 font-medium">Active Listings</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white backdrop-blur-sm p-4 rounded-2xl border border-white shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-100 rounded-lg">
-                <TrendingUp size={16} className="text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-black text-slate-900">12.8%</p>
-                <p className="text-xs text-slate-500 font-medium">Avg. IRR</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white backdrop-blur-sm p-4 rounded-2xl border border-white shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Users size={16} className="text-purple-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-black text-slate-900">247</p>
-                <p className="text-xs text-slate-500 font-medium">Active Investors</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white backdrop-blur-sm p-4 rounded-2xl border border-white shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-100 rounded-lg">
-                <Trophy size={16} className="text-amber-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-black text-slate-900">$2.4M</p>
-                <p className="text-xs text-slate-500 font-medium">Total Volume</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <MarketplaceStats />
 
         {/* INVOICE GRID */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

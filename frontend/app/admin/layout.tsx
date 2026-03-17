@@ -34,6 +34,12 @@ export default function AdminLayout({
           >
             Fraud Queue
           </Link>
+          <Link
+            href="/admin/users"
+            className="block rounded px-3 py-2 hover:bg-gray-100"
+          >
+            Users
+          </Link>
         </nav>
       </aside>
 

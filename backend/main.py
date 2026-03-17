@@ -12,6 +12,8 @@ from app.routers.invoice import router as invoice_router
 from app.routers.auth import router as auth_router
 from app.routers.kyc import router as kyc_router, admin_router as admin_kyc_router
 from app.routers.profile import router as profile_router
+from app.routers.admin_users import router as admin_users_router
+from app.routers.admin_stats import router as admin_stats_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -45,6 +47,42 @@ def _ensure_invoice_schema_compatibility() -> None:
             conn.execute(text(stmt))
 
 
+def _ensure_user_schema_compatibility() -> None:
+    """Add missing user columns and enum values for existing DBs without migrations."""
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    existing = {c["name"] for c in inspector.get_columns("users")}
+    statements: list[str] = []
+
+    if "is_active" not in existing:
+        statements.append("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE")
+
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+
+        if engine.dialect.name == "postgresql":
+            # PostgreSQL enum created by SQLAlchemy is typically named 'userrole'.
+            conn.execute(
+                text(
+                    """
+                    DO $$
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userrole') THEN
+                            BEGIN
+                                ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'seller';
+                            EXCEPTION WHEN duplicate_object THEN
+                                NULL;
+                            END;
+                        END IF;
+                    END $$;
+                    """
+                )
+            )
+
+
 
 # ── Environment & Security Configuration ──────────────────────────
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -65,6 +103,7 @@ logger.debug(f"Email Verification Expiry: {EMAIL_VERIFICATION_EXPIRY_HOURS} hour
 # Create all tables on startup
 models.Base.metadata.create_all(bind=engine)
 _ensure_invoice_schema_compatibility()
+_ensure_user_schema_compatibility()
 
 app = FastAPI(
     title="InvoiceChain API",
@@ -106,3 +145,9 @@ app.include_router(admin_kyc_router)
 
 # Profile
 app.include_router(profile_router)
+
+# Admin user management
+app.include_router(admin_users_router)
+
+# Admin statistics and analytics
+app.include_router(admin_stats_router)

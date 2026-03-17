@@ -1,10 +1,24 @@
 import axios from "axios";
 
 const API_BASE = "http://localhost:8000/api/v1/risk";
+const ADMIN_USERS_BASE = "http://localhost:8000/api/v1/admin/users";
+const ADMIN_STATS_BASE = "http://localhost:8000/api/v1/admin/stats";
 
 const api = axios.create({
   baseURL: API_BASE,
   timeout: 10000,
+});
+
+const adminUsersApi = axios.create({
+  baseURL: ADMIN_USERS_BASE,
+  timeout: 10000,
+  withCredentials: true,
+});
+
+const adminStatsApi = axios.create({
+  baseURL: ADMIN_STATS_BASE,
+  timeout: 10000,
+  withCredentials: true,
 });
 
 // Types
@@ -80,6 +94,79 @@ export interface RiskMetrics {
   }[];
   top_high_risk_sellers: { seller_id: number; score: number }[];
   risk_level_breakdown: { level: string; count: number }[];
+}
+
+export interface AdminManagedUser {
+  id: number;
+  email: string;
+  full_name?: string | null;
+  role: "admin" | "investor" | "seller" | "sme";
+  is_active: boolean;
+  email_verified: boolean;
+  created_at: string;
+}
+
+export interface GetAdminUsersParams {
+  role?: "admin" | "investor" | "seller";
+  is_active?: boolean;
+}
+
+// Platform Statistics Types
+export interface PlatformStats {
+  period: string;
+  period_type: "monthly" | "quarterly" | "yearly";
+  total_funded_volume: number;
+  total_invoices_created: number;
+  total_invoices_funded: number;
+  repayment_metrics: {
+    total_repaid: number;
+    total_defaulted: number;
+    repayment_rate: number;
+    default_rate: number;
+  };
+  platform_revenue: number;
+  average_invoice_yield: number;
+  risk_distribution: {
+    high: number;
+    medium: number;
+    low: number;
+    avg_score: number;
+  };
+  sector_exposure: {
+    sectors: Record<string, number>;
+    top_sector: string | null;
+    concentration_ratio: number;
+  };
+  user_metrics: {
+    active_sellers: number;
+    active_investors: number;
+  };
+}
+
+export interface PlatformHealthMetrics {
+  gmv: number;
+  repayment_rate: number;
+  default_rate: number;
+  platform_revenue: number;
+  active_sellers: number;
+  active_investors: number;
+  avg_risk_score: number;
+  avg_invoice_yield: number;
+  high_risk_invoices: number;
+  top_sector: string | null;
+  sector_concentration: number;
+}
+
+export interface RiskHeatmapData {
+  sector_exposure: Record<string, number>;
+  top_sector: string | null;
+  concentration_ratio: number;
+  risk_levels: {
+    high: number;
+    medium: number;
+    low: number;
+  };
+  avg_score: number;
 }
 
 // Mock data generators
@@ -301,3 +388,222 @@ export const deleteFraudItem = async (id: number): Promise<void> => {
     if (idx >= 0) queue.splice(idx, 1);
   }
 };
+
+export const getAdminUsers = async (
+  params?: GetAdminUsersParams,
+): Promise<AdminManagedUser[]> => {
+  const { data } = await adminUsersApi.get<{ users: AdminManagedUser[] }>("/", {
+    params,
+  });
+  return data.users;
+};
+
+export const updateAdminUser = async (
+  userId: number,
+  payload: { role?: "admin" | "investor" | "seller"; is_active?: boolean },
+): Promise<AdminManagedUser> => {
+  const { data } = await adminUsersApi.patch<AdminManagedUser>(
+    `/${userId}`,
+    payload,
+  );
+  return data;
+};
+
+export const createAdminUser = async (payload: {
+  email: string;
+  password: string;
+  full_name?: string;
+  role?: "admin" | "investor" | "seller";
+  is_active?: boolean;
+  email_verified?: boolean;
+}): Promise<AdminManagedUser> => {
+  const { data } = await adminUsersApi.post<AdminManagedUser>("/", payload);
+  return data;
+};
+
+// Platform Statistics API Methods
+export const getPlatformSummary = async (
+  period?: string,
+  periodType: string = "monthly",
+  useCache: boolean = true,
+): Promise<PlatformStats> => {
+  try {
+    const { data } = await adminStatsApi.get<PlatformStats>("/summary", {
+      params: { period, period_type: periodType, use_cache: useCache },
+    });
+    return data;
+  } catch {
+    // Return mock data for demo purposes
+    return generateMockPlatformStats(period);
+  }
+};
+
+export const getPlatformTimeSeries = async (
+  months: number = 12,
+  useCache: boolean = true,
+): Promise<{ months: number; data: PlatformStats[] }> => {
+  try {
+    const { data } = await adminStatsApi.get("/timeseries", {
+      params: { months, use_cache: useCache },
+    });
+    return data;
+  } catch {
+    // Return mock time series data
+    return generateMockTimeSeries(months);
+  }
+};
+
+export const getPlatformHealthMetrics = async (): Promise<
+  PlatformHealthMetrics
+> => {
+  try {
+    const { data } = await adminStatsApi.get<PlatformHealthMetrics>(
+      "/health-metrics",
+    );
+    return data;
+  } catch {
+    // Return mock health metrics
+    return generateMockHealthMetrics();
+  }
+};
+
+export const getRiskHeatmap = async (): Promise<RiskHeatmapData> => {
+  try {
+    const { data } = await adminStatsApi.get<RiskHeatmapData>("/risk-heatmap");
+    return data;
+  } catch {
+    // Return mock heatmap data
+    return generateMockRiskHeatmap();
+  }
+};
+
+export const refreshPlatformStats = async (
+  period?: string,
+): Promise<{ status: string; message: string; period: string }> => {
+  const { data } = await adminStatsApi.post("/refresh", {}, { params: { period } });
+  return data;
+};
+
+// Mock data generators for platform stats
+const generateMockPlatformStats = (period?: string): PlatformStats => ({
+  period: period || "2025-03",
+  period_type: "monthly",
+  total_funded_volume: 2450000,
+  total_invoices_created: 248,
+  total_invoices_funded: 145,
+  repayment_metrics: {
+    total_repaid: 128,
+    total_defaulted: 5,
+    repayment_rate: 88.28,
+    default_rate: 3.45,
+  },
+  platform_revenue: 49000,
+  average_invoice_yield: 4.75,
+  risk_distribution: {
+    high: 12,
+    medium: 48,
+    low: 85,
+    avg_score: 32.5,
+  },
+  sector_exposure: {
+    sectors: {
+      Manufacturing: 35.2,
+      Retail: 28.5,
+      Services: 22.3,
+      Technology: 14.0,
+    },
+    top_sector: "Manufacturing",
+    concentration_ratio: 86.0,
+  },
+  user_metrics: {
+    active_sellers: 342,
+    active_investors: 189,
+  },
+});
+
+const generateMockTimeSeries = (
+  months: number,
+): { months: number; data: PlatformStats[] } => {
+  const data: PlatformStats[] = [];
+  const baseVolume = 1000000;
+  const baseInvoices = 120;
+
+  for (let i = months; i > 0; i--) {
+    const date = new Date();
+    date.setMonth(date.getMonth() - (i - 1));
+    const period = date.toISOString().substring(0, 7);
+
+    data.push({
+      period,
+      period_type: "monthly",
+      total_funded_volume: baseVolume + Math.random() * 500000,
+      total_invoices_created: baseInvoices + Math.floor(Math.random() * 60),
+      total_invoices_funded: Math.floor(
+        (baseInvoices + Math.random() * 60) * 0.6,
+      ),
+      repayment_metrics: {
+        total_repaid: Math.floor(
+          (baseInvoices + Math.random() * 60) * 0.53,
+        ),
+        total_defaulted: Math.floor((baseInvoices + Math.random() * 60) * 0.02),
+        repayment_rate: 85 + Math.random() * 10,
+        default_rate: 2 + Math.random() * 3,
+      },
+      platform_revenue: 20000 + Math.random() * 40000,
+      average_invoice_yield: 3 + Math.random() * 4,
+      risk_distribution: {
+        high: Math.floor(Math.random() * 20),
+        medium: Math.floor(Math.random() * 60),
+        low: Math.floor(Math.random() * 100),
+        avg_score: 30 + Math.random() * 10,
+      },
+      sector_exposure: {
+        sectors: {
+          Manufacturing: 30 + Math.random() * 15,
+          Retail: 25 + Math.random() * 15,
+          Services: 20 + Math.random() * 15,
+          Technology: 10 + Math.random() * 15,
+        },
+        top_sector: "Manufacturing",
+        concentration_ratio: 80 + Math.random() * 10,
+      },
+      user_metrics: {
+        active_sellers: 300 + Math.floor(Math.random() * 80),
+        active_investors: 150 + Math.floor(Math.random() * 60),
+      },
+    });
+  }
+
+  return { months, data };
+};
+
+const generateMockHealthMetrics = (): PlatformHealthMetrics => ({
+  gmv: 2450000,
+  repayment_rate: 88.28,
+  default_rate: 3.45,
+  platform_revenue: 49000,
+  active_sellers: 342,
+  active_investors: 189,
+  avg_risk_score: 32.5,
+  avg_invoice_yield: 12.8,
+  high_risk_invoices: 12,
+  top_sector: "Manufacturing",
+  sector_concentration: 86.0,
+});
+
+const generateMockRiskHeatmap = (): RiskHeatmapData => ({
+  sector_exposure: {
+    Manufacturing: 35.2,
+    Retail: 28.5,
+    Services: 22.3,
+    Technology: 14.0,
+  },
+  top_sector: "Manufacturing",
+  concentration_ratio: 86.0,
+  risk_levels: {
+    high: 12,
+    medium: 48,
+    low: 85,
+  },
+  avg_score: 32.5,
+});

@@ -6,13 +6,13 @@ from datetime import datetime
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, description="Password must be at least 8 characters")
-    role: str = Field(default="sme", description="User role: sme, investor or admin")
+    role: str = Field(default="seller", description="User role: seller, investor or admin")
     
     class Config:
         example = {
             "email": "user@example.com",
             "password": "secure_password_123",
-            "role": "sme"
+            "role": "seller"
         }
 
 
@@ -68,7 +68,7 @@ class UserOut(BaseModel):
         example = {
             "id": 1,
             "email": "user@example.com",
-            "role": "sme",
+            "role": "seller",
             "is_active": True,
             "full_name": "Jane Doe",
             "phone": "+91-9876543210",
@@ -98,7 +98,7 @@ class EmailVerificationResponse(BaseModel):
             "user": {
                 "id": 1,
                 "email": "user@example.com",
-                "role": "sme"
+                "role": "seller"
             }
         }
 

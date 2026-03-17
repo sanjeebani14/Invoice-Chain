@@ -7,9 +7,10 @@ from .database import Base
 # ── Enums ─────────────────────────────────────────────────────────
 
 class UserRole(str, enum.Enum): 
-    sme = "sme"
-    investor = "investor"
-    admin = "admin"
+    ADMIN = "admin"
+    INVESTOR = "investor"
+    SELLER = "seller"
+    SME = "sme"  # Legacy value kept for backward compatibility.
 
 
 # ── User & Authentication ──────────────────────────────
@@ -19,7 +20,15 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    role = Column(Enum(UserRole), nullable=False, default=UserRole.sme)
+    role = Column(
+        Enum(
+            UserRole,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+            name="userrole",
+        ),
+        nullable=False,
+        default=UserRole.SELLER,
+    )
     full_name = Column(String, nullable=True)
     company_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
@@ -179,3 +188,52 @@ class KycSubmission(Base):
 
     user = relationship("User", foreign_keys=[user_id])
     reviewer = relationship("User", foreign_keys=[reviewed_by])
+
+
+# ────PLATFORM STATISTICS & AGGREGATION──────────────────────────────
+class PlatformStats(Base):
+    """
+    Materialized view / aggregated statistics table for platform-level analytics.
+    Updated by trigger events when invoice status changes or periodically via batch jobs.
+    """
+    __tablename__ = "platform_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Time-series aggregation
+    period = Column(String, nullable=False, index=True)  # e.g., "2025-03", "2025-Q1", "2025-Y"
+    period_type = Column(String, nullable=False, default="monthly")  # "monthly", "quarterly", "yearly"
+    
+    # Core GMV metrics
+    total_funded_volume = Column(Float, default=0.0)  # Sum of ask_price for funded invoices
+    total_invoices_created = Column(Integer, default=0)  # Total invoice count for period
+    total_invoices_funded = Column(Integer, default=0)  # Count of funded invoices
+    
+    # Repayment metrics
+    total_invoices_repaid = Column(Integer, default=0)  # Successfully repaid
+    total_invoices_defaulted = Column(Integer, default=0)  # Marked as defaulted
+    repayment_rate = Column(Float, default=0.0)  # Percentage: repaid / funded
+    default_rate = Column(Float, default=0.0)  # Percentage: defaulted / funded
+    
+    # Revenue & yield
+    platform_revenue = Column(Float, default=0.0)  # Total fees collected
+    average_invoice_yield = Column(Float, default=0.0)  # Avg return on funded invoices
+    
+    # Risk exposure
+    average_composite_score = Column(Float, default=0.0)  # Avg seller risk score
+    high_risk_invoices = Column(Integer, default=0)  # Count where score >= 70
+    medium_risk_invoices = Column(Integer, default=0)  # Count where 40 <= score < 70
+    low_risk_invoices = Column(Integer, default=0)  # Count where score < 40
+    
+    # Sector concentration (stored as JSON map)
+    sector_exposure = Column(JSON, nullable=True)  # e.g., {"manufacturing": 45.2, "retail": 30.1}
+    top_sector = Column(String, nullable=True)  # Sector with highest volume
+    concentration_ratio = Column(Float, default=0.0)  # % volume from top 3 sectors
+    
+    # User/seller metrics
+    total_active_sellers = Column(Integer, default=0)
+    total_active_investors = Column(Integer, default=0)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())

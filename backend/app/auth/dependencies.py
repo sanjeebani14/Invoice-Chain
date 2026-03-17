@@ -69,6 +69,11 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
     return user
 
 
+async def get_current_active_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """Compatibility wrapper for callers expecting active-user dependency."""
+    return await get_current_user(request, db)
+
+
 async def get_current_user_from_refresh_token(
     request: Request, 
     db: Session = Depends(get_db)
@@ -137,7 +142,7 @@ async def get_current_user_from_refresh_token(
 
 def require_sme(current_user: User = Depends(get_current_user)):
     """Require user to have SME role"""
-    if current_user.role != UserRole.sme:
+    if current_user.role not in {UserRole.SELLER, UserRole.SME}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only SMEs can access this"
@@ -147,7 +152,7 @@ def require_sme(current_user: User = Depends(get_current_user)):
 
 def require_investor(current_user: User = Depends(get_current_user)):
     """Require user to have investor role"""
-    if current_user.role != UserRole.investor:
+    if current_user.role != UserRole.INVESTOR:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only investors can access this"
@@ -157,10 +162,20 @@ def require_investor(current_user: User = Depends(get_current_user)):
 
 def require_admin(current_user: User = Depends(get_current_user)):
     """Require user to have admin role"""
-    if current_user.role != UserRole.admin:
+    if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can access this"
+        )
+    return current_user
+
+
+def get_current_admin(current_user: User = Depends(get_current_active_user)):
+    """Require the authenticated active user to be an admin."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
         )
     return current_user
 

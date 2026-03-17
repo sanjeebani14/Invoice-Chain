@@ -14,7 +14,7 @@ from ..schemas.auth import (
 )
 from ..auth.hashing import hash_password, verify_password
 from ..auth.tokens import create_access_token, create_refresh_token, decode_token
-from ..models import EmailVerificationToken, User, RefreshToken
+from ..models import EmailVerificationToken, User, RefreshToken, UserRole
 from ..services import email_verification, email as email_service
 from jose import JWTError
 
@@ -69,6 +69,19 @@ def _create_and_store_refresh_token(db: Session, user_id: int) -> str:
     return refresh_token
 
 
+def _normalize_registration_role(raw_role: str | None) -> UserRole:
+    role = (raw_role or "seller").strip().lower()
+    if role == "sme":
+        return UserRole.SELLER
+    if role == "admin":
+        return UserRole.ADMIN
+    if role == "investor":
+        return UserRole.INVESTOR
+    if role == "seller":
+        return UserRole.SELLER
+    return UserRole.SELLER
+
+
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate, db: Session = Depends(get_db)):
     """
@@ -90,7 +103,7 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
     new_user = User(
         email=user_data.email,
         password_hash=hashed_password,
-        role=user_data.role,
+        role=_normalize_registration_role(user_data.role),
         is_active=False  # User must verify email first
     )
     db.add(new_user)
