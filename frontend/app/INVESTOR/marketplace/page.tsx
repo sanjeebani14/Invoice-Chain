@@ -35,8 +35,11 @@ interface Invoice {
   minIncrement?: number;
   auctionEnd?: string;
   bids?: Bid[];
+  totalShares?: number;      // New
+  availableShares?: number;  // New
 }
 
+<<<<<<< Updated upstream
 interface BackendInvoice {
   id: number;
   client_name?: string | null;
@@ -94,6 +97,18 @@ const toMarketplaceInvoice = (inv: BackendInvoice): Invoice => {
     minIncrement: inv.min_bid_increment ?? 100,
   };
 };
+=======
+const MOCK_DATA: Invoice[] = [
+  { id: "1", client: "TechCorp Inc.", sector: "Technology", amount: 5000, risk: 85, type: "fixed", price: 4800, dueDate: "2026-04-05", irr: "12.4%", contractAddr: "0x71C...a291", riskMetrics: [{label: "Financials", score: 92}, {label: "History", score: 88}, {label: "Outlook", score: 75}] },
+  { id: "2", client: "Global Logistics", sector: "Supply Chain", amount: 12000, risk: 72, type: "auction", price: 10500, highestBid: 10500, minIncrement: 200, auctionEnd: "2026-06-01T18:00:00", bids: [{ user: "Alice", amount: 10700, time: "2m ago" }, { user: "Bob", amount: 10500, time: "5m ago" }], dueDate: "2026-06-01", irr: "15.1%", contractAddr: "0x32A...f842", riskMetrics: [{label: "Financials", score: 70}, {label: "History", score: 65}, {label: "Outlook", score: 82}] },
+  { id: "3", client: "Sunrise Retail", sector: "Consumer Goods", amount: 2500, risk: 94, type: "fractional", price: 2500, sharePrice: 25,totalShares: 100,availableShares: 42, dueDate: "2026-03-20", irr: "9.8%", contractAddr: "0x99B...e110", riskMetrics: [{label: "Financials", score: 96}, {label: "History", score: 98}, {label: "Outlook", score: 90}] ,  },
+  { id: "4", client: "Apex Energy", sector: "Renewables", amount: 25000, risk: 89, type: "fixed", price: 23500, dueDate: "2026-08-12", irr: "13.2%", contractAddr: "0x44D...c221", riskMetrics: [{label: "Financials", score: 85}, {label: "History", score: 90}, {label: "Outlook", score: 92}] },
+  { id: "5", client: "BioHealth Labs", sector: "Healthcare", amount: 8400, risk: 68, type: "fixed", price: 7900, dueDate: "2026-05-30", irr: "11.5%", contractAddr: "0x88F...a332", riskMetrics: [{label: "Financials", score: 60}, {label: "History", score: 72}, {label: "Outlook", score: 70}] },
+  { id: "6", client: "Nordic Shipping", sector: "Maritime", amount: 45000, risk: 91, type: "fractional", price: 45000, sharePrice: 100,totalShares: 50,availableShares: 22, dueDate: "2026-04-15", irr: "10.1%", contractAddr: "0x11E...b998", riskMetrics: [{label: "Financials", score: 94}, {label: "History", score: 95}, {label: "Outlook", score: 85}] },
+  { id: "7", client: "Swift Automotives", sector: "Manufacturing", amount: 15600, risk: 78, type: "fixed", price: 14200, dueDate: "2026-09-20", irr: "14.8%", contractAddr: "0x55G...d443", riskMetrics: [{label: "Financials", score: 75}, {label: "History", score: 80}, {label: "Outlook", score: 78}] },
+  { id: "8", client: "Urban Build Co.", sector: "Construction", amount: 32000, risk: 62, type: "auction", price: 29000, dueDate: "2026-03-25", irr: "16.5%", contractAddr: "0x22H...e554", riskMetrics: [{label: "Financials", score: 55}, {label: "History", score: 60}, {label: "Outlook", score: 70}] }
+];
+>>>>>>> Stashed changes
 
 export default function FullMarketplace() {
   const pathname = usePathname();
@@ -640,27 +655,71 @@ export default function FullMarketplace() {
               )}
 
               {/* Fractional Shares Selector */}
-              {selectedInv.type === 'fractional' && (
-                <div className="mb-6">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-4 text-center">Select Number of Shares</p>
-                  <div className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl">
-                    <button 
-                      className="w-12 h-12 bg-white rounded-xl shadow-md font-bold text-xl hover:shadow-lg transition-shadow disabled:opacity-50"
-                      onClick={() => setFractionalShares(Math.max(1, fractionalShares - 1))}
-                      disabled={fractionalShares <= 1}
-                    >
-                      -
-                    </button>
-                    <span className="text-3xl font-black text-slate-900 min-w-[60px] text-center">{fractionalShares}</span>
-                    <button 
-                      className="w-12 h-12 bg-white rounded-xl shadow-md font-bold text-xl hover:shadow-lg transition-shadow"
-                      onClick={() => setFractionalShares(fractionalShares + 1)}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              )}
+{selectedInv.type === 'fractional' && (
+  <div className="mb-6">
+    <div className="flex justify-between items-center mb-4">
+      <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+        Select Number of Shares
+      </p>
+      <span className="text-xs font-bold px-2 py-1 bg-blue-100 text-blue-700 rounded-lg">
+        {selectedInv.availableShares} available
+      </span>
+    </div>
+    
+    <div className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-100">
+      <button 
+        className="w-12 h-12 bg-white rounded-xl shadow-md font-bold text-xl hover:shadow-lg transition-shadow disabled:opacity-50 disabled:cursor-not-allowed"
+        onClick={() => setFractionalShares(Math.max(1, fractionalShares - 1))}
+        disabled={fractionalShares <= 1}
+      >
+        -
+      </button>
+      
+      <div className="flex flex-col items-center">
+        <input 
+          type="number"
+          className="text-3xl font-black text-slate-900 w-24 text-center bg-transparent outline-none"
+          value={fractionalShares}
+          onChange={(e) => {
+            const val = Math.min(
+              Number(e.target.value), 
+              selectedInv.availableShares || 1
+            );
+            setFractionalShares(val < 1 ? 1 : val);
+          }}
+        />
+        <button 
+          onClick={() => setFractionalShares(selectedInv.availableShares || 1)}
+          className="text-[10px] text-blue-600 font-bold hover:underline mt-1"
+        >
+          Buy Max
+        </button>
+      </div>
+
+      <button 
+        className="w-12 h-12 bg-white rounded-xl shadow-md font-bold text-xl hover:shadow-lg transition-shadow disabled:opacity-50"
+        onClick={() => setFractionalShares(Math.min(selectedInv.availableShares || 999, fractionalShares + 1))}
+        disabled={fractionalShares >= (selectedInv.availableShares || 0)}
+      >
+        +
+      </button>
+    </div>
+    
+   {/* Visual Progress Bar */}
+    <div className="mt-4">
+       <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1 uppercase">
+         <span>Availability</span>
+         <span>{Math.round(((selectedInv.availableShares || 0) / (selectedInv.totalShares || 1)) * 100)}% Left</span>
+       </div>
+       <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+         <div 
+           className="h-full bg-blue-500 transition-all duration-500" 
+           style={{ width: `${((selectedInv.availableShares || 0) / (selectedInv.totalShares || 1)) * 100}%` }}
+         />
+       </div>
+    </div>
+  </div> 
+)}
 
               {/* Add to Cart Button */}
               {selectedInv.type !== 'auction' && (

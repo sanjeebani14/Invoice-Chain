@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Pages anyone can visit without being logged in:
+<<<<<<< Updated upstream
 const PUBLIC_PATHS = ["/", "/login", "/register", "/verify-email"];
+=======
+const PUBLIC_PATHS = ["/login", "/register","/INVESTOR","/upload","/admin"];
+>>>>>>> Stashed changes
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
