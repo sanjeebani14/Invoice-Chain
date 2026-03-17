@@ -27,15 +27,26 @@ export default function LoginPage() {
     try {
       await login({ email, password });
       toast.success("Logged in successfully");
-      const me = await axios.get("http://localhost:8000/auth/me", { withCredentials: true });
-      const role = me.data?.role as string | undefined;
+      const me = await axios.get("http://localhost:8000/auth/me", {
+        withCredentials: true,
+      });
+      const rawRole = String(me.data?.role ?? "").toLowerCase();
+      const role = rawRole.includes("admin")
+        ? "admin"
+        : rawRole.includes("investor")
+          ? "investor"
+          : "sme";
 
-      // Check KYC status
+      // Admins bypass KYC flow and always land on admin dashboard.
+      if (role === "admin") {
+        await router.push("/admin/dashboard");
+        return;
+      }
+
+      // Check KYC status for non-admin users.
       const res = await getMyKyc();
       if (!res.kyc || res.kyc.status !== "approved") {
         await router.push("/kyc");
-      } else if (role === "admin") {
-        await router.push("/admin/dashboard");
       } else if (role === "investor") {
         await router.push("/INVESTOR/marketplace");
       } else {
@@ -43,8 +54,8 @@ export default function LoginPage() {
       }
     } catch (err: unknown) {
       const message =
-        (err as { response?: { data?: { detail?: string } } })
-          ?.response?.data?.detail ?? "Invalid email or password";
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? "Invalid email or password";
       toast.error(message);
     } finally {
       setLoading(false);
@@ -72,29 +83,35 @@ export default function LoginPage() {
 
         <div className="space-y-2">
           <Label htmlFor="password">Password</Label>
-            <div className="relative">
-              <Input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                className="pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-700"
-                aria-label={showPassword ? "Hide password" : "Show password"}
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-700"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
         </div>
 
-        <Button type="submit" className="w-full" variant="default" size="lg" disabled={loading}>
+        <Button
+          type="submit"
+          className="w-full"
+          variant="default"
+          size="lg"
+          disabled={loading}
+        >
           {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {loading ? "Signing in..." : "Sign in"}
         </Button>
@@ -102,7 +119,10 @@ export default function LoginPage() {
 
       <p className="mt-6 text-center text-sm text-muted-foreground">
         Don&apos;t have an account?{" "}
-        <Link href="/register" className="font-medium text-foreground hover:underline">
+        <Link
+          href="/register"
+          className="font-medium text-foreground hover:underline"
+        >
           Register
         </Link>
       </p>

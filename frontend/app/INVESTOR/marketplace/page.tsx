@@ -39,7 +39,6 @@ interface Invoice {
   availableShares?: number;  // New
 }
 
-<<<<<<< Updated upstream
 interface BackendInvoice {
   id: number;
   client_name?: string | null;
@@ -97,7 +96,6 @@ const toMarketplaceInvoice = (inv: BackendInvoice): Invoice => {
     minIncrement: inv.min_bid_increment ?? 100,
   };
 };
-=======
 const MOCK_DATA: Invoice[] = [
   { id: "1", client: "TechCorp Inc.", sector: "Technology", amount: 5000, risk: 85, type: "fixed", price: 4800, dueDate: "2026-04-05", irr: "12.4%", contractAddr: "0x71C...a291", riskMetrics: [{label: "Financials", score: 92}, {label: "History", score: 88}, {label: "Outlook", score: 75}] },
   { id: "2", client: "Global Logistics", sector: "Supply Chain", amount: 12000, risk: 72, type: "auction", price: 10500, highestBid: 10500, minIncrement: 200, auctionEnd: "2026-06-01T18:00:00", bids: [{ user: "Alice", amount: 10700, time: "2m ago" }, { user: "Bob", amount: 10500, time: "5m ago" }], dueDate: "2026-06-01", irr: "15.1%", contractAddr: "0x32A...f842", riskMetrics: [{label: "Financials", score: 70}, {label: "History", score: 65}, {label: "Outlook", score: 82}] },
@@ -108,7 +106,7 @@ const MOCK_DATA: Invoice[] = [
   { id: "7", client: "Swift Automotives", sector: "Manufacturing", amount: 15600, risk: 78, type: "fixed", price: 14200, dueDate: "2026-09-20", irr: "14.8%", contractAddr: "0x55G...d443", riskMetrics: [{label: "Financials", score: 75}, {label: "History", score: 80}, {label: "Outlook", score: 78}] },
   { id: "8", client: "Urban Build Co.", sector: "Construction", amount: 32000, risk: 62, type: "auction", price: 29000, dueDate: "2026-03-25", irr: "16.5%", contractAddr: "0x22H...e554", riskMetrics: [{label: "Financials", score: 55}, {label: "History", score: 60}, {label: "Outlook", score: 70}] }
 ];
->>>>>>> Stashed changes
+
 
 export default function FullMarketplace() {
   const pathname = usePathname();

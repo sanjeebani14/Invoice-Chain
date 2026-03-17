@@ -149,29 +149,22 @@ def get_score(seller_id: int, db: Session = Depends(get_db)):
     if not seller:
         raise HTTPException(status_code=404, detail="Seller ID not found in database.")
 
-    # 2. Use the persisted composite_score so the value on the
-    # seller list and the detail page stays consistent.
-    composite_score = int(seller.composite_score or 0)
-    risk_level = _to_risk_level(composite_score)
-
-    breakdown = {
-        "financial_risk": int(seller.payment_history_score or 0),
-        "relationship_stability": float(seller.transaction_stability or 0.0),
-        "buyer_quality": int(seller.core_enterprise_rating or 0),
-        "logistics_quality": float(seller.logistics_consistency or 0.0),
-        "esg_score": float(seller.esg_score or 0.0),
-    }
+    # 2. Recompute score on demand so this endpoint reflects live model output.
+    result = risk_engine.calculate_score(db=db, seller_id=seller_id)
+    db.refresh(seller)
 
     return {
         "seller_id": seller_id,
-        "composite_score": composite_score,
-        "risk_level": risk_level,
+        "composite_score": int(result["composite_score"]),
+        "risk_level": str(result["risk_level"]),
         "credit_score": seller.payment_history_score,
         "debt_to_income": seller.debt_to_income,
         "employment_years": seller.employment_years,
-        # Simple interpretable breakdown derived from CreditHistory.
-        "insights": [],
-        "breakdown": breakdown,
+        "insights": result.get("insights", []),
+        "breakdown": result.get("breakdown", {}),
+        "scoring_method": result.get("scoring_method"),
+        "model_used": bool(result.get("model_used", False)),
+        "fallback_used": bool(result.get("fallback_used", False)),
         "risk_contributors": seller.risk_contributors,
         "last_updated": _to_iso(seller.last_updated),
     }
@@ -196,6 +189,17 @@ def get_sellers(db: Session = Depends(get_db)):
             seen[rec.seller_id] = rec
 
     sellers = list(seen.values())
+
+    # Backfill stale rows generated before the current risk pipeline.
+    # We only recompute sellers whose score is null/zero to avoid repeated heavy work.
+    stale_sellers = [s for s in sellers if (s.composite_score is None or s.composite_score == 0)]
+    for s in stale_sellers:
+        try:
+            risk_engine.calculate_score(db=db, seller_id=int(s.seller_id))
+            db.refresh(s)
+        except Exception:
+            # Keep endpoint resilient even if one seller fails scoring.
+            continue
 
     return [
         {
