@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { getToken } from "@/lib/auth";
+import axios from "axios";
 
 type FinancingType = "fixed" | "auction" | "fractional";
 
@@ -47,11 +47,6 @@ export default function InvoiceCorrection({ data }: { data: any }) {
   const saveCorrections = async () => {
     setIsSaving(true);
     try {
-      const token = getToken();
-      if (!token) {
-        throw new Error("Please log in before saving invoice corrections.");
-      }
-
       const payload = {
         invoice_number: fields.invoice_number,
         client_name: fields.client_name,
@@ -70,25 +65,20 @@ export default function InvoiceCorrection({ data }: { data: any }) {
             : null,
       };
 
-      const response = await fetch(`http://localhost:8000/api/v1/invoice/invoices/${data.invoice_id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const responseData = await response.json();
-
-      if (!response.ok) {
-        throw new Error(responseData.detail || responseData.message || "Failed to save invoice corrections");
-      }
+      await axios.put(
+        `http://localhost:8000/api/v1/invoice/invoices/${data.invoice_id}`,
+        payload,
+        { withCredentials: true }
+      );
       
       alert("Invoice finalized and saved to the database!");
     } catch (error) {
       console.error("Save failed", error);
-      alert(error instanceof Error ? error.message : "Save failed");
+      const message =
+        (error as any)?.response?.data?.detail ||
+        (error as any)?.response?.data?.message ||
+        (error instanceof Error ? error.message : "Save failed");
+      alert(message);
     } finally {
       setIsSaving(false);
     }
