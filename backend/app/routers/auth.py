@@ -24,6 +24,7 @@ router = APIRouter(tags=["Authentication"])
 ACCESS_TOKEN_COOKIE_MAX_AGE = 900  # 15 minutes
 REFRESH_TOKEN_COOKIE_MAX_AGE = 604800  # 7 days
 SECURE_COOKIES = os.getenv("ENVIRONMENT", "development") == "production"  # False for localhost
+ALLOW_DEV_EMAIL_BYPASS = os.getenv("ALLOW_DEV_EMAIL_BYPASS", "true").strip().lower() == "true"
 
 
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
@@ -116,6 +117,16 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
         email_sent = email_service.send_verification_email(new_user.email, plain_token)
 
         if not email_sent:
+            # Local dev fallback: allow onboarding when SMTP isn't configured.
+            if os.getenv("ENVIRONMENT", "development") == "development" and ALLOW_DEV_EMAIL_BYPASS:
+                new_user.email_verified = True
+                new_user.is_active = True
+                new_user.verified_at = datetime.utcnow()
+                db.commit()
+                return {
+                    "message": "Registration successful (development mode). Email auto-verified because SMTP is not configured."
+                }
+
             db.delete(new_user)
             db.commit()
             raise HTTPException(

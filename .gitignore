@@ -3,3 +3,14 @@
 data/
 backend/data/
 minio_data/
+.venv/
+register.json
+login.json
+admin_login.json
+inv16_update.json
+mint16.json
+node_modules/
+*.cookies
+blockchain/artifacts/
+blockchain/cache/
+blockchain/ignition/deployments/

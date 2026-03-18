@@ -11,6 +11,7 @@ from ..services.ocr import process_invoice_file
 from ..services.hashing import generate_invoice_hash
 from ..services.duplicate import run_duplicate_detection
 from ..services.fraud_anomaly import InvoiceAnomalyService
+from ..services.minting import get_invoice_minting_service
 from ..auth.dependencies import get_current_user, require_sme, require_admin
 
 router = APIRouter(prefix="/invoices", tags=["Invoice Processing"])
@@ -21,6 +22,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 MAX_FILE_SIZE_MB = 10
 anomaly_service = InvoiceAnomalyService()
+minting_service = get_invoice_minting_service()
 
 
 class InvoiceUpdatePayload(BaseModel):
@@ -34,6 +36,19 @@ class InvoiceUpdatePayload(BaseModel):
     ask_price: Optional[float] = None
     share_price: Optional[float] = None
     min_bid_increment: Optional[float] = None
+    supply: Optional[int] = None  # 1 for whole invoice, N for N fractional shares
+
+
+class MintInvoicePayload(BaseModel):
+    recipient_address: str
+    ipfs_uri: Optional[str] = ""
+    supply: Optional[int] = None
+
+
+class ValidateFractionalPayload(BaseModel):
+    amount: float
+    share_price: float
+    num_shares: int
 
 
 # ── POST /invoices/upload ── SME only ────────────────────────────────────────
@@ -273,6 +288,10 @@ def update_invoice_fields(
         invoice.share_price = payload.share_price
     if payload.min_bid_increment is not None:
         invoice.min_bid_increment = payload.min_bid_increment
+    if payload.supply is not None:
+        if payload.supply < 1:
+            raise HTTPException(status_code=400, detail="Supply must be >= 1")
+        invoice.supply = payload.supply
 
     hash_result = generate_invoice_hash(
         invoice_number=invoice.invoice_number or "",
@@ -341,6 +360,94 @@ def review_invoice(
     return {"message": f"Invoice {action}d", "status": invoice.status}
 
 
+# ── POST /invoices/{invoice_id}/mint ── admin or seller ───────────────────────
+
+@router.post("/{invoice_id}/mint")
+def mint_invoice_nft(
+    invoice_id: int,
+    payload: MintInvoicePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Mint an invoice as an ERC1155 NFT with optional fractional shares.
+    
+    Admins can mint any approved invoice.
+    Sellers can mint their own approved invoices.
+    """
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # Authorization: must be admin or the seller
+    if current_user.role != UserRole.ADMIN and invoice.seller_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to mint this invoice")
+
+    # Validation: must be approved
+    if invoice.status not in ["approved", "pending_mint"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invoice status '{invoice.status}' is not eligible for minting. "
+                   "Must be 'approved' or 'pending_mint'.",
+        )
+
+    # Validation: cannot mint same invoice twice
+    if invoice.token_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invoice already minted with token_id: {invoice.token_id}",
+        )
+
+    # Call minting service
+    mint_result = minting_service.mint_invoice(
+        db=db,
+        invoice_id=invoice_id,
+        recipient_address=payload.recipient_address,
+        ipfs_uri=payload.ipfs_uri or "",
+        supply=payload.supply,
+    )
+
+    if not mint_result["success"]:
+        raise HTTPException(status_code=400, detail=mint_result["error"])
+
+    return {
+        "message": "Invoice successfully minted",
+        "token_id": mint_result["token_id"],
+        "tx_hash": mint_result["tx_hash"],
+        "supply": mint_result["supply"],
+        "status": "minted",
+    }
+
+
+# ── POST /invoices/mint/validate-fractional ──────────────────────────────────
+
+@router.post("/mint/validate-fractional")
+def validate_fractional_config(
+    payload: ValidateFractionalPayload,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Validate a fractional invoice configuration.
+    Ensures that (share_price × num_shares) ≈ total amount.
+    """
+    is_valid, error_msg = minting_service.validate_fractional_config(
+        amount=payload.amount,
+        share_price=payload.share_price,
+        num_shares=payload.num_shares,
+    )
+
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+
+    return {
+        "valid": True,
+        "num_shares": payload.num_shares,
+        "total_amount": payload.amount,
+        "share_price": payload.share_price,
+        "is_fractional": payload.num_shares > 1,
+    }
+
+
 # ── GET /invoices/admin/flagged ── admin only ─────────────────────────────────
 
 @router.get("/admin/flagged")
@@ -375,6 +482,8 @@ def _invoice_to_dict(invoice: Invoice) -> dict:
         "ask_price": invoice.ask_price,
         "share_price": invoice.share_price,
         "min_bid_increment": invoice.min_bid_increment,
+        "supply": invoice.supply,
+        "token_id": invoice.token_id,
         "canonical_hash": invoice.canonical_hash,
         "is_duplicate": invoice.is_duplicate,
         "status": invoice.status,
