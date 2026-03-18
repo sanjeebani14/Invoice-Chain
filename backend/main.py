@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def _ensure_invoice_schema_compatibility() -> None:
-    """Add new invoice marketplace columns for existing DBs without migrations."""
+    """Add new invoice marketplace and blockchain columns for existing DBs without migrations."""
     inspector = inspect(engine)
     if "invoices" not in inspector.get_table_names():
         return
@@ -38,6 +38,10 @@ def _ensure_invoice_schema_compatibility() -> None:
         statements.append("ALTER TABLE invoices ADD COLUMN share_price DOUBLE PRECISION")
     if "min_bid_increment" not in existing:
         statements.append("ALTER TABLE invoices ADD COLUMN min_bid_increment DOUBLE PRECISION")
+    if "supply" not in existing:
+        statements.append("ALTER TABLE invoices ADD COLUMN supply INTEGER DEFAULT 1")
+    if "token_id" not in existing:
+        statements.append("ALTER TABLE invoices ADD COLUMN token_id VARCHAR")
 
     if not statements:
         return
@@ -56,8 +60,16 @@ def _ensure_user_schema_compatibility() -> None:
     existing = {c["name"] for c in inspector.get_columns("users")}
     statements: list[str] = []
 
+    if "email_verified" not in existing:
+        statements.append("ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE")
+    if "verified_at" not in existing:
+        statements.append("ALTER TABLE users ADD COLUMN verified_at TIMESTAMPTZ")
     if "is_active" not in existing:
         statements.append("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE")
+    if "last_login" not in existing:
+        statements.append("ALTER TABLE users ADD COLUMN last_login TIMESTAMPTZ")
+    if "last_refresh_token_issued_at" not in existing:
+        statements.append("ALTER TABLE users ADD COLUMN last_refresh_token_issued_at TIMESTAMPTZ")
 
     with engine.begin() as conn:
         for stmt in statements:

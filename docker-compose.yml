@@ -2,6 +2,7 @@ services:
   # Database Service [cite: 10, 92]
   db:
     image: postgres:15-alpine
+    platform: linux/amd64
     container_name: invoice_db
     restart: always
     environment:

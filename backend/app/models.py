@@ -72,6 +72,10 @@ class Invoice(Base):
     share_price = Column(Float, nullable=True)
     min_bid_increment = Column(Float, nullable=True)
 
+    # Fractional Minting Support
+    supply = Column(Integer, default=1)  # 1 for whole invoice, N for N fractional shares
+    token_id = Column(String, nullable=True, index=True)  # ERC1155 token ID from smart contract
+
     # OCR confidence scores (0.0 - 1.0 per field)
     ocr_confidence = Column(JSON)                       # e.g. {"amount": 0.95, "due_date": 0.71}
 
