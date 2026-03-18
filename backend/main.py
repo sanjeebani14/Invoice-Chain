@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 from app.database import engine
 from app import models
 import os
@@ -113,9 +114,12 @@ logger.debug(f"Email Verification Expiry: {EMAIL_VERIFICATION_EXPIRY_HOURS} hour
 
 
 # Create all tables on startup
-models.Base.metadata.create_all(bind=engine)
-_ensure_invoice_schema_compatibility()
-_ensure_user_schema_compatibility()
+try:
+    models.Base.metadata.create_all(bind=engine)
+    _ensure_invoice_schema_compatibility()
+    _ensure_user_schema_compatibility()
+except SQLAlchemyError as exc:
+    logger.warning("Skipping DB bootstrap during startup: %s", exc)
 
 app = FastAPI(
     title="InvoiceChain API",

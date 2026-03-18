@@ -1,20 +1,20 @@
 services:
-  # Database Service [cite: 10, 92]
-  db:
-    image: postgres:15-alpine
-    platform: linux/amd64
-    container_name: invoice_db
-    restart: always
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+  # Database Service 
+  # db:
+  #   image: postgres:15-alpine
+  #   platform: linux/amd64
+  #   container_name: invoice_db
+  #   restart: always
+  #   environment:
+  #     POSTGRES_USER: ${POSTGRES_USER}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #     POSTGRES_DB: ${POSTGRES_DB}
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
 
-  # Caching & Messaging Service [cite: 10, 90]
+  # Caching & Messaging Service 
   redis:
     image: redis:7-alpine
     container_name: invoice_redis
@@ -22,7 +22,7 @@ services:
     ports:
       - "6379:6379"
 
-  # MinIO Service [cite: 10, 90]
+  # MinIO Service 
   minio:
     image: quay.io/minio/minio
     ports:

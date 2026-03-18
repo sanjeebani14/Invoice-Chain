@@ -1,8 +1,10 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.database import engine, get_db
 from app import models
@@ -14,6 +16,7 @@ router = APIRouter()
 # Initialize the engine once
 risk_engine = RiskScoringEngine()
 anomaly_explainer = InvoiceAnomalyService()
+logger = logging.getLogger(__name__)
 
 
 def _ensure_credit_history_schema_compatibility() -> None:
@@ -39,6 +42,8 @@ def _ensure_credit_history_schema_compatibility() -> None:
         statements.append("ALTER TABLE credit_history ADD COLUMN esg_score DOUBLE PRECISION")
     if "risk_contributors" not in existing:
         statements.append("ALTER TABLE credit_history ADD COLUMN risk_contributors JSON")
+    if "risk_input_signature" not in existing:
+        statements.append("ALTER TABLE credit_history ADD COLUMN risk_input_signature VARCHAR")
 
     if not statements:
         return
@@ -48,7 +53,13 @@ def _ensure_credit_history_schema_compatibility() -> None:
             conn.execute(text(stmt))
 
 
-_ensure_credit_history_schema_compatibility()
+try:
+    _ensure_credit_history_schema_compatibility()
+except SQLAlchemyError as exc:
+    logger.warning(
+        "Skipping credit_history schema compatibility check at startup: %s",
+        exc,
+    )
 
 
 def _ensure_fraud_flags_schema_compatibility() -> None:
@@ -73,7 +84,13 @@ def _ensure_fraud_flags_schema_compatibility() -> None:
             conn.execute(text(stmt))
 
 
-_ensure_fraud_flags_schema_compatibility()
+try:
+    _ensure_fraud_flags_schema_compatibility()
+except SQLAlchemyError as exc:
+    logger.warning(
+        "Skipping fraud_flags schema compatibility check at startup: %s",
+        exc,
+    )
 
 
 def _ensure_fraud_queue_suppressions_schema() -> None:
@@ -88,7 +105,13 @@ def _ensure_fraud_queue_suppressions_schema() -> None:
         conn.execute(text(create_stmt))
 
 
-_ensure_fraud_queue_suppressions_schema()
+try:
+    _ensure_fraud_queue_suppressions_schema()
+except SQLAlchemyError as exc:
+    logger.warning(
+        "Skipping fraud_queue_suppressions schema initialization at startup: %s",
+        exc,
+    )
 
 
 def _to_risk_level(score: int) -> str:
@@ -139,19 +162,26 @@ def _to_iso(dt: datetime | None) -> str | None:
 
 @router.get("/score/{seller_id}")
 def get_score(seller_id: int, db: Session = Depends(get_db)):
-    # 1. Get the seller record
-    seller = (
-        db.query(models.CreditHistory)
-        .filter(models.CreditHistory.seller_id == seller_id)
-        .first()
-    )
+    # 1. Get deterministic canonical seller record (old datasets may have duplicates).
+    seller = _canonical_credit_history_by_seller(db, {seller_id}).get(seller_id)
 
     if not seller:
         raise HTTPException(status_code=404, detail="Seller ID not found in database.")
 
-    # 2. Recompute score on demand so this endpoint reflects live model output.
-    result = risk_engine.calculate_score(db=db, seller_id=seller_id)
-    db.refresh(seller)
+    # 2. Recompute only when scoring inputs changed.
+    if risk_engine.should_recompute(seller):
+        result = risk_engine.calculate_score(db=db, seller_id=seller_id)
+        db.refresh(seller)
+    else:
+        result = {
+            "composite_score": int(seller.composite_score or 0),
+            "risk_level": _to_risk_level(int(seller.composite_score or 0)),
+            "insights": [],
+            "breakdown": {},
+            "scoring_method": "cached",
+            "model_used": False,
+            "fallback_used": False,
+        }
 
     return {
         "seller_id": seller_id,
@@ -172,27 +202,11 @@ def get_score(seller_id: int, db: Session = Depends(get_db)):
 
 @router.get("/sellers")
 def get_sellers(db: Session = Depends(get_db)):
-    # Deduplicate on seller_id in case historical data has multiple
-    # CreditHistory rows per seller.
-    records = (
-        db.query(models.CreditHistory)
-        .order_by(models.CreditHistory.seller_id.asc(), models.CreditHistory.id.asc())
-        .all()
-    )
+    # Canonicalized list keeps one stable row per seller_id.
+    sellers = list(_canonical_credit_history_by_seller(db).values())
 
-    seen: dict[int, models.CreditHistory] = {}
-    for rec in records:
-        if rec.seller_id is None:
-            continue
-        # Keep the first record per seller_id (or adjust rule as needed)
-        if rec.seller_id not in seen:
-            seen[rec.seller_id] = rec
-
-    sellers = list(seen.values())
-
-    # Backfill stale rows generated before the current risk pipeline.
-    # We only recompute sellers whose score is null/zero to avoid repeated heavy work.
-    stale_sellers = [s for s in sellers if (s.composite_score is None or s.composite_score == 0)]
+    # Backfill only records whose scoring inputs changed or were never scored.
+    stale_sellers = [s for s in sellers if risk_engine.should_recompute(s)]
     for s in stale_sellers:
         try:
             risk_engine.calculate_score(db=db, seller_id=int(s.seller_id))

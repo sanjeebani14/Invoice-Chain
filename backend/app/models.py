@@ -115,6 +115,7 @@ class CreditHistory(Base):
 
     # Interpretable ML outputs
     risk_contributors = Column(JSON, nullable=True)  # Stores SHAP-style attributions per feature
+    risk_input_signature = Column(String, nullable=True)  # Hash of features used for latest score
 
     composite_score = Column(Integer, default=0)  # Final Risk Score (0-100)
     last_updated = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())

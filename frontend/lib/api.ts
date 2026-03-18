@@ -274,27 +274,8 @@ const getMockFraudQueue = () => {
 export const getSellerScore = async (
   sellerId: number,
 ): Promise<SellerScore> => {
-  try {
-    const { data } = await api.get(`/score/${sellerId}`);
-    return data;
-  } catch {
-    // If direct score lookup fails (e.g. API not running), fall back to the
-    // same data source used by the seller list so composite scores stay
-    // consistent between the table and the detail view.
-    try {
-      const all = await getAllSellers();
-      const fromList = all.find((s) => s.seller_id === sellerId);
-      if (fromList) return fromList;
-    } catch {
-      // ignore and fall through to mocks
-    }
-
-    const mock = getMockSellers().find((s) => s.seller_id === sellerId);
-    if (mock) return mock;
-
-    // As a last resort, throw so the UI can handle the missing seller.
-    throw new Error("Seller not found");
-  }
+  const { data } = await api.get(`/score/${sellerId}`);
+  return data;
 };
 
 export const getAllSellers = async (): Promise<SellerScore[]> => {
@@ -302,17 +283,13 @@ export const getAllSellers = async (): Promise<SellerScore[]> => {
     const { data } = await api.get("/sellers");
     return data;
   } catch {
-    return getMockSellers();
+    return [];
   }
 };
 
 export const getRiskMetrics = async (): Promise<RiskMetrics> => {
-  try {
-    const { data } = await api.get("/admin/risk-metrics");
-    return data;
-  } catch {
-    return generateMockMetrics();
-  }
+  const { data } = await api.get("/admin/risk-metrics");
+  return data;
 };
 
 export const getFraudQueue = async (): Promise<FraudQueueItem[]> => {
@@ -329,26 +306,30 @@ export const getFraudQueue = async (): Promise<FraudQueueItem[]> => {
             : "LOW"),
     }));
   } catch {
-    return getMockFraudQueue();
+    return [];
   }
 };
 
 export const getSellerFraudFlags = async (
   sellerId: number,
 ): Promise<FraudQueueItem[]> => {
-  const { data } = await api.get("/admin/fraud-queue", {
-    params: { seller_id: sellerId },
-  });
-  return (data as FraudQueueItem[]).map((item) => ({
-    ...item,
-    severity:
-      item.severity ??
-      (item.risk_score >= 80
-        ? "HIGH"
-        : item.risk_score >= 50
-          ? "MEDIUM"
-          : "LOW"),
-  }));
+  try {
+    const { data } = await api.get("/admin/fraud-queue", {
+      params: { seller_id: sellerId },
+    });
+    return (data as FraudQueueItem[]).map((item) => ({
+      ...item,
+      severity:
+        item.severity ??
+        (item.risk_score >= 80
+          ? "HIGH"
+          : item.risk_score >= 50
+            ? "MEDIUM"
+            : "LOW"),
+    }));
+  } catch {
+    return [];
+  }
 };
 
 export const manualFraudFlag = async (
@@ -368,25 +349,11 @@ export const reviewFraudItem = async (
   id: number,
   action: string,
 ): Promise<void> => {
-  try {
-    await api.post(`/admin/fraud-review/${id}`, { action });
-  } catch {
-    // Mock: update local state
-    const queue = getMockFraudQueue();
-    const item = queue.find((q) => q.id === id);
-    if (item) item.status = "Resolved";
-  }
+  await api.post(`/admin/fraud-review/${id}`, { action });
 };
 
 export const deleteFraudItem = async (id: number): Promise<void> => {
-  try {
-    await api.delete(`/admin/fraud-queue/${id}`);
-  } catch {
-    // Mock: remove resolved item from local queue
-    const queue = getMockFraudQueue();
-    const idx = queue.findIndex((q) => q.id === id && q.status === "Resolved");
-    if (idx >= 0) queue.splice(idx, 1);
-  }
+  await api.delete(`/admin/fraud-queue/${id}`);
 };
 
 export const getAdminUsers = async (
@@ -427,15 +394,10 @@ export const getPlatformSummary = async (
   periodType: string = "monthly",
   useCache: boolean = true,
 ): Promise<PlatformStats> => {
-  try {
-    const { data } = await adminStatsApi.get<PlatformStats>("/summary", {
-      params: { period, period_type: periodType, use_cache: useCache },
-    });
-    return data;
-  } catch {
-    // Return mock data for demo purposes
-    return generateMockPlatformStats(period);
-  }
+  const { data } = await adminStatsApi.get<PlatformStats>("/summary", {
+    params: { period, period_type: periodType, use_cache: useCache },
+  });
+  return data;
 };
 
 export const getPlatformTimeSeries = async (
@@ -448,39 +410,38 @@ export const getPlatformTimeSeries = async (
     });
     return data;
   } catch {
-    // Return mock time series data
-    return generateMockTimeSeries(months);
+    return { months, data: [] };
   }
 };
 
-export const getPlatformHealthMetrics = async (): Promise<
-  PlatformHealthMetrics
-> => {
-  try {
-    const { data } = await adminStatsApi.get<PlatformHealthMetrics>(
-      "/health-metrics",
-    );
-    return data;
-  } catch {
-    // Return mock health metrics
-    return generateMockHealthMetrics();
-  }
-};
+export const getPlatformHealthMetrics =
+  async (): Promise<PlatformHealthMetrics> => {
+    try {
+      const { data } =
+        await adminStatsApi.get<PlatformHealthMetrics>("/health-metrics");
+      return data;
+    } catch {
+      throw new Error("Unable to fetch health metrics");
+    }
+  };
 
 export const getRiskHeatmap = async (): Promise<RiskHeatmapData> => {
   try {
     const { data } = await adminStatsApi.get<RiskHeatmapData>("/risk-heatmap");
     return data;
   } catch {
-    // Return mock heatmap data
-    return generateMockRiskHeatmap();
+    throw new Error("Unable to fetch risk heatmap");
   }
 };
 
 export const refreshPlatformStats = async (
   period?: string,
 ): Promise<{ status: string; message: string; period: string }> => {
-  const { data } = await adminStatsApi.post("/refresh", {}, { params: { period } });
+  const { data } = await adminStatsApi.post(
+    "/refresh",
+    {},
+    { params: { period } },
+  );
   return data;
 };
 
@@ -542,9 +503,7 @@ const generateMockTimeSeries = (
         (baseInvoices + Math.random() * 60) * 0.6,
       ),
       repayment_metrics: {
-        total_repaid: Math.floor(
-          (baseInvoices + Math.random() * 60) * 0.53,
-        ),
+        total_repaid: Math.floor((baseInvoices + Math.random() * 60) * 0.53),
         total_defaulted: Math.floor((baseInvoices + Math.random() * 60) * 0.02),
         repayment_rate: 85 + Math.random() * 10,
         default_rate: 2 + Math.random() * 3,

@@ -83,7 +83,7 @@ export default function SellerExplorer() {
               </h1>
               <p className="max-w-2xl text-sm text-slate-600">
                 Review seller risk posture, scan for outliers, and jump into
-                detailed profiles without the dark dashboard styling.
+                detailed profiles.
               </p>
             </div>
           </div>

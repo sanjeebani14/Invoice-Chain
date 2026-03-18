@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 from typing import Any, Dict, List, Optional
@@ -69,12 +71,18 @@ class RiskScoringEngine:
         seller_id: int,
         invoice_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        # 1. Fetch the seller record with multi-entity indicators
-        seller = (
+        # 1. Fetch a deterministic canonical record.
+        # Historical datasets may contain duplicate rows per seller_id, so
+        # relying on unordered `.first()` can alternate rows between calls.
+        seller_query = (
             db.query(models.CreditHistory)
             .filter(models.CreditHistory.seller_id == seller_id)
-            .first()
+            .order_by(models.CreditHistory.id.asc())
         )
+        if db.bind is not None and db.bind.dialect.name == "postgresql":
+            seller_query = seller_query.with_for_update()
+
+        seller = seller_query.first()
 
         if not seller:
             return {
@@ -85,6 +93,24 @@ class RiskScoringEngine:
             }
 
         features_df = self._build_feature_vector(seller, invoice_data)
+        current_signature = self._build_signature_from_features(features_df)
+
+        # If inputs are unchanged, skip inference and reuse stored score.
+        if (
+            seller.composite_score is not None
+            and getattr(seller, "risk_input_signature", None) == current_signature
+        ):
+            score_int = int(seller.composite_score or 0)
+            risk_level = "High" if score_int > 70 else "Medium" if score_int > 40 else "Low"
+            return {
+                "composite_score": score_int,
+                "risk_level": risk_level,
+                "insights": [],
+                "scoring_method": "cached",
+                "model_used": False,
+                "fallback_used": False,
+                "breakdown": self._build_breakdown(seller, features_df.iloc[0].to_dict()),
+            }
 
         if self.model is not None:
             logger.debug(f"Using XGBoost model for seller_id={seller_id}")
@@ -132,6 +158,7 @@ class RiskScoringEngine:
         # Persist attribution vector for future analytics
         seller.risk_contributors = contributors
         seller.composite_score = score_int
+        seller.risk_input_signature = current_signature
 
         # Automatically open a fraud review flag whenever a newly
         # calculated score crosses the high‑risk threshold, regardless
@@ -172,6 +199,51 @@ class RiskScoringEngine:
             "fallback_used": fallback_used,
             "breakdown": self._build_breakdown(seller, features_df.iloc[0].to_dict()),
         }
+
+    def should_recompute(
+        self,
+        seller: models.CreditHistory,
+        invoice_data: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Return True only when score inputs changed or score is missing."""
+        if seller.composite_score is None:
+            return True
+
+        stored_signature = getattr(seller, "risk_input_signature", None)
+        if not stored_signature:
+            return True
+
+        current_signature = self.compute_input_signature(seller, invoice_data)
+        return current_signature != stored_signature
+
+    def compute_input_signature(
+        self,
+        seller: models.CreditHistory,
+        invoice_data: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        features_df = self._build_feature_vector(seller, invoice_data)
+        return self._build_signature_from_features(features_df)
+
+    def _build_signature_from_features(self, features: pd.DataFrame) -> str:
+        row = features.iloc[0].to_dict()
+        normalised: Dict[str, Any] = {}
+        for key, value in row.items():
+            if pd.isna(value):
+                normalised[key] = None
+            elif isinstance(value, np.generic):
+                normalised[key] = float(value)
+            elif isinstance(value, (int, float)):
+                normalised[key] = float(value)
+            else:
+                normalised[key] = str(value)
+
+        payload = json.dumps(
+            normalised,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     # ── Feature engineering ───────────────────────────────────────
     def _extract_numeric(
