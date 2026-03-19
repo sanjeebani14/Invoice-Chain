@@ -1,4 +1,5 @@
 import os
+from datetime import date, datetime, timezone
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -6,6 +7,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from ..database import get_db
+from .. import models
 from ..models import Invoice, FraudFlag, User, UserRole
 from ..services.ocr import process_invoice_file
 from ..services.hashing import generate_invoice_hash
@@ -49,6 +51,11 @@ class ValidateFractionalPayload(BaseModel):
     amount: float
     share_price: float
     num_shares: int
+
+
+class SettleInvoicePayload(BaseModel):
+    repayment_amount: Optional[float] = None
+    notes: Optional[str] = None
 
 
 # ── POST /invoices/upload ── SME only ────────────────────────────────────────
@@ -360,6 +367,282 @@ def review_invoice(
     return {"message": f"Invoice {action}d", "status": invoice.status}
 
 
+def _parse_date(raw: Optional[str]) -> Optional[date]:
+    if not raw:
+        return None
+
+    value = raw.strip()
+    if not value:
+        return None
+
+    formats = ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y"]
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+    except ValueError:
+        pass
+
+    for fmt in formats:
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _to_upload_url(file_path: Optional[str]) -> Optional[str]:
+    if not file_path:
+        return None
+    filename = os.path.basename(file_path)
+    if not filename:
+        return None
+    return f"/uploads/{filename}"
+
+
+def _settlement_event_type(days_late: int) -> str:
+    if days_late <= 0:
+        return "ON_TIME_PAYMENT"
+    if days_late <= 30:
+        return "LATE_30"
+    if days_late <= 60:
+        return "LATE_60"
+    return "LATE_90_PLUS"
+
+
+@router.get("/admin/pending-review")
+def list_pending_invoices_for_admin(
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    _ = current_user
+    query = (
+        db.query(Invoice)
+        .filter(Invoice.status.in_(["pending_review", "flagged"]))
+        .order_by(Invoice.created_at.desc())
+    )
+
+    invoices = query.offset(skip).limit(limit).all()
+    rows = []
+    for inv in invoices:
+        duplicate_count = 0
+        if inv.invoice_number:
+            duplicate_count = (
+                db.query(Invoice)
+                .filter(Invoice.invoice_number == inv.invoice_number, Invoice.id != inv.id)
+                .count()
+            )
+
+        conf = inv.ocr_confidence or {}
+        rows.append(
+            {
+                "id": inv.id,
+                "invoice_number": inv.invoice_number,
+                "seller_name": inv.seller_name,
+                "client_name": inv.client_name,
+                "amount": inv.amount,
+                "currency": inv.currency,
+                "due_date": inv.due_date,
+                "status": inv.status,
+                "is_duplicate": bool(inv.is_duplicate),
+                "duplicate_invoice_number_exists": duplicate_count > 0,
+                "duplicate_matches": duplicate_count,
+                "upload_url": _to_upload_url(inv.file_path),
+                "original_filename": inv.original_filename,
+                "ocr_extracted": {
+                    "invoice_number": inv.invoice_number,
+                    "seller_name": inv.seller_name,
+                    "client_name": inv.client_name,
+                    "amount": inv.amount,
+                    "currency": inv.currency,
+                    "due_date": inv.due_date,
+                },
+                "confidence": {
+                    "invoice_number": conf.get("invoice_number"),
+                    "seller_name": conf.get("seller_name"),
+                    "client_name": conf.get("client_name"),
+                    "amount": conf.get("amount"),
+                    "due_date": conf.get("due_date"),
+                    "overall": conf.get("overall"),
+                },
+                "created_at": str(inv.created_at),
+            }
+        )
+
+    return {"invoices": rows, "total": query.count()}
+
+
+@router.get("/admin/settlement-tracker")
+def settlement_tracker(
+    status: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    _ = current_user
+    statuses = ["funded", "active", "settled"]
+
+    query = db.query(Invoice).filter(Invoice.status.in_(statuses))
+    if status:
+        query = query.filter(Invoice.status == status)
+
+    invoices = query.order_by(Invoice.created_at.desc()).offset(skip).limit(limit).all()
+    now = datetime.now(timezone.utc).date()
+
+    snapshots = (
+        db.query(models.RepaymentSnapshot)
+        .filter(models.RepaymentSnapshot.invoice_id.in_([inv.id for inv in invoices]))
+        .order_by(models.RepaymentSnapshot.created_at.desc())
+        .all()
+        if invoices
+        else []
+    )
+    snapshot_by_invoice: dict[int, models.RepaymentSnapshot] = {}
+    for snapshot in snapshots:
+        if snapshot.invoice_id not in snapshot_by_invoice:
+            snapshot_by_invoice[snapshot.invoice_id] = snapshot
+
+    items = []
+    for inv in invoices:
+        due_date = _parse_date(inv.due_date)
+        days_to_due = (due_date - now).days if due_date else None
+        is_overdue = bool(due_date and due_date < now and inv.status != "settled")
+        snapshot = snapshot_by_invoice.get(inv.id)
+
+        items.append(
+            {
+                "id": inv.id,
+                "invoice_number": inv.invoice_number,
+                "seller_id": inv.seller_id,
+                "seller_name": inv.seller_name,
+                "client_name": inv.client_name,
+                "amount": inv.amount,
+                "ask_price": inv.ask_price,
+                "status": inv.status,
+                "due_date": inv.due_date,
+                "days_to_due": days_to_due,
+                "is_overdue": is_overdue,
+                "countdown_label": (
+                    f"Overdue by {abs(days_to_due)} days"
+                    if days_to_due is not None and days_to_due < 0
+                    else "Due Today"
+                    if days_to_due == 0
+                    else f"Due in {days_to_due} days"
+                    if days_to_due is not None
+                    else "Due date unavailable"
+                ),
+                "can_settle": inv.status != "settled",
+                "investor_id": snapshot.investor_id if snapshot else None,
+                "funded_amount": snapshot.funded_amount if snapshot else inv.ask_price,
+                "created_at": str(inv.created_at),
+            }
+        )
+
+    items.sort(
+        key=lambda item: (
+            _parse_date(item["due_date"]) is None,
+            _parse_date(item["due_date"]) or date.max,
+        )
+    )
+    return {"items": items, "total": query.count()}
+
+
+@router.post("/{invoice_id}/settle")
+def settle_invoice(
+    invoice_id: int,
+    payload: SettleInvoicePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    if invoice.status not in ["funded", "active", "settled"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invoice status '{invoice.status}' cannot be settled. Expected funded/active.",
+        )
+
+    if invoice.status == "settled":
+        raise HTTPException(status_code=400, detail="Invoice already settled")
+
+    now = datetime.now(timezone.utc)
+    due_dt = _parse_date(invoice.due_date)
+    days_late = max((now.date() - due_dt).days, 0) if due_dt else 0
+    event_type = _settlement_event_type(days_late)
+
+    snapshot = (
+        db.query(models.RepaymentSnapshot)
+        .filter(models.RepaymentSnapshot.invoice_id == invoice_id)
+        .order_by(models.RepaymentSnapshot.created_at.desc())
+        .first()
+    )
+
+    settled_amount = (
+        payload.repayment_amount
+        if payload.repayment_amount is not None and payload.repayment_amount > 0
+        else invoice.amount
+        if invoice.amount is not None and invoice.amount > 0
+        else invoice.ask_price
+        if invoice.ask_price is not None and invoice.ask_price > 0
+        else 0.0
+    )
+
+    if snapshot is not None:
+        snapshot.repaid_at = now
+        snapshot.repayment_amount = settled_amount
+        snapshot.weighted_average_days_late = float(days_late)
+        snapshot.impact_score = float(max(0, min(100, 100 - (days_late * 1.5))))
+
+    credit_event = models.CreditEvent(
+        invoice_id=invoice.id,
+        seller_id=invoice.seller_id,
+        investor_id=snapshot.investor_id if snapshot else None,
+        event_type=event_type,
+        days_late=days_late,
+        amount=float(settled_amount or 0.0),
+        notes=payload.notes,
+        recorded_by=current_user.id,
+    )
+    db.add(credit_event)
+
+    if invoice.seller_id is not None:
+        credit = (
+            db.query(models.CreditHistory)
+            .filter(models.CreditHistory.seller_id == invoice.seller_id)
+            .first()
+        )
+        if credit is not None:
+            delta = -2 if days_late <= 0 else 5 if days_late <= 30 else 10 if days_late <= 60 else 15
+            current_score = int(credit.composite_score or 0)
+            next_score = max(0, min(100, current_score + delta))
+            credit.composite_score = next_score
+
+            current_track = int(credit.seller_track_record or 50)
+            track_delta = 2 if days_late <= 0 else -5 if days_late <= 30 else -10 if days_late <= 60 else -15
+            credit.seller_track_record = max(0, min(100, current_track + track_delta))
+
+            contributors = credit.risk_contributors if isinstance(credit.risk_contributors, dict) else {}
+            contributors["repayment_velocity_delta"] = float(delta)
+            contributors["settlement_impact_score"] = float(max(0, min(100, 100 - (days_late * 1.5))))
+            credit.risk_contributors = contributors
+
+    invoice.status = "settled"
+    db.commit()
+
+    return {
+        "message": "Invoice settled successfully",
+        "invoice_id": invoice.id,
+        "status": invoice.status,
+        "days_late": days_late,
+        "event_type": event_type,
+        "settled_amount": settled_amount,
+        "credit_event_id": credit_event.id,
+    }
+
+
 # ── POST /invoices/{invoice_id}/mint ── admin or seller ───────────────────────
 
 @router.post("/{invoice_id}/mint")
@@ -489,5 +772,6 @@ def _invoice_to_dict(invoice: Invoice) -> dict:
         "status": invoice.status,
         "ocr_confidence": invoice.ocr_confidence,
         "seller_id": invoice.seller_id,
+        "upload_url": _to_upload_url(invoice.file_path),
         "created_at": str(invoice.created_at),
     }

@@ -242,3 +242,54 @@ class PlatformStats(Base):
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+
+class RepaymentSnapshot(Base):
+    """
+    Point-in-time investor repayment and behavior metrics for an invoice.
+    Used by portfolio analytics for P&L, XIRR, delay-adjusted cash flows,
+    and concentration analysis.
+    """
+
+    __tablename__ = "repayment_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), index=True, nullable=False)
+    investor_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+
+    funded_amount = Column(Float, nullable=False, default=0.0)
+    repayment_amount = Column(Float, nullable=True)
+
+    funded_at = Column(DateTime(timezone=True), nullable=True)
+    repaid_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Dynamic seller signal, expected range 0-100.
+    impact_score = Column(Float, nullable=True)
+    weighted_average_days_late = Column(Float, nullable=True)
+
+    # Snapshot dimensions for concentration analytics.
+    industry_sector = Column(String, nullable=True)
+    geography = Column(String, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class CreditEvent(Base):
+    """Settlement event log used for repayment behavior analytics."""
+
+    __tablename__ = "credit_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), index=True, nullable=False)
+    seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    investor_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+
+    event_type = Column(String, nullable=False, index=True)  # ON_TIME_PAYMENT, LATE_30, LATE_60, LATE_90
+    days_late = Column(Integer, nullable=False, default=0)
+    amount = Column(Float, nullable=False, default=0.0)
+    notes = Column(Text, nullable=True)
+    recorded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)

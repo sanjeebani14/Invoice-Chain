@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from app.database import engine
@@ -9,6 +10,7 @@ import logging
 
 # Import Routers
 from app.api.risk import router as risk_router
+from app.api.analytics import router as analytics_router
 from app.routers.invoice import router as invoice_router
 from app.routers.auth import router as auth_router
 from app.routers.kyc import router as kyc_router, admin_router as admin_kyc_router
@@ -96,6 +98,50 @@ def _ensure_user_schema_compatibility() -> None:
             )
 
 
+def _ensure_repayment_snapshot_schema_compatibility() -> None:
+    """Add missing repayment_snapshots columns for existing DBs without migrations."""
+    inspector = inspect(engine)
+    if "repayment_snapshots" not in inspector.get_table_names():
+        return
+
+    existing = {c["name"] for c in inspector.get_columns("repayment_snapshots")}
+    statements: list[str] = []
+
+    if "invoice_id" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN invoice_id INTEGER")
+    if "investor_id" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN investor_id INTEGER")
+    if "seller_id" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN seller_id INTEGER")
+    if "funded_amount" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN funded_amount DOUBLE PRECISION DEFAULT 0")
+    if "repayment_amount" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN repayment_amount DOUBLE PRECISION")
+    if "funded_at" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN funded_at TIMESTAMPTZ")
+    if "repaid_at" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN repaid_at TIMESTAMPTZ")
+    if "impact_score" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN impact_score DOUBLE PRECISION")
+    if "weighted_average_days_late" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN weighted_average_days_late DOUBLE PRECISION")
+    if "industry_sector" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN industry_sector VARCHAR")
+    if "geography" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN geography VARCHAR")
+    if "created_at" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()")
+    if "updated_at" not in existing:
+        statements.append("ALTER TABLE repayment_snapshots ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()")
+
+    if not statements:
+        return
+
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+
+
 
 # ── Environment & Security Configuration ──────────────────────────
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -118,6 +164,7 @@ try:
     models.Base.metadata.create_all(bind=engine)
     _ensure_invoice_schema_compatibility()
     _ensure_user_schema_compatibility()
+    _ensure_repayment_snapshot_schema_compatibility()
 except SQLAlchemyError as exc:
     logger.warning("Skipping DB bootstrap during startup: %s", exc)
 
@@ -126,6 +173,9 @@ app = FastAPI(
     description="Blockchain-Based Invoice Factoring Platform",
     version="1.0.0",
 )
+
+if os.path.isdir("uploads"):
+    app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Allow frontend (Next.js on port 3000) to talk to this API
 app.add_middleware(
@@ -148,6 +198,9 @@ def read_root():
 # ── Include Routers ─────────────────────────────────────────────
 # Risk & Fraud logic
 app.include_router(risk_router, prefix="/api/v1/risk", tags=["Risk & Fraud"])
+
+# Investor and platform analytics
+app.include_router(analytics_router)
 
 # Invoice logic
 app.include_router(invoice_router, prefix="/api/v1/invoice", tags=["Invoice Processing"])

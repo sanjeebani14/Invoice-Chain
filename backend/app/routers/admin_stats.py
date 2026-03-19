@@ -5,15 +5,128 @@ Provides platform-level analytics and statistics endpoints.
 """
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status
+from datetime import datetime, date
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import Optional, List
 
 from ..database import get_db
-from ..models import User
+from ..models import User, Invoice, KycSubmission, FraudFlag, CreditHistory
 from ..auth.dependencies import get_current_admin
 from ..services.platform_stats import PlatformStatsService
 
 router = APIRouter(prefix="/api/v1/admin/stats", tags=["Admin - Statistics"])
+
+
+def _parse_due_date(raw: str | None) -> date | None:
+    if not raw:
+        return None
+    value = raw.strip()
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+    except ValueError:
+        pass
+    for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y"]:
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+@router.get("/overview")
+def get_admin_overview(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    _ = current_admin
+    pending_invoices = db.query(func.count(Invoice.id)).filter(Invoice.status == "pending_review").scalar() or 0
+    funded_live = db.query(func.count(Invoice.id)).filter(Invoice.status.in_(["funded", "active"])).scalar() or 0
+    settled_count = db.query(func.count(Invoice.id)).filter(Invoice.status == "settled").scalar() or 0
+    pending_kyc = db.query(func.count(KycSubmission.id)).filter(KycSubmission.status == "pending").scalar() or 0
+    unresolved_fraud = db.query(func.count(FraudFlag.id)).filter(FraudFlag.is_resolved == False).scalar() or 0
+
+    investors_count = db.query(func.count(User.id)).filter(User.role == "investor").scalar() or 0
+
+    # Keep this aligned with the Seller Explorer page, which is based on CreditHistory rows.
+    sellers_count = (
+        db.query(func.count(func.distinct(CreditHistory.seller_id)))
+        .filter(CreditHistory.seller_id.isnot(None))
+        .scalar()
+        or 0
+    )
+
+    live_invoices = db.query(Invoice).filter(Invoice.status.in_(["funded", "active"])).all()
+    today = datetime.utcnow().date()
+    overdue_live = 0
+    due_today = 0
+    for inv in live_invoices:
+        due = _parse_due_date(inv.due_date)
+        if not due:
+            continue
+        if due < today:
+            overdue_live += 1
+        elif due == today:
+            due_today += 1
+
+    actionable_insights: List[dict] = []
+    if pending_invoices > 0:
+        actionable_insights.append(
+            {
+                "type": "operations",
+                "priority": "high",
+                "title": "Pending invoice approvals",
+                "description": f"{pending_invoices} invoices are waiting for review before marketplace listing.",
+                "cta_path": "/admin/pending-invoices",
+            }
+        )
+    if pending_kyc > 0:
+        actionable_insights.append(
+            {
+                "type": "operations",
+                "priority": "medium",
+                "title": "KYC backlog",
+                "description": f"{pending_kyc} KYC submissions need verification.",
+                "cta_path": "/admin/kyc",
+            }
+        )
+    if overdue_live > 0:
+        actionable_insights.append(
+            {
+                "type": "settlement",
+                "priority": "high",
+                "title": "Overdue settlements",
+                "description": f"{overdue_live} funded invoices are past due and still unsettled.",
+                "cta_path": "/admin/settlement-tracker",
+            }
+        )
+    if unresolved_fraud > 0:
+        actionable_insights.append(
+            {
+                "type": "risk",
+                "priority": "high",
+                "title": "Fraud queue requires attention",
+                "description": f"{unresolved_fraud} unresolved fraud alerts are in review queue.",
+                "cta_path": "/admin/fraud-queue",
+            }
+        )
+
+    return {
+        "kpis": {
+            "pending_invoices": int(pending_invoices),
+            "funded_live": int(funded_live),
+            "settled_count": int(settled_count),
+            "pending_kyc": int(pending_kyc),
+            "unresolved_fraud": int(unresolved_fraud),
+            "overdue_live": int(overdue_live),
+            "due_today": int(due_today),
+            "investors_count": int(investors_count),
+            "sellers_count": int(sellers_count),
+        },
+        "actionable_insights": actionable_insights,
+    }
 
 
 @router.get("/summary")

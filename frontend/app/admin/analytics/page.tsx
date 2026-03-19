@@ -30,8 +30,10 @@ import { PlatformMetricsGrid } from "@/components/dashboard/PlatformMetricsGrid"
 import { GrowthTrendChart } from "@/components/dashboard/GrowthTrendChart";
 import { SectorExposureChart } from "@/components/dashboard/SectorExposureChart";
 import {
+  type ConcentrationAnalysis,
   getRiskMetrics,
   getAllSellers,
+  getPlatformConcentration,
   getPlatformHealthMetrics,
   getPlatformTimeSeries,
   getRiskHeatmap,
@@ -92,6 +94,8 @@ export default function Analytics() {
     useState<PlatformHealthMetrics | null>(null);
   const [timeSeriesData, setTimeSeriesData] = useState<PlatformStats[]>([]);
   const [riskHeatmap, setRiskHeatmap] = useState<RiskHeatmapData | null>(null);
+  const [platformConcentration, setPlatformConcentration] =
+    useState<ConcentrationAnalysis | null>(null);
 
   useEffect(() => {
     Promise.all([getRiskMetrics(), getAllSellers()]).then(
@@ -131,10 +135,12 @@ export default function Analytics() {
       getPlatformHealthMetrics(),
       getPlatformTimeSeries(12),
       getRiskHeatmap(),
-    ]).then(([health, timeseries, heatmap]) => {
+      getPlatformConcentration(20),
+    ]).then(([health, timeseries, heatmap, concentration]) => {
       setHealthMetrics(health);
       setTimeSeriesData(timeseries.data);
       setRiskHeatmap(heatmap);
+      setPlatformConcentration(concentration);
       setPlatformLoading(false);
     });
   }, []);
@@ -189,6 +195,78 @@ export default function Analytics() {
                   data={riskHeatmap}
                   isLoading={platformLoading}
                 />
+              )}
+
+              {platformConcentration && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <ChartPanel title="Platform Concentration Alerts">
+                    <div className="space-y-2 text-sm text-gray-700">
+                      <p className="font-semibold text-gray-900">
+                        Top 5 sellers share{" "}
+                        {platformConcentration.top_5_seller_share_pct.toFixed(
+                          2,
+                        )}
+                        % of total volume
+                      </p>
+                      {platformConcentration.alerts.length === 0 && (
+                        <p>
+                          No concentration alerts above{" "}
+                          {platformConcentration.threshold_pct}%.
+                        </p>
+                      )}
+                      {platformConcentration.alerts.slice(0, 6).map((alert) => (
+                        <div
+                          key={`${alert.type}-${alert.key}`}
+                          className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2"
+                        >
+                          <span className="capitalize">
+                            {alert.type}: {alert.key}
+                          </span>
+                          <span className="font-semibold">
+                            {alert.percentage.toFixed(2)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </ChartPanel>
+
+                  <ChartPanel title="Sector and Geo Concentration">
+                    <div className="space-y-3 text-sm text-gray-700">
+                      <div>
+                        <p className="mb-1 font-semibold text-gray-900">
+                          Top Sectors
+                        </p>
+                        {platformConcentration.sector_breakdown
+                          .slice(0, 5)
+                          .map((item) => (
+                            <div
+                              key={item.key}
+                              className="flex items-center justify-between"
+                            >
+                              <span>{item.key}</span>
+                              <span>{item.percentage.toFixed(2)}%</span>
+                            </div>
+                          ))}
+                      </div>
+                      <div>
+                        <p className="mb-1 font-semibold text-gray-900">
+                          Top Geographies
+                        </p>
+                        {platformConcentration.geo_breakdown
+                          .slice(0, 5)
+                          .map((item) => (
+                            <div
+                              key={item.key}
+                              className="flex items-center justify-between"
+                            >
+                              <span>{item.key}</span>
+                              <span>{item.percentage.toFixed(2)}%</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </ChartPanel>
+                </div>
               )}
             </>
           )}

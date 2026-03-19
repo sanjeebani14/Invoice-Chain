@@ -1,287 +1,295 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
-  Users,
   AlertTriangle,
-  Shield,
+  CircleCheck,
+  Clock3,
+  FileText,
+  DollarSign,
   TrendingUp,
-  Activity,
+  Users,
+  RefreshCw,
 } from "lucide-react";
 import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts";
-import { MetricCard } from "@/components/dashboard/MetricCard";
-import { ChartPanel } from "@/components/dashboard/ChartPanel";
-import {
-  MetricCardSkeleton,
-  ChartSkeleton,
-} from "@/components/dashboard/LoadingSkeleton";
-import { getRiskMetrics, type RiskMetrics } from "@/lib/api";
-
-const COLORS = {
-  green: "hsl(120, 40%, 55%)",
-  yellow: "hsl(38, 92%, 50%)",
-  red: "hsl(0, 65%, 55%)",
-  blue: "hsl(210, 65%, 55%)",
-  orange: "hsl(25, 90%, 55%)",
-  purple: "hsl(270, 50%, 55%)",
-};
-
-const PIE_COLORS = [COLORS.green, COLORS.yellow, COLORS.red];
-
-const GRID_STROKE = "hsl(220, 13%, 90%)";
-const TICK_STYLE = { fill: "hsl(215, 15%, 47%)", fontSize: 11 };
-const TOOLTIP_STYLE = {
-  background: "#fff",
-  border: "1px solid hsl(220, 13%, 87%)",
-  borderRadius: 4,
-  color: "hsl(220, 20%, 14%)",
-};
+  getAdminOverview,
+  getRiskMetrics,
+  type AdminOverview,
+  type RiskMetrics,
+} from "@/lib/api";
 
 export default function Dashboard() {
-  const [metrics, setMetrics] = useState<RiskMetrics | null>(null);
+  const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [risk, setRisk] = useState<RiskMetrics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchData = async () => {
+  const load = async () => {
     try {
-      const data = await getRiskMetrics();
-      setMetrics(data);
+      setLoading(true);
+      setError(null);
+      const [overviewData, riskData] = await Promise.all([
+        getAdminOverview(),
+        getRiskMetrics(),
+      ]);
+      setOverview(overviewData);
+      setRisk(riskData);
+    } catch {
+      setError("Unable to load admin overview right now.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 30000);
+    load();
+    const interval = setInterval(load, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) {
+  if (loading && !overview) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold">Dashboard</h1>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <MetricCardSkeleton key={i} />
-          ))}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <ChartSkeleton key={i} />
+        <h1 className="text-2xl font-semibold">Admin Overview</h1>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-24 animate-pulse rounded-lg border bg-gray-50"
+            />
           ))}
         </div>
       </div>
     );
   }
 
-  if (!metrics) return null;
+  if (error && !overview) {
+    return <div className="text-sm text-red-600">{error}</div>;
+  }
+
+  if (!overview || !risk) {
+    return (
+      <div className="text-sm text-gray-500">No overview data available.</div>
+    );
+  }
+
+  const kpiCards = [
+    {
+      label: "Pending Invoices",
+      value: overview.kpis.pending_invoices,
+      icon: FileText,
+      color: "bg-blue-50 border-blue-200",
+      textColor: "text-blue-600",
+    },
+    {
+      label: "Funded Live",
+      value: overview.kpis.funded_live,
+      icon: DollarSign,
+      color: "bg-emerald-50 border-emerald-200",
+      textColor: "text-emerald-600",
+    },
+    {
+      label: "Overdue Live",
+      value: overview.kpis.overdue_live,
+      icon: AlertTriangle,
+      color: "bg-red-50 border-red-200",
+      textColor: "text-red-600",
+    },
+    {
+      label: "Due Today",
+      value: overview.kpis.due_today,
+      icon: Clock3,
+      color: "bg-amber-50 border-amber-200",
+      textColor: "text-amber-600",
+    },
+    {
+      label: "Pending KYC",
+      value: overview.kpis.pending_kyc,
+      icon: Users,
+      color: "bg-purple-50 border-purple-200",
+      textColor: "text-purple-600",
+    },
+    {
+      label: "Fraud Queue",
+      value: overview.kpis.unresolved_fraud,
+      icon: AlertTriangle,
+      color: "bg-orange-50 border-orange-200",
+      textColor: "text-orange-600",
+    },
+    {
+      label: "Investors",
+      value: overview.kpis.investors_count,
+      icon: Users,
+      color: "bg-indigo-50 border-indigo-200",
+      textColor: "text-indigo-600",
+    },
+    {
+      label: "Sellers",
+      value: risk.total_sellers,
+      icon: TrendingUp,
+      color: "bg-cyan-50 border-cyan-200",
+      textColor: "text-cyan-600",
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Risk Monitoring Dashboard</h1>
-
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <MetricCard
-          title="Total Sellers"
-          value={metrics.total_sellers.toLocaleString()}
-          icon={Users}
-          trend="+12 this week"
-        />
-        <MetricCard
-          title="High Risk"
-          value={metrics.high_risk}
-          icon={AlertTriangle}
-          color="red"
-          trend="7.1% of total"
-        />
-        <MetricCard
-          title="Medium Risk"
-          value={metrics.medium_risk}
-          icon={Shield}
-          color="yellow"
-          trend="27.4% of total"
-        />
-        <MetricCard
-          title="Low Risk"
-          value={metrics.low_risk}
-          icon={Shield}
-          color="green"
-          trend="65.4% of total"
-        />
-        <MetricCard
-          title="Avg Risk Score"
-          value={metrics.avg_composite_score.toFixed(1)}
-          icon={Activity}
-          trend="Last 30 days"
-        />
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Admin Overview</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Real-time operations, risk posture, and action queue for platform
+            admins.
+          </p>
+        </div>
+        <button
+          onClick={load}
+          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <ChartPanel title="Risk Score Distribution">
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={metrics.risk_distribution}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke={GRID_STROKE}
-                vertical={false}
-              />
-              <XAxis
-                dataKey="score_range"
-                tick={TICK_STYLE}
-                axisLine={{ stroke: GRID_STROKE }}
-              />
-              <YAxis tick={TICK_STYLE} axisLine={{ stroke: GRID_STROKE }} />
-              <Tooltip contentStyle={TOOLTIP_STYLE} />
-              <Bar dataKey="count" fill={COLORS.blue} radius={[2, 2, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartPanel>
-
-        <ChartPanel title="Fraud Alerts Over Time">
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={metrics.fraud_alerts_over_time}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke={GRID_STROKE}
-                vertical={false}
-              />
-              <XAxis
-                dataKey="date"
-                tick={TICK_STYLE}
-                axisLine={{ stroke: GRID_STROKE }}
-              />
-              <YAxis tick={TICK_STYLE} axisLine={{ stroke: GRID_STROKE }} />
-              <Tooltip contentStyle={TOOLTIP_STYLE} />
-              <Line
-                type="monotone"
-                dataKey="alerts"
-                stroke={COLORS.red}
-                strokeWidth={1.5}
-                dot={false}
-              />
-              <defs>
-                <linearGradient id="alertsFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={COLORS.red} stopOpacity={0.15} />
-                  <stop offset="100%" stopColor={COLORS.red} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartPanel>
-
-        <ChartPanel title="Seller Risk Trends">
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={metrics.seller_risk_trends}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke={GRID_STROKE}
-                vertical={false}
-              />
-              <XAxis
-                dataKey="month"
-                tick={TICK_STYLE}
-                axisLine={{ stroke: GRID_STROKE }}
-              />
-              <YAxis tick={TICK_STYLE} axisLine={{ stroke: GRID_STROKE }} />
-              <Tooltip contentStyle={TOOLTIP_STYLE} />
-              <Area
-                type="monotone"
-                dataKey="low"
-                stackId="1"
-                stroke={COLORS.green}
-                fill={COLORS.green}
-                fillOpacity={0.2}
-                strokeWidth={1.5}
-              />
-              <Area
-                type="monotone"
-                dataKey="medium"
-                stackId="1"
-                stroke={COLORS.yellow}
-                fill={COLORS.yellow}
-                fillOpacity={0.2}
-                strokeWidth={1.5}
-              />
-              <Area
-                type="monotone"
-                dataKey="high"
-                stackId="1"
-                stroke={COLORS.red}
-                fill={COLORS.red}
-                fillOpacity={0.2}
-                strokeWidth={1.5}
-              />
-              <Legend />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartPanel>
-
-        <ChartPanel title="Risk Level Breakdown">
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie
-                data={metrics.risk_level_breakdown}
-                dataKey="count"
-                nameKey="level"
-                cx="50%"
-                cy="50%"
-                outerRadius={75}
-                label={(entry) => `${entry.payload.level}: ${entry.payload.count}`}
-                fontSize={11}
-              >
-                {metrics.risk_level_breakdown.map((_, index) => (
-                  <Cell
-                    key={index}
-                    fill={PIE_COLORS[index % PIE_COLORS.length]}
-                  />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={TOOLTIP_STYLE} />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartPanel>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {kpiCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div
+              key={card.label}
+              className={`rounded-lg border-2 p-4 transition-all hover:shadow-md ${card.color}`}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <p className="text-xs uppercase tracking-wide text-gray-600 font-medium">
+                    {card.label}
+                  </p>
+                  <p className={`mt-3 text-3xl font-bold ${card.textColor}`}>
+                    {card.value}
+                  </p>
+                </div>
+                <Icon className={`h-6 w-6 ${card.textColor} opacity-60`} />
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      <ChartPanel title="Top 10 High Risk Sellers">
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={metrics.top_high_risk_sellers} layout="vertical">
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke={GRID_STROKE}
-              horizontal={false}
-            />
-            <XAxis
-              type="number"
-              tick={TICK_STYLE}
-              axisLine={{ stroke: GRID_STROKE }}
-            />
-            <YAxis
-              dataKey="seller_id"
-              type="category"
-              tick={TICK_STYLE}
-              width={60}
-              axisLine={{ stroke: GRID_STROKE }}
-            />
-            <Tooltip contentStyle={TOOLTIP_STYLE} />
-            <Bar dataKey="score" fill={COLORS.red} radius={[0, 2, 2, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartPanel>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-6">
+          <h2 className="text-lg font-bold text-gray-900">
+            Actionable Insights
+          </h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Prioritized operational tasks generated from live queues.
+          </p>
+          <div className="mt-5 space-y-3">
+            {overview.actionable_insights.length === 0 ? (
+              <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 font-medium">
+                ✓ No urgent actions right now.
+              </div>
+            ) : (
+              overview.actionable_insights.map((insight) => (
+                <div
+                  key={`${insight.type}-${insight.title}`}
+                  className={`rounded-lg border-l-4 p-4 transition-all ${
+                    insight.priority === "high"
+                      ? "border-l-red-500 bg-red-50"
+                      : insight.priority === "medium"
+                        ? "border-l-amber-500 bg-amber-50"
+                        : "border-l-emerald-500 bg-emerald-50"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900">
+                        {insight.title}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-700">
+                        {insight.description}
+                      </p>
+                    </div>
+                    <span
+                      className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold uppercase ${
+                        insight.priority === "high"
+                          ? "bg-red-200 text-red-800"
+                          : insight.priority === "medium"
+                            ? "bg-amber-200 text-amber-800"
+                            : "bg-emerald-200 text-emerald-800"
+                      }`}
+                    >
+                      {insight.priority}
+                    </span>
+                  </div>
+                  <Link
+                    href={insight.cta_path}
+                    className="mt-3 inline-flex items-center text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    Open queue →
+                  </Link>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-6">
+          <h2 className="text-lg font-bold text-gray-900">Risk Snapshot</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Current seller-risk distribution for quick triage.
+          </p>
+          <div className="mt-5 space-y-3">
+            <div className="flex items-center justify-between rounded-lg bg-red-50 p-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+                <span className="font-medium text-gray-900">
+                  High risk sellers
+                </span>
+              </div>
+              <span className="text-xl font-bold text-red-600">
+                {risk.high_risk}
+              </span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg bg-amber-50 p-4">
+              <div className="flex items-center gap-3">
+                <Clock3 className="h-5 w-5 text-amber-600" />
+                <span className="font-medium text-gray-900">
+                  Medium risk sellers
+                </span>
+              </div>
+              <span className="text-xl font-bold text-amber-600">
+                {risk.medium_risk}
+              </span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg bg-emerald-50 p-4">
+              <div className="flex items-center gap-3">
+                <CircleCheck className="h-5 w-5 text-emerald-600" />
+                <span className="font-medium text-gray-900">
+                  Low risk sellers
+                </span>
+              </div>
+              <span className="text-xl font-bold text-emerald-600">
+                {risk.low_risk}
+              </span>
+            </div>
+            <div className="rounded-lg border-2 border-blue-300 bg-gradient-to-r from-blue-50 to-indigo-50 p-4">
+              <p className="text-xs uppercase tracking-wide text-gray-700 font-semibold">
+                Platform Average
+              </p>
+              <p className="mt-2 text-2xl font-bold text-blue-700">
+                {risk.avg_composite_score.toFixed(2)}
+              </p>
+              <p className="text-xs text-gray-600">Composite score</p>
+            </div>
+          </div>
+          <Link
+            href="/admin/risk-metrics"
+            className="mt-5 inline-flex items-center font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+          >
+            View full risk metrics →
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

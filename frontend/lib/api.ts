@@ -3,6 +3,8 @@ import axios from "axios";
 const API_BASE = "http://localhost:8000/api/v1/risk";
 const ADMIN_USERS_BASE = "http://localhost:8000/api/v1/admin/users";
 const ADMIN_STATS_BASE = "http://localhost:8000/api/v1/admin/stats";
+const ANALYTICS_BASE = "http://localhost:8000/api/v1/analytics";
+const INVOICE_BASE = "http://localhost:8000/api/v1/invoice/invoices";
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -17,6 +19,18 @@ const adminUsersApi = axios.create({
 
 const adminStatsApi = axios.create({
   baseURL: ADMIN_STATS_BASE,
+  timeout: 10000,
+  withCredentials: true,
+});
+
+const analyticsApi = axios.create({
+  baseURL: ANALYTICS_BASE,
+  timeout: 10000,
+  withCredentials: true,
+});
+
+const invoiceApi = axios.create({
+  baseURL: INVOICE_BASE,
   timeout: 10000,
   withCredentials: true,
 });
@@ -167,6 +181,131 @@ export interface RiskHeatmapData {
     low: number;
   };
   avg_score: number;
+}
+
+export interface ConcentrationBreakdownItem {
+  key: string;
+  volume: number;
+  percentage: number;
+}
+
+export interface ConcentrationAlert {
+  type: "seller" | "sector";
+  key: string;
+  percentage: number;
+}
+
+export interface ConcentrationAnalysis {
+  total_volume: number;
+  top_5_seller_share_pct: number;
+  seller_breakdown: ConcentrationBreakdownItem[];
+  sector_breakdown: ConcentrationBreakdownItem[];
+  geo_breakdown: ConcentrationBreakdownItem[];
+  alerts: ConcentrationAlert[];
+  threshold_pct: number;
+}
+
+export interface InvestorSummary {
+  investor_id: number;
+  exposure: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  total_pnl: number;
+  realized_xirr: number | null;
+  portfolio_xirr: number | null;
+  positions: number;
+  concentration: ConcentrationAnalysis;
+}
+
+export interface InvestorCashFlowPoint {
+  date: string;
+  expected_inflow: number;
+}
+
+export interface InvestorCashFlow {
+  investor_id: number;
+  as_of: string;
+  timeline: InvestorCashFlowPoint[];
+  totals: {
+    next_30_days: number;
+    next_60_days: number;
+    next_90_days: number;
+  };
+}
+
+export interface AdminOverviewInsight {
+  type: string;
+  priority: "low" | "medium" | "high";
+  title: string;
+  description: string;
+  cta_path: string;
+}
+
+export interface AdminOverview {
+  kpis: {
+    pending_invoices: number;
+    funded_live: number;
+    settled_count: number;
+    pending_kyc: number;
+    unresolved_fraud: number;
+    overdue_live: number;
+    due_today: number;
+    investors_count: number;
+    sellers_count: number;
+  };
+  actionable_insights: AdminOverviewInsight[];
+}
+
+export interface AdminPendingInvoice {
+  id: number;
+  invoice_number?: string | null;
+  seller_name?: string | null;
+  client_name?: string | null;
+  amount?: number | null;
+  currency?: string | null;
+  due_date?: string | null;
+  status: string;
+  is_duplicate: boolean;
+  duplicate_invoice_number_exists: boolean;
+  duplicate_matches: number;
+  upload_url?: string | null;
+  original_filename?: string | null;
+  ocr_extracted: {
+    invoice_number?: string | null;
+    seller_name?: string | null;
+    client_name?: string | null;
+    amount?: number | null;
+    currency?: string | null;
+    due_date?: string | null;
+  };
+  confidence: {
+    invoice_number?: number | null;
+    seller_name?: number | null;
+    client_name?: number | null;
+    amount?: number | null;
+    due_date?: number | null;
+    overall?: number | null;
+  };
+  created_at: string;
+}
+
+export interface AdminSettlementItem {
+  id: number;
+  invoice_number?: string | null;
+  seller_id?: number | null;
+  seller_name?: string | null;
+  client_name?: string | null;
+  amount?: number | null;
+  ask_price?: number | null;
+  status: string;
+  due_date?: string | null;
+  days_to_due?: number | null;
+  is_overdue: boolean;
+  countdown_label: string;
+  can_settle: boolean;
+  investor_id?: number | null;
+  funded_amount?: number | null;
+  created_at: string;
 }
 
 // Mock data generators
@@ -446,6 +585,84 @@ export const refreshPlatformStats = async (
     {},
     { params: { period } },
   );
+  return data;
+};
+
+export const getInvestorSummary = async (): Promise<InvestorSummary> => {
+  const { data } = await analyticsApi.get<InvestorSummary>("/investor/summary");
+  return data;
+};
+
+export const getInvestorCashFlow = async (): Promise<InvestorCashFlow> => {
+  const { data } = await analyticsApi.get<InvestorCashFlow>(
+    "/investor/cash-flow",
+  );
+  return data;
+};
+
+export const getPlatformConcentration = async (
+  thresholdPct: number = 20,
+): Promise<ConcentrationAnalysis> => {
+  const { data } = await analyticsApi.get<ConcentrationAnalysis>(
+    "/platform/concentration",
+    { params: { threshold_pct: thresholdPct } },
+  );
+  return data;
+};
+
+export const getAdminOverview = async (): Promise<AdminOverview> => {
+  const { data } = await adminStatsApi.get<AdminOverview>("/overview");
+  return data;
+};
+
+export const getAdminPendingInvoices = async (params?: {
+  skip?: number;
+  limit?: number;
+}): Promise<{ invoices: AdminPendingInvoice[]; total: number }> => {
+  const { data } = await invoiceApi.get<{
+    invoices: AdminPendingInvoice[];
+    total: number;
+  }>("/admin/pending-review", { params });
+  return data;
+};
+
+export const reviewAdminPendingInvoice = async (
+  invoiceId: number,
+  action: "approve" | "reject",
+): Promise<{ message: string; status: string }> => {
+  const { data } = await invoiceApi.put<{ message: string; status: string }>(
+    `/${invoiceId}/review`,
+    null,
+    { params: { action } },
+  );
+  return data;
+};
+
+export const getSettlementTracker = async (params?: {
+  status?: string;
+  skip?: number;
+  limit?: number;
+}): Promise<{ items: AdminSettlementItem[]; total: number }> => {
+  const { data } = await invoiceApi.get<{
+    items: AdminSettlementItem[];
+    total: number;
+  }>("/admin/settlement-tracker", { params });
+  return data;
+};
+
+export const settleInvoice = async (
+  invoiceId: number,
+  payload?: { repayment_amount?: number; notes?: string },
+): Promise<{
+  message: string;
+  invoice_id: number;
+  status: string;
+  days_late: number;
+  event_type: string;
+  settled_amount: number;
+  credit_event_id: number;
+}> => {
+  const { data } = await invoiceApi.post(`/${invoiceId}/settle`, payload ?? {});
   return data;
 };
 
