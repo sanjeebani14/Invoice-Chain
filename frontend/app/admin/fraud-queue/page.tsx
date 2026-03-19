@@ -1,13 +1,5 @@
 "use client";
 import { useEffect, useState } from "react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RiskBadge } from "@/components/dashboard/RiskBadge";
@@ -34,6 +26,7 @@ export default function FraudQueue() {
   const [selectedExplanation, setSelectedExplanation] =
     useState<InvoiceAnomalyExplanation | null>(null);
   const [explainLoading, setExplainLoading] = useState(false);
+  const [actingId, setActingId] = useState<number | null>(null);
 
   useEffect(() => {
     getFraudQueue().then((d) => {
@@ -42,14 +35,34 @@ export default function FraudQueue() {
     });
   }, []);
 
-  const handleAction = async (id: number, action: string) => {
-    await reviewFraudItem(id, action);
-    setQueue((q) =>
-      q.map((item) =>
-        item.id === id ? { ...item, status: "Resolved" as const } : item,
-      ),
-    );
-    toast.success(`Item #${id} ${action}d`);
+  const handleAction = async (
+    id: number,
+    action: "clear" | "confirm_fraud",
+  ) => {
+    setActingId(id);
+    try {
+      await reviewFraudItem(id, action);
+      setQueue((q) =>
+        q.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                status: "Resolved" as const,
+                resolution_action: action,
+              }
+            : item,
+        ),
+      );
+      toast.success(
+        action === "clear"
+          ? `Flag #${id} cleared`
+          : `Flag #${id} marked as confirmed fraud`,
+      );
+    } catch {
+      toast.error("Failed to submit review action");
+    } finally {
+      setActingId(null);
+    }
   };
 
   const handleExplain = async (invoiceId?: number) => {
@@ -83,154 +96,173 @@ export default function FraudQueue() {
     }
   };
 
-  const splitReasons = (reason: string) =>
-    reason
+  const formatScore = (value?: number | null, digits: number = 3) => {
+    if (typeof value !== "number" || Number.isNaN(value)) return "N/A";
+    return value.toFixed(digits);
+  };
+
+  const reasonsForItem = (item: FraudQueueItem) => {
+    if (item.reasons && item.reasons.length > 0) return item.reasons;
+    return item.fraud_reason
       .split("|")
       .map((part) => part.trim())
       .filter(Boolean);
+  };
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Fraud Review Queue</h1>
+      <div className="rounded-2xl border border-border bg-gradient-to-r from-slate-50 via-amber-50 to-rose-50 px-5 py-4">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Fraud Review Queue
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Explainable anomaly decisions for pending invoice flags.
+        </p>
+      </div>
       {loading ? (
         <TableSkeleton />
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-card hover:bg-card">
-                <TableHead>Queue ID</TableHead>
-                <TableHead>Invoice ID</TableHead>
-                <TableHead>Seller ID</TableHead>
-                <TableHead>Risk Score</TableHead>
-                <TableHead>Severity</TableHead>
-                <TableHead className="hidden md:table-cell">
-                  Fraud Reason
-                </TableHead>
-                <TableHead className="hidden md:table-cell">
-                  Created At
-                </TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {queue.map((item) => (
-                <TableRow key={item.id} className="hover:bg-accent">
-                  <TableCell className="font-mono">#{item.id}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {item.invoice_id ? `#${item.invoice_id}` : "-"}
-                  </TableCell>
-                  <TableCell className="font-mono">#{item.seller_id}</TableCell>
-                  <TableCell>
-                    <RiskBadge
-                      level={
-                        item.severity ??
-                        (item.risk_score >= 80
-                          ? "HIGH"
-                          : item.risk_score >= 50
-                            ? "MEDIUM"
-                            : "LOW")
-                      }
-                    />
-                    <span className="ml-2 text-sm">{item.risk_score}</span>
-                  </TableCell>
-                  <TableCell>
-                    <RiskBadge
-                      level={
-                        item.severity ??
-                        (item.risk_score >= 80
-                          ? "HIGH"
-                          : item.risk_score >= 50
-                            ? "MEDIUM"
-                            : "LOW")
-                      }
-                    />
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-[26rem]">
-                    <div className="space-y-1">
-                      {splitReasons(item.fraud_reason)
-                        .slice(0, 2)
-                        .map((reason, idx) => (
-                          <p key={idx} className="truncate" title={reason}>
-                            {reason}
-                          </p>
-                        ))}
-                      {splitReasons(item.fraud_reason).length > 2 ? (
-                        <p className="text-xs text-muted-foreground/80">
-                          +{splitReasons(item.fraud_reason).length - 2} more
-                        </p>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                    {new Date(item.created_at).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
+        <div className="grid gap-4">
+          {queue.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-xl border border-border bg-card px-4 py-4 shadow-sm"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Queue #{item.id} • Invoice{" "}
+                    {item.invoice_id ? `#${item.invoice_id}` : "N/A"} • Seller #
+                    {item.seller_id}
+                  </p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <RiskBadge level={item.severity ?? "LOW"} />
                     <Badge
                       variant="outline"
                       className={statusColors[item.status]}
                     >
                       {item.status}
                     </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {item.status !== "Resolved" ? (
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-risk-low h-7 text-xs"
-                          onClick={() => handleAction(item.id, "approve")}
-                        >
-                          Approve
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive h-7 text-xs"
-                          onClick={() => handleAction(item.id, "reject")}
-                        >
-                          Reject
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-chart-blue h-7 text-xs"
-                          disabled={explainLoading}
-                          onClick={() => handleExplain(item.invoice_id)}
-                        >
-                          {explainLoading ? "Explaining..." : "Why flagged?"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-risk-medium h-7 text-xs hidden lg:inline-flex"
-                          onClick={() => handleAction(item.id, "escalate")}
-                        >
-                          Escalate
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          Done
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive h-7 text-xs"
-                          onClick={() => handleDeleteResolved(item.id)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(item.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-right">
+                  <p className="text-xs text-muted-foreground">Anomaly Score</p>
+                  <p className="font-mono text-lg font-semibold">
+                    {formatScore(item.anomaly_score ?? null, 4)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg border border-border bg-background px-3 py-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Risk vs Anomaly Context
+                  </p>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <div className="rounded-md bg-muted/40 px-2 py-2">
+                      <p className="text-xs text-muted-foreground">
+                        Seller Composite
+                      </p>
+                      <p className="font-mono font-semibold">
+                        {formatScore(
+                          item.seller_composite_score ?? item.risk_score,
+                          0,
+                        )}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-2 py-2">
+                      <p className="text-xs text-muted-foreground">
+                        Invoice Anomaly
+                      </p>
+                      <p className="font-mono font-semibold">
+                        {formatScore(item.anomaly_score ?? null, 4)}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-2 py-2">
+                      <p className="text-xs text-muted-foreground">
+                        Global Score
+                      </p>
+                      <p className="font-mono font-semibold">
+                        {formatScore(item.global_anomaly_score ?? null, 4)}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-2 py-2">
+                      <p className="text-xs text-muted-foreground">
+                        Fraud Probability
+                      </p>
+                      <p className="font-mono font-semibold">
+                        {typeof item.supervised_probability === "number"
+                          ? `${(item.supervised_probability * 100).toFixed(1)}%`
+                          : "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-border bg-background px-3 py-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Reasoning Panel
+                  </p>
+                  <ul className="mt-2 list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                    {reasonsForItem(item)
+                      .slice(0, 5)
+                      .map((reason, idx) => (
+                        <li key={idx}>{reason}</li>
+                      ))}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {item.status !== "Resolved" ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="default"
+                      disabled={actingId === item.id}
+                      onClick={() => handleAction(item.id, "clear")}
+                    >
+                      Clear Flag
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={actingId === item.id}
+                      onClick={() => handleAction(item.id, "confirm_fraud")}
+                    >
+                      Confirm Fraud
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-chart-blue"
+                      disabled={explainLoading}
+                      onClick={() => handleExplain(item.invoice_id)}
+                    >
+                      {explainLoading ? "Loading..." : "Refresh Explanation"}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-xs text-muted-foreground">
+                      Resolved via: {item.resolution_action ?? "manual"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive"
+                      onClick={() => handleDeleteResolved(item.id)}
+                    >
+                      Delete
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
       {selectedExplanation && (

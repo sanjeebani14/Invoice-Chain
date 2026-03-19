@@ -39,8 +39,12 @@ export default function PendingInvoicesPage() {
           ? prev
           : data.invoices[0].id;
       });
-    } catch {
-      setError("Failed to load pending invoices.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to load pending invoices.";
+      setError(message);
     } finally {
       setLoading(false);
     }

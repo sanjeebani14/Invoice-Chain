@@ -42,7 +42,12 @@ def get_admin_overview(
     current_admin: User = Depends(get_current_admin),
 ):
     _ = current_admin
-    pending_invoices = db.query(func.count(Invoice.id)).filter(Invoice.status == "pending_review").scalar() or 0
+    pending_invoices = (
+        db.query(func.count(Invoice.id))
+        .filter(Invoice.status.in_(["pending", "pending_review", "flagged"]))
+        .scalar()
+        or 0
+    )
     funded_live = db.query(func.count(Invoice.id)).filter(Invoice.status.in_(["funded", "active"])).scalar() or 0
     settled_count = db.query(func.count(Invoice.id)).filter(Invoice.status == "settled").scalar() or 0
     pending_kyc = db.query(func.count(KycSubmission.id)).filter(KycSubmission.status == "pending").scalar() or 0

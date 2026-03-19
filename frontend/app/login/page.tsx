@@ -10,7 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { login } from "@/lib/auth";
+import { getBackendOrigin } from "@/lib/backendOrigin";
 import axios from "axios";
+
+const BACKEND_ORIGIN = getBackendOrigin();
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,7 +29,7 @@ export default function LoginPage() {
     try {
       await login({ email, password });
       toast.success("Logged in successfully");
-      const me = await axios.get("http://localhost:8000/auth/me", {
+      const me = await axios.get(`${BACKEND_ORIGIN}/auth/me`, {
         withCredentials: true,
       });
       const rawRole = String(me.data?.role ?? "").toLowerCase();

@@ -1,6 +1,7 @@
 import axios from "axios";
+import { getBackendOrigin } from "@/lib/backendOrigin";
 
-const AUTH_BASE = "http://localhost:8000/auth";
+const AUTH_BASE = `${getBackendOrigin()}/auth`;
 
 // Configure axios to send cookies with requests
 axios.defaults.withCredentials = true;
@@ -36,7 +37,7 @@ export interface UserOut {
 export async function register(data: RegisterData): Promise<MessageResponse> {
   const response = await axios.post<MessageResponse>(
     `${AUTH_BASE}/register`,
-    data
+    data,
   );
   return response.data;
 }
@@ -44,7 +45,7 @@ export async function register(data: RegisterData): Promise<MessageResponse> {
 export async function login(data: LoginData): Promise<MessageResponse> {
   const response = await axios.post<MessageResponse>(
     `${AUTH_BASE}/login`,
-    data
+    data,
   );
   // Tokens are automatically set in HTTP-only cookies by the backend
   // No need to save them manually
@@ -53,9 +54,7 @@ export async function login(data: LoginData): Promise<MessageResponse> {
 
 export async function logout(): Promise<MessageResponse> {
   try {
-    const response = await axios.post<MessageResponse>(
-      `${AUTH_BASE}/logout`
-    );
+    const response = await axios.post<MessageResponse>(`${AUTH_BASE}/logout`);
     // Cookies are automatically cleared by the backend
     window.location.href = "/login";
     return response.data;
@@ -67,9 +66,7 @@ export async function logout(): Promise<MessageResponse> {
 }
 
 export async function refreshToken(): Promise<MessageResponse> {
-  const response = await axios.post<MessageResponse>(
-    `${AUTH_BASE}/refresh`
-  );
+  const response = await axios.post<MessageResponse>(`${AUTH_BASE}/refresh`);
   // New access token is automatically set in cookie by the backend
   return response.data;
 }

@@ -1,10 +1,19 @@
 "use client";
 
-import { useState, useEffect, useCallback, useContext, createContext, ReactNode } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useContext,
+  createContext,
+  ReactNode,
+} from "react";
 import axios from "axios";
 import * as authService from "@/lib/auth";
+import { getBackendOrigin } from "@/lib/backendOrigin";
 
 axios.defaults.withCredentials = true;
+const BACKEND_ORIGIN = getBackendOrigin();
 
 // ── Types ─────────────────────────────────────────────────────
 export interface AuthContextType {
@@ -23,7 +32,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // ── Auth Provider ─────────────────────────────────────────────
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<authService.UserOut | null>(null);
+  const [currentUser, setCurrentUser] = useState<authService.UserOut | null>(
+    null,
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,8 +45,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         // Try to fetch current user to verify we're authenticated
         const response = await axios.get<authService.UserOut>(
-          "http://localhost:8000/auth/me",
-          { withCredentials: true }
+          `${BACKEND_ORIGIN}/auth/me`,
+          { withCredentials: true },
         );
         setCurrentUser(response.data);
       } catch (err) {
@@ -57,8 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await authService.login({ email, password });
       // After login, fetch current user
       const response = await axios.get<authService.UserOut>(
-        "http://localhost:8000/auth/me",
-        { withCredentials: true }
+        `${BACKEND_ORIGIN}/auth/me`,
+        { withCredentials: true },
       );
       setCurrentUser(response.data);
     } catch (err: any) {
@@ -117,11 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearError,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 // ── useAuth Hook ──────────────────────────────────────────────
@@ -192,6 +199,6 @@ if (typeof window !== "undefined") {
       }
 
       return Promise.reject(error);
-    }
+    },
   );
 }

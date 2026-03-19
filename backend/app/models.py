@@ -128,7 +128,9 @@ class FraudFlag(Base):
     seller_id = Column(Integer, index=True) # Added to link flags to sellers easily
     reason = Column(Text)
     severity = Column(String) # "HIGH", "MEDIUM", "LOW"
+    anomaly_metadata = Column(JSON, nullable=True)
     is_resolved = Column(Boolean, default=False)
+    resolution_action = Column(String, nullable=True)  # clear | confirm_fraud
     resolved_by = Column(Integer, nullable=True)        # admin user_id
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

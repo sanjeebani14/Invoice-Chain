@@ -13,8 +13,12 @@ const PUBLIC_PATHS = [
 
 const ADMIN_PATH = "/admin";
 
-const isPublicPath = (pathname: string) =>
-  PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+const isPublicPath = (pathname: string) => {
+  if (pathname === "/") {
+    return true;
+  }
+  return PUBLIC_PATHS.some((p) => p !== "/" && pathname.startsWith(p));
+};
 
 const isAdminPath = (pathname: string) =>
   pathname === ADMIN_PATH || pathname.startsWith(`${ADMIN_PATH}/`);
@@ -23,7 +27,8 @@ async function getCurrentUserRole(
   request: NextRequest,
 ): Promise<string | null> {
   try {
-    const res = await fetch("http://localhost:8000/auth/me", {
+    const host = request.nextUrl.hostname || "localhost";
+    const res = await fetch(`http://${host}:8000/auth/me`, {
       method: "GET",
       headers: {
         cookie: request.headers.get("cookie") ?? "",
