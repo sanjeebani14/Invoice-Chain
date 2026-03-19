@@ -1,7 +1,10 @@
 import os
+import logging
+import math
 from datetime import date, datetime, timezone
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import Optional
 from pydantic import BaseModel
@@ -17,6 +20,7 @@ from ..services.minting import get_invoice_minting_service
 from ..auth.dependencies import get_current_user, require_sme, require_admin
 
 router = APIRouter(prefix="/invoices", tags=["Invoice Processing"])
+logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -25,6 +29,55 @@ ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 MAX_FILE_SIZE_MB = 10
 anomaly_service = InvoiceAnomalyService()
 minting_service = get_invoice_minting_service()
+
+
+def _create_or_update_fraud_flag_from_anomaly(
+    db: Session,
+    invoice: Invoice,
+    anomaly_payload: dict,
+) -> None:
+    existing = (
+        db.query(FraudFlag)
+        .filter(FraudFlag.invoice_id == invoice.id, FraudFlag.is_resolved == False)
+        .order_by(FraudFlag.created_at.desc())
+        .first()
+    )
+
+    reason_text = " | ".join(anomaly_payload.get("reasons") or ["Anomaly detected"])
+    severity = anomaly_payload.get("severity") or "MEDIUM"
+
+    if existing is not None:
+        existing.reason = reason_text
+        existing.severity = severity
+        existing.anomaly_metadata = anomaly_payload
+        existing.resolution_action = None
+        return
+
+    db.add(
+        FraudFlag(
+            invoice_id=invoice.id,
+            seller_id=invoice.seller_id,
+            reason=reason_text,
+            severity=severity,
+            anomaly_metadata=anomaly_payload,
+            is_resolved=False,
+        )
+    )
+
+
+def _run_pending_review_anomaly(db: Session, invoice: Invoice) -> dict | None:
+    if invoice.status != "pending_review":
+        return None
+
+    anomaly_result = anomaly_service.evaluate_invoice(db, invoice)
+    anomaly_payload = anomaly_result.to_dict()
+
+    if anomaly_result.should_flag:
+        invoice.status = "flagged"
+        invoice.is_duplicate = False
+        _create_or_update_fraud_flag_from_anomaly(db, invoice, anomaly_payload)
+
+    return anomaly_payload
 
 
 class InvoiceUpdatePayload(BaseModel):
@@ -166,7 +219,31 @@ async def upload_invoice(
     if duplicate_result["is_duplicate"]:
         invoice.is_duplicate = True
         invoice.status = "flagged"
-        db.commit()
+        # Keep fraud queue aligned with flagged lifecycle for duplicate hits.
+        db.add(
+            FraudFlag(
+                invoice_id=invoice.id,
+                seller_id=invoice.seller_id,
+                reason="Duplicate detection: invoice appears to match existing records.",
+                severity="MEDIUM",
+                anomaly_metadata={
+                    "source": "duplicate_detection",
+                    "details": duplicate_result,
+                },
+                is_resolved=False,
+            )
+        )
+    else:
+        _run_pending_review_anomaly(db, invoice)
+
+    db.commit()
+
+    latest_flag = (
+        db.query(FraudFlag)
+        .filter(FraudFlag.invoice_id == invoice.id)
+        .order_by(FraudFlag.created_at.desc())
+        .first()
+    )
 
     return JSONResponse(status_code=200, content={
         "invoice_id": invoice.id,
@@ -184,6 +261,7 @@ async def upload_invoice(
         "overall_ocr_confidence": ocr_result["overall_confidence"],
         "duplicate_check": duplicate_result,
         "status": invoice.status,
+        "anomaly": latest_flag.anomaly_metadata if latest_flag else None,
         "uploaded_by": current_user.email,
     })
 
@@ -212,7 +290,7 @@ def list_invoices(
         query = query.filter(Invoice.status == status)
 
     invoices = query.order_by(Invoice.created_at.desc()).offset(skip).limit(limit).all()
-    return {"invoices": [_invoice_to_dict(inv) for inv in invoices], "total": query.count()}
+    return {"invoices": [_invoice_to_dict(inv, db) for inv in invoices], "total": query.count()}
 
 
 @router.get("/marketplace")
@@ -236,12 +314,12 @@ def list_marketplace_invoices(
     )
 
     invoices = query.offset(skip).limit(limit).all()
-    return {"invoices": [_invoice_to_dict(inv) for inv in invoices], "total": query.count()}
+    return {"invoices": [_invoice_to_dict(inv, db) for inv in invoices], "total": query.count()}
 
 
 # ── GET /invoices/{invoice_id} ── owner or admin ──────────────────────────────
 
-@router.get("/{invoice_id}")
+@router.get("/{invoice_id:int}")
 def get_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
@@ -255,12 +333,12 @@ def get_invoice(
     if invoice.seller_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Not authorised to view this invoice")
 
-    return _invoice_to_dict(invoice)
+    return _invoice_to_dict(invoice, db)
 
 
 # ── PUT /invoices/{invoice_id} ── owner only ──────────────────────────────────
 
-@router.put("/{invoice_id}")
+@router.put("/{invoice_id:int}")
 def update_invoice_fields(
     invoice_id: int,
     payload: InvoiceUpdatePayload,
@@ -310,15 +388,20 @@ def update_invoice_fields(
     )
     invoice.canonical_hash = hash_result["hash"]
     invoice.status = "pending_review"
+    anomaly_payload = _run_pending_review_anomaly(db, invoice)
 
     db.commit()
     db.refresh(invoice)
-    return {"message": "Invoice updated", "invoice": _invoice_to_dict(invoice)}
+    return {
+        "message": "Invoice updated",
+        "invoice": _invoice_to_dict(invoice, db),
+        "anomaly": anomaly_payload,
+    }
 
 
 # ── PUT /invoices/{invoice_id}/review ── admin only ──────────────────────────
 
-@router.put("/{invoice_id}/review")
+@router.put("/{invoice_id:int}/review")
 def review_invoice(
     invoice_id: int,
     action: str,
@@ -336,15 +419,7 @@ def review_invoice(
         if anomaly_result.should_flag:
             invoice.status = "flagged"
             invoice.is_duplicate = False
-            db.add(
-                FraudFlag(
-                    invoice_id=invoice.id,
-                    seller_id=invoice.seller_id,
-                    reason=" | ".join(anomaly_result.reasons),
-                    severity=anomaly_result.severity,
-                    is_resolved=False,
-                )
-            )
+            _create_or_update_fraud_flag_from_anomaly(db, invoice, anomaly_result.to_dict())
             db.commit()
             return {
                 "message": "Invoice flagged by anomaly model for manual review.",
@@ -357,7 +432,13 @@ def review_invoice(
         db.query(FraudFlag).filter(
             FraudFlag.invoice_id == invoice_id,
             FraudFlag.is_resolved == False,
-        ).update({"is_resolved": True, "resolved_by": current_user.id})
+        ).update(
+            {
+                "is_resolved": True,
+                "resolved_by": current_user.id,
+                "resolution_action": "clear",
+            }
+        )
     elif action == "reject":
         invoice.status = "rejected"
     else:
@@ -398,6 +479,17 @@ def _to_upload_url(file_path: Optional[str]) -> Optional[str]:
     return f"/uploads/{filename}"
 
 
+def _safe_json_number(value: Optional[float]) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        numeric = float(value)
+        if math.isnan(numeric) or math.isinf(numeric):
+            return None
+        return numeric
+    return None
+
+
 def _settlement_event_type(days_late: int) -> str:
     if days_late <= 0:
         return "ON_TIME_PAYMENT"
@@ -415,32 +507,53 @@ def list_pending_invoices_for_admin(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    _ = current_user
-    query = (
-        db.query(Invoice)
-        .filter(Invoice.status.in_(["pending_review", "flagged"]))
-        .order_by(Invoice.created_at.desc())
+    logger.info(
+        "pending-review endpoint hit: user_id=%s skip=%s limit=%s",
+        current_user.id,
+        skip,
+        limit,
     )
+    try:
+        _ = current_user
+        # Avoid pathological large limits that can freeze the UI.
+        limit = min(max(int(limit), 1), 100)
+        query = (
+            db.query(Invoice)
+            .filter(Invoice.status.in_(["pending", "pending_review", "flagged"]))
+            .order_by(Invoice.created_at.desc())
+        )
 
-    invoices = query.offset(skip).limit(limit).all()
-    rows = []
-    for inv in invoices:
-        duplicate_count = 0
-        if inv.invoice_number:
-            duplicate_count = (
-                db.query(Invoice)
-                .filter(Invoice.invoice_number == inv.invoice_number, Invoice.id != inv.id)
-                .count()
+        invoices = query.offset(skip).limit(limit).all()
+        invoice_numbers = {inv.invoice_number for inv in invoices if inv.invoice_number}
+        duplicate_count_by_number: dict[str, int] = {}
+        if invoice_numbers:
+            # One grouped query instead of per-invoice `.count()` (removes N+1).
+            counts = (
+                db.query(Invoice.invoice_number, func.count(Invoice.id))
+                .filter(Invoice.invoice_number.in_(invoice_numbers))
+                .group_by(Invoice.invoice_number)
+                .all()
             )
+            duplicate_count_by_number = {
+                str(num): int(cnt) for num, cnt in counts if num is not None
+            }
+        rows = []
+        for inv in invoices:
+            total_same_number = (
+                duplicate_count_by_number.get(str(inv.invoice_number), 0)
+                if inv.invoice_number
+                else 0
+            )
+            # Match legacy behavior: exclude the current invoice row.
+            duplicate_count = max(0, total_same_number - 1)
 
-        conf = inv.ocr_confidence or {}
-        rows.append(
-            {
+            conf = inv.ocr_confidence if isinstance(inv.ocr_confidence, dict) else {}
+            row = {
                 "id": inv.id,
                 "invoice_number": inv.invoice_number,
                 "seller_name": inv.seller_name,
                 "client_name": inv.client_name,
-                "amount": inv.amount,
+                "amount": _safe_json_number(inv.amount),
                 "currency": inv.currency,
                 "due_date": inv.due_date,
                 "status": inv.status,
@@ -453,23 +566,38 @@ def list_pending_invoices_for_admin(
                     "invoice_number": inv.invoice_number,
                     "seller_name": inv.seller_name,
                     "client_name": inv.client_name,
-                    "amount": inv.amount,
+                    "amount": _safe_json_number(inv.amount),
                     "currency": inv.currency,
                     "due_date": inv.due_date,
                 },
                 "confidence": {
-                    "invoice_number": conf.get("invoice_number"),
-                    "seller_name": conf.get("seller_name"),
-                    "client_name": conf.get("client_name"),
-                    "amount": conf.get("amount"),
-                    "due_date": conf.get("due_date"),
-                    "overall": conf.get("overall"),
+                    "invoice_number": _safe_json_number(conf.get("invoice_number")),
+                    "seller_name": _safe_json_number(conf.get("seller_name")),
+                    "client_name": _safe_json_number(conf.get("client_name")),
+                    "amount": _safe_json_number(conf.get("amount")),
+                    "due_date": _safe_json_number(conf.get("due_date")),
+                    "overall": _safe_json_number(conf.get("overall")),
                 },
                 "created_at": str(inv.created_at),
             }
-        )
+            rows.append(row)
 
-    return {"invoices": rows, "total": query.count()}
+        total = query.count()
+        logger.info(
+            "pending-review returning rows=%s total=%s user_id=%s",
+            len(rows),
+            total,
+            current_user.id,
+        )
+        return {"invoices": rows, "total": total}
+    except Exception:
+        logger.exception(
+            "pending-review failed: user_id=%s skip=%s limit=%s",
+            current_user.id,
+            skip,
+            limit,
+        )
+        raise
 
 
 @router.get("/admin/settlement-tracker")
@@ -548,7 +676,7 @@ def settlement_tracker(
     return {"items": items, "total": query.count()}
 
 
-@router.post("/{invoice_id}/settle")
+@router.post("/{invoice_id:int}/settle")
 def settle_invoice(
     invoice_id: int,
     payload: SettleInvoicePayload,
@@ -645,7 +773,7 @@ def settle_invoice(
 
 # ── POST /invoices/{invoice_id}/mint ── admin or seller ───────────────────────
 
-@router.post("/{invoice_id}/mint")
+@router.post("/{invoice_id:int}/mint")
 def mint_invoice_nft(
     invoice_id: int,
     payload: MintInvoicePayload,
@@ -744,12 +872,21 @@ def get_flagged_invoices(
         .order_by(Invoice.created_at.desc())
         .all()
     )
-    return {"flagged_invoices": [_invoice_to_dict(inv) for inv in flagged]}
+    return {"flagged_invoices": [_invoice_to_dict(inv, db) for inv in flagged]}
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
-def _invoice_to_dict(invoice: Invoice) -> dict:
+def _invoice_to_dict(invoice: Invoice, db: Session | None = None) -> dict:
+    latest_flag: FraudFlag | None = None
+    if db is not None:
+        latest_flag = (
+            db.query(FraudFlag)
+            .filter(FraudFlag.invoice_id == invoice.id)
+            .order_by(FraudFlag.created_at.desc())
+            .first()
+        )
+
     return {
         "id": invoice.id,
         "original_filename": invoice.original_filename,
@@ -772,6 +909,17 @@ def _invoice_to_dict(invoice: Invoice) -> dict:
         "status": invoice.status,
         "ocr_confidence": invoice.ocr_confidence,
         "seller_id": invoice.seller_id,
+        "anomaly": latest_flag.anomaly_metadata if latest_flag else None,
+        "fraud_flag": {
+            "id": latest_flag.id,
+            "severity": latest_flag.severity,
+            "reason": latest_flag.reason,
+            "is_resolved": latest_flag.is_resolved,
+            "resolution_action": latest_flag.resolution_action,
+            "resolved_by": latest_flag.resolved_by,
+        }
+        if latest_flag
+        else None,
         "upload_url": _to_upload_url(invoice.file_path),
         "created_at": str(invoice.created_at),
     }

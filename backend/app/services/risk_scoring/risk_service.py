@@ -176,11 +176,17 @@ class RiskScoringEngine:
                 auto_flag = models.FraudFlag(
                     invoice_id=None,
                     seller_id=seller_id,
-                    reason=(
-                        "Automatic high-risk flag from risk engine "
-                        "(composite score above threshold)."
-                    ),
+                    # Keep consistent with `risk.py` queue maintenance logic
+                    # (it looks for `Auto-queued:%` in `reason`).
+                    reason=f"Auto-queued: HIGH risk seller (composite score {score_int}).",
                     severity="HIGH",
+                    anomaly_metadata={
+                        "source": "risk_engine_auto_flag",
+                        "reasons": [
+                            f"Seller composite risk score is {score_int}, above the HIGH-risk threshold.",
+                            "This is a seller-level flag; invoice-level anomaly details may be unavailable until an invoice is evaluated.",
+                        ],
+                    },
                     is_resolved=False,
                 )
                 db.add(auto_flag)

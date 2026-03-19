@@ -1,10 +1,12 @@
 import axios from "axios";
+import { getBackendOrigin } from "@/lib/backendOrigin";
 
-const API_BASE = "http://localhost:8000/api/v1/risk";
-const ADMIN_USERS_BASE = "http://localhost:8000/api/v1/admin/users";
-const ADMIN_STATS_BASE = "http://localhost:8000/api/v1/admin/stats";
-const ANALYTICS_BASE = "http://localhost:8000/api/v1/analytics";
-const INVOICE_BASE = "http://localhost:8000/api/v1/invoice/invoices";
+const BACKEND_ORIGIN = getBackendOrigin();
+const API_BASE = `${BACKEND_ORIGIN}/api/v1/risk`;
+const ADMIN_USERS_BASE = `${BACKEND_ORIGIN}/api/v1/admin/users`;
+const ADMIN_STATS_BASE = `${BACKEND_ORIGIN}/api/v1/admin/stats`;
+const ANALYTICS_BASE = `${BACKEND_ORIGIN}/api/v1/analytics`;
+const INVOICE_BASE = `${BACKEND_ORIGIN}/api/v1/invoice/invoices`;
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -35,6 +37,34 @@ const invoiceApi = axios.create({
   withCredentials: true,
 });
 
+const authApi = axios.create({
+  baseURL: `${BACKEND_ORIGIN}/auth`,
+  timeout: 10000,
+  withCredentials: true,
+});
+
+async function withAuthRefreshRetry<T>(request: () => Promise<T>): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    if (!axios.isAxiosError(error)) {
+      throw error;
+    }
+
+    const status = error.response?.status;
+    if (status !== 401) {
+      throw error;
+    }
+
+    try {
+      await authApi.post("/refresh");
+      return await request();
+    } catch {
+      throw error;
+    }
+  }
+}
+
 // Types
 export interface SellerScore {
   seller_id: number;
@@ -64,8 +94,18 @@ export interface FraudQueueItem {
   invoice_id?: number;
   seller_id: number;
   risk_score: number;
+  seller_composite_score?: number;
   severity?: "LOW" | "MEDIUM" | "HIGH";
   fraud_reason: string;
+  anomaly_score?: number | null;
+  global_anomaly_score?: number | null;
+  supervised_probability?: number | null;
+  amount_velocity_zscore?: number | null;
+  benford_deviation?: number | null;
+  net_delta_abs?: number | null;
+  reasons?: string[];
+  resolution_action?: "clear" | "confirm_fraud" | null;
+  resolved_by?: number | null;
   created_at: string;
   status: "Pending" | "Under Review" | "Resolved";
 }
@@ -80,14 +120,18 @@ export interface ManualFraudFlagPayload {
 export interface InvoiceAnomalyExplanation {
   invoice_id: number;
   seller_id?: number;
+  seller_composite_score?: number | null;
   status: string;
   anomaly: {
     should_flag: boolean;
     severity: "LOW" | "MEDIUM" | "HIGH";
     model_label: number;
     anomaly_score: number;
+    global_anomaly_score?: number | null;
+    supervised_probability?: number | null;
     amount_velocity_zscore: number;
     benford_deviation: number;
+    net_delta_abs?: number;
     reasons: string[];
   };
 }
@@ -308,107 +352,6 @@ export interface AdminSettlementItem {
   created_at: string;
 }
 
-// Mock data generators
-const generateMockSellers = (): SellerScore[] => {
-  const levels: ("LOW" | "MEDIUM" | "HIGH")[] = ["LOW", "MEDIUM", "HIGH"];
-  return Array.from({ length: 50 }, (_, i) => ({
-    seller_id: 1001 + i,
-    composite_score: Math.round(Math.random() * 100),
-    risk_level: levels[Math.floor(Math.random() * 3)],
-    credit_score: 300 + Math.floor(Math.random() * 550),
-    annual_income: 30000 + Math.floor(Math.random() * 170000),
-    loan_amount: 5000 + Math.floor(Math.random() * 95000),
-    debt_to_income: +(Math.random() * 0.6).toFixed(2),
-    employment_years: Math.floor(Math.random() * 25),
-    last_updated: new Date(
-      Date.now() - Math.random() * 30 * 86400000,
-    ).toISOString(),
-  }));
-};
-
-const generateMockMetrics = (): RiskMetrics => ({
-  total_sellers: 1247,
-  high_risk: 89,
-  medium_risk: 342,
-  low_risk: 816,
-  avg_composite_score: 34.7,
-  risk_distribution: [
-    { score_range: "0-10", count: 120 },
-    { score_range: "11-20", count: 180 },
-    { score_range: "21-30", count: 220 },
-    { score_range: "31-40", count: 190 },
-    { score_range: "41-50", count: 160 },
-    { score_range: "51-60", count: 130 },
-    { score_range: "61-70", count: 100 },
-    { score_range: "71-80", count: 80 },
-    { score_range: "81-90", count: 45 },
-    { score_range: "91-100", count: 22 },
-  ],
-  fraud_alerts_over_time: Array.from({ length: 14 }, (_, i) => ({
-    date: new Date(Date.now() - (13 - i) * 86400000).toISOString().slice(0, 10),
-    alerts: Math.floor(Math.random() * 15) + 2,
-  })),
-  seller_risk_trends: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"].map(
-    (month) => ({
-      month,
-      high: Math.floor(Math.random() * 30) + 60,
-      medium: Math.floor(Math.random() * 80) + 280,
-      low: Math.floor(Math.random() * 100) + 750,
-    }),
-  ),
-  top_high_risk_sellers: Array.from({ length: 10 }, () => ({
-    seller_id: 1001 + Math.floor(Math.random() * 50),
-    score: 85 + Math.floor(Math.random() * 15),
-  })),
-  risk_level_breakdown: [
-    { level: "LOW", count: 816 },
-    { level: "MEDIUM", count: 342 },
-    { level: "HIGH", count: 89 },
-  ],
-});
-
-const generateMockFraudQueue = (): FraudQueueItem[] => {
-  const reasons = [
-    "Abnormal transaction pattern",
-    "Credit score anomaly",
-    "High debt-to-income ratio",
-    "Suspicious loan activity",
-    "Multiple flagged invoices",
-  ];
-  const statuses: FraudQueueItem["status"][] = [
-    "Pending",
-    "Under Review",
-    "Resolved",
-  ];
-  return Array.from({ length: 20 }, (_, i) => ({
-    id: i + 1,
-    invoice_id: 5000 + i,
-    seller_id: 1001 + Math.floor(Math.random() * 50),
-    risk_score: 65 + Math.floor(Math.random() * 35),
-    severity:
-      Math.random() > 0.66 ? "HIGH" : Math.random() > 0.5 ? "MEDIUM" : "LOW",
-    fraud_reason: reasons[Math.floor(Math.random() * reasons.length)],
-    created_at: new Date(
-      Date.now() - Math.random() * 14 * 86400000,
-    ).toISOString(),
-    status: statuses[Math.floor(Math.random() * statuses.length)],
-  }));
-};
-
-// Cached mock data
-let mockSellers: SellerScore[] | null = null;
-let mockFraudQueue: FraudQueueItem[] | null = null;
-
-const getMockSellers = () => {
-  if (!mockSellers) mockSellers = generateMockSellers();
-  return mockSellers;
-};
-
-const getMockFraudQueue = () => {
-  if (!mockFraudQueue) mockFraudQueue = generateMockFraudQueue();
-  return mockFraudQueue;
-};
-
 // API functions with mock fallback
 export const getSellerScore = async (
   sellerId: number,
@@ -436,6 +379,7 @@ export const getFraudQueue = async (): Promise<FraudQueueItem[]> => {
     const { data } = await api.get("/admin/fraud-queue");
     return (data as FraudQueueItem[]).map((item) => ({
       ...item,
+      seller_composite_score: item.seller_composite_score ?? item.risk_score,
       severity:
         item.severity ??
         (item.risk_score >= 80
@@ -443,6 +387,13 @@ export const getFraudQueue = async (): Promise<FraudQueueItem[]> => {
           : item.risk_score >= 50
             ? "MEDIUM"
             : "LOW"),
+      reasons:
+        item.reasons && item.reasons.length > 0
+          ? item.reasons
+          : item.fraud_reason
+              .split("|")
+              .map((part) => part.trim())
+              .filter(Boolean),
     }));
   } catch {
     return [];
@@ -458,6 +409,7 @@ export const getSellerFraudFlags = async (
     });
     return (data as FraudQueueItem[]).map((item) => ({
       ...item,
+      seller_composite_score: item.seller_composite_score ?? item.risk_score,
       severity:
         item.severity ??
         (item.risk_score >= 80
@@ -465,6 +417,13 @@ export const getSellerFraudFlags = async (
           : item.risk_score >= 50
             ? "MEDIUM"
             : "LOW"),
+      reasons:
+        item.reasons && item.reasons.length > 0
+          ? item.reasons
+          : item.fraud_reason
+              .split("|")
+              .map((part) => part.trim())
+              .filter(Boolean),
     }));
   } catch {
     return [];
@@ -486,7 +445,7 @@ export const explainInvoiceAnomaly = async (
 
 export const reviewFraudItem = async (
   id: number,
-  action: string,
+  action: "clear" | "confirm_fraud" | "approve" | "reject",
 ): Promise<void> => {
   await api.post(`/admin/fraud-review/${id}`, { action });
 };
@@ -619,21 +578,63 @@ export const getAdminPendingInvoices = async (params?: {
   skip?: number;
   limit?: number;
 }): Promise<{ invoices: AdminPendingInvoice[]; total: number }> => {
-  const { data } = await invoiceApi.get<{
-    invoices: AdminPendingInvoice[];
-    total: number;
-  }>("/admin/pending-review", { params });
-  return data;
+  try {
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("[pending-invoices] request", {
+        url: `${INVOICE_BASE}/admin/pending-review`,
+        params,
+      });
+    }
+    const { data } = await withAuthRefreshRetry(() =>
+      invoiceApi.get<{
+        invoices: AdminPendingInvoice[];
+        total: number;
+      }>("/admin/pending-review", { params }),
+    );
+    return data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("[pending-invoices] error", {
+          url: error.config?.url,
+          baseURL: error.config?.baseURL,
+          status: error.response?.status,
+          code: error.code,
+          data: error.response?.data,
+        });
+      }
+      const detail = (error.response?.data as { detail?: unknown } | undefined)
+        ?.detail;
+      if (typeof detail === "string" && detail.trim()) {
+        throw new Error(detail);
+      }
+      if (Array.isArray(detail) && detail.length > 0) {
+        const first = detail[0] as { msg?: string } | undefined;
+        if (first?.msg) {
+          throw new Error(first.msg);
+        }
+      }
+      if (error.code === "ERR_NETWORK") {
+        throw new Error(
+          "Unable to reach backend (possible CORS/connection issue).",
+        );
+      }
+      throw new Error("Unable to load pending invoices");
+    }
+    throw new Error("Unable to load pending invoices");
+  }
 };
 
 export const reviewAdminPendingInvoice = async (
   invoiceId: number,
   action: "approve" | "reject",
 ): Promise<{ message: string; status: string }> => {
-  const { data } = await invoiceApi.put<{ message: string; status: string }>(
-    `/${invoiceId}/review`,
-    null,
-    { params: { action } },
+  const { data } = await withAuthRefreshRetry(() =>
+    invoiceApi.put<{ message: string; status: string }>(
+      `/${invoiceId}/review`,
+      null,
+      { params: { action } },
+    ),
   );
   return data;
 };
@@ -665,125 +666,3 @@ export const settleInvoice = async (
   const { data } = await invoiceApi.post(`/${invoiceId}/settle`, payload ?? {});
   return data;
 };
-
-// Mock data generators for platform stats
-const generateMockPlatformStats = (period?: string): PlatformStats => ({
-  period: period || "2025-03",
-  period_type: "monthly",
-  total_funded_volume: 2450000,
-  total_invoices_created: 248,
-  total_invoices_funded: 145,
-  repayment_metrics: {
-    total_repaid: 128,
-    total_defaulted: 5,
-    repayment_rate: 88.28,
-    default_rate: 3.45,
-  },
-  platform_revenue: 49000,
-  average_invoice_yield: 4.75,
-  risk_distribution: {
-    high: 12,
-    medium: 48,
-    low: 85,
-    avg_score: 32.5,
-  },
-  sector_exposure: {
-    sectors: {
-      Manufacturing: 35.2,
-      Retail: 28.5,
-      Services: 22.3,
-      Technology: 14.0,
-    },
-    top_sector: "Manufacturing",
-    concentration_ratio: 86.0,
-  },
-  user_metrics: {
-    active_sellers: 342,
-    active_investors: 189,
-  },
-});
-
-const generateMockTimeSeries = (
-  months: number,
-): { months: number; data: PlatformStats[] } => {
-  const data: PlatformStats[] = [];
-  const baseVolume = 1000000;
-  const baseInvoices = 120;
-
-  for (let i = months; i > 0; i--) {
-    const date = new Date();
-    date.setMonth(date.getMonth() - (i - 1));
-    const period = date.toISOString().substring(0, 7);
-
-    data.push({
-      period,
-      period_type: "monthly",
-      total_funded_volume: baseVolume + Math.random() * 500000,
-      total_invoices_created: baseInvoices + Math.floor(Math.random() * 60),
-      total_invoices_funded: Math.floor(
-        (baseInvoices + Math.random() * 60) * 0.6,
-      ),
-      repayment_metrics: {
-        total_repaid: Math.floor((baseInvoices + Math.random() * 60) * 0.53),
-        total_defaulted: Math.floor((baseInvoices + Math.random() * 60) * 0.02),
-        repayment_rate: 85 + Math.random() * 10,
-        default_rate: 2 + Math.random() * 3,
-      },
-      platform_revenue: 20000 + Math.random() * 40000,
-      average_invoice_yield: 3 + Math.random() * 4,
-      risk_distribution: {
-        high: Math.floor(Math.random() * 20),
-        medium: Math.floor(Math.random() * 60),
-        low: Math.floor(Math.random() * 100),
-        avg_score: 30 + Math.random() * 10,
-      },
-      sector_exposure: {
-        sectors: {
-          Manufacturing: 30 + Math.random() * 15,
-          Retail: 25 + Math.random() * 15,
-          Services: 20 + Math.random() * 15,
-          Technology: 10 + Math.random() * 15,
-        },
-        top_sector: "Manufacturing",
-        concentration_ratio: 80 + Math.random() * 10,
-      },
-      user_metrics: {
-        active_sellers: 300 + Math.floor(Math.random() * 80),
-        active_investors: 150 + Math.floor(Math.random() * 60),
-      },
-    });
-  }
-
-  return { months, data };
-};
-
-const generateMockHealthMetrics = (): PlatformHealthMetrics => ({
-  gmv: 2450000,
-  repayment_rate: 88.28,
-  default_rate: 3.45,
-  platform_revenue: 49000,
-  active_sellers: 342,
-  active_investors: 189,
-  avg_risk_score: 32.5,
-  avg_invoice_yield: 12.8,
-  high_risk_invoices: 12,
-  top_sector: "Manufacturing",
-  sector_concentration: 86.0,
-});
-
-const generateMockRiskHeatmap = (): RiskHeatmapData => ({
-  sector_exposure: {
-    Manufacturing: 35.2,
-    Retail: 28.5,
-    Services: 22.3,
-    Technology: 14.0,
-  },
-  top_sector: "Manufacturing",
-  concentration_ratio: 86.0,
-  risk_levels: {
-    high: 12,
-    medium: 48,
-    low: 85,
-  },
-  avg_score: 32.5,
-});

@@ -153,6 +153,28 @@ EMAIL_FROM = os.getenv("EMAIL_FROM", "noreply@invoicechain.com")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 EMAIL_VERIFICATION_EXPIRY_HOURS = int(os.getenv("EMAIL_VERIFICATION_EXPIRY_HOURS", "24"))
 
+
+def _build_allowed_origins() -> list[str]:
+    # Keep local dev flexible: Next.js may auto-shift ports when 3000 is occupied.
+    defaults = {
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    }
+
+    if FRONTEND_URL:
+        defaults.add(FRONTEND_URL.rstrip("/"))
+
+    extra = os.getenv("CORS_EXTRA_ORIGINS", "").strip()
+    if extra:
+        for origin in extra.split(","):
+            clean = origin.strip().rstrip("/")
+            if clean:
+                defaults.add(clean)
+
+    return sorted(defaults)
+
 logger.debug(f"Environment: {ENVIRONMENT}")
 logger.debug(f"Email Service: {EMAIL_SERVICE}")
 logger.debug(f"Frontend URL: {FRONTEND_URL}")
@@ -180,7 +202,7 @@ if os.path.isdir("uploads"):
 # Allow frontend (Next.js on port 3000) to talk to this API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_build_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

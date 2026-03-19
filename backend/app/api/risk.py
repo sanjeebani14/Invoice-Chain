@@ -10,6 +10,7 @@ from app.database import engine, get_db
 from app import models
 from app.services.risk_scoring.risk_service import RiskScoringEngine
 from app.services.fraud_anomaly import InvoiceAnomalyService
+from app.auth.dependencies import require_admin
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -75,6 +76,10 @@ def _ensure_fraud_flags_schema_compatibility() -> None:
         statements.append("ALTER TABLE fraud_flags ADD COLUMN seller_id INTEGER")
     if "resolved_by" not in existing:
         statements.append("ALTER TABLE fraud_flags ADD COLUMN resolved_by INTEGER")
+    if "anomaly_metadata" not in existing:
+        statements.append("ALTER TABLE fraud_flags ADD COLUMN anomaly_metadata JSON")
+    if "resolution_action" not in existing:
+        statements.append("ALTER TABLE fraud_flags ADD COLUMN resolution_action VARCHAR")
 
     if not statements:
         return
@@ -408,6 +413,38 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
         if stale_updated:
             db.commit()
 
+        # Backfill queue entries for legacy invoices marked as flagged without
+        # a corresponding FraudFlag row.
+        flagged_without_queue = (
+            db.query(models.Invoice)
+            .outerjoin(
+                models.FraudFlag,
+                models.FraudFlag.invoice_id == models.Invoice.id,
+            )
+            .filter(models.Invoice.status == "flagged")
+            .filter(models.FraudFlag.id.is_(None))
+            .all()
+        )
+        if flagged_without_queue:
+            for inv in flagged_without_queue:
+                db.add(
+                    models.FraudFlag(
+                        invoice_id=inv.id,
+                        seller_id=inv.seller_id,
+                        reason="Backfilled: invoice is flagged but had no fraud queue record.",
+                        severity="MEDIUM",
+                        anomaly_metadata={
+                            "source": "flagged_status_backfill",
+                            "reasons": [
+                                "Invoice was marked `flagged` but no fraud queue record existed; queue entry backfilled.",
+                                "Invoice-level anomaly metadata was not recomputed during backfill, so detailed drivers may be limited.",
+                            ],
+                        },
+                        is_resolved=False,
+                    )
+                )
+            db.commit()
+
         query = db.query(models.FraudFlag)
         if seller_id is not None:
             query = query.filter(models.FraudFlag.seller_id == seller_id)
@@ -430,6 +467,35 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
 
     result = []
     for f in flags:
+        meta = f.anomaly_metadata if isinstance(f.anomaly_metadata, dict) else {}
+        reasons = meta.get("reasons") if isinstance(meta.get("reasons"), list) else None
+        if not reasons:
+            reason_text = (f.reason or "").strip()
+            # Provide more context for seller-level/backfill flags that may not
+            # have anomaly metadata yet (older DB rows included).
+            if reason_text.startswith("Auto-queued:"):
+                reasons = [
+                    "Seller-level fraud flag (invoice anomaly details may be unavailable).",
+                    reason_text,
+                ]
+            elif reason_text.startswith("Automatic high-risk flag"):
+                reasons = [
+                    "Seller-level fraud flag (invoice anomaly details may be unavailable).",
+                    reason_text,
+                ]
+            elif reason_text.startswith("Backfilled:"):
+                reasons = [
+                    "Queue backfilled from legacy `flagged` invoice state.",
+                    reason_text,
+                    "Invoice-level anomaly metadata was not recomputed for this backfill.",
+                ]
+            else:
+                reasons = [
+                    part.strip()
+                    for part in reason_text.split("|")
+                    if part.strip()
+                ]
+
         score = score_by_seller.get(
             int(f.seller_id) if f.seller_id is not None else -1,
             90 if f.severity == "HIGH" else 65 if f.severity == "MEDIUM" else 35,
@@ -440,11 +506,20 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
                 "invoice_id": f.invoice_id,
                 "seller_id": f.seller_id,
                 "risk_score": score,
-                # Keep queue severity consistent with the score shown in queue.
-                "severity": _severity_from_score(score),
+                "seller_composite_score": score,
+                "severity": f.severity or _severity_from_score(score),
                 "fraud_reason": f.reason,
+                "anomaly_score": meta.get("anomaly_score"),
+                "global_anomaly_score": meta.get("global_anomaly_score"),
+                "supervised_probability": meta.get("supervised_probability"),
+                "amount_velocity_zscore": meta.get("amount_velocity_zscore"),
+                "benford_deviation": meta.get("benford_deviation"),
+                "net_delta_abs": meta.get("net_delta_abs"),
+                "reasons": reasons,
                 "created_at": _to_iso(f.created_at),
                 "status": "Resolved" if f.is_resolved else "Pending",
+                "resolution_action": f.resolution_action,
+                "resolved_by": f.resolved_by,
             }
         )
 
@@ -456,6 +531,10 @@ class ManualFraudFlagRequest(BaseModel):
     invoice_id: int | None = None
     reason: str
     severity: str = "HIGH"  # "HIGH", "MEDIUM", "LOW"
+
+
+class FraudReviewRequest(BaseModel):
+    action: str  # clear | confirm_fraud (legacy: approve/reject)
 
 
 @router.post("/admin/manual-fraud-flag")
@@ -500,21 +579,64 @@ def explain_invoice_anomaly(invoice_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     result = anomaly_explainer.evaluate_invoice(db, invoice)
+    seller_score = None
+    if invoice.seller_id is not None:
+        seller = _canonical_credit_history_by_seller(db, {int(invoice.seller_id)}).get(int(invoice.seller_id))
+        if seller is not None:
+            seller_score = int(seller.composite_score or 0)
+
+    latest_flag = (
+        db.query(models.FraudFlag)
+        .filter(models.FraudFlag.invoice_id == invoice.id)
+        .order_by(models.FraudFlag.created_at.desc())
+        .first()
+    )
+
     return {
         "invoice_id": invoice_id,
         "seller_id": invoice.seller_id,
+        "seller_composite_score": seller_score,
         "status": invoice.status,
         "anomaly": result.to_dict(),
+        "flag": {
+            "id": latest_flag.id,
+            "severity": latest_flag.severity,
+            "reason": latest_flag.reason,
+            "is_resolved": latest_flag.is_resolved,
+            "resolution_action": latest_flag.resolution_action,
+            "resolved_by": latest_flag.resolved_by,
+        }
+        if latest_flag
+        else None,
     }
 
 
 @router.post("/admin/fraud-review/{flag_id}")
-def review_fraud_item(flag_id: int, db: Session = Depends(get_db)):
+def review_fraud_item(
+    flag_id: int,
+    payload: FraudReviewRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_admin),
+):
     flag = db.query(models.FraudFlag).filter(models.FraudFlag.id == flag_id).first()
     if not flag:
         raise HTTPException(status_code=404, detail="Fraud flag not found")
 
+    action_raw = payload.action.strip().lower()
+    action_map = {
+        "approve": "clear",
+        "clear": "clear",
+        "reject": "confirm_fraud",
+        "confirm_fraud": "confirm_fraud",
+        "confirm": "confirm_fraud",
+    }
+    action = action_map.get(action_raw)
+    if action is None:
+        raise HTTPException(status_code=400, detail="Action must be clear or confirm_fraud")
+
     flag.is_resolved = True
+    flag.resolution_action = action
+    flag.resolved_by = current_user.id
 
     if flag.seller_id is not None:
         db.execute(
@@ -530,7 +652,7 @@ def review_fraud_item(flag_id: int, db: Session = Depends(get_db)):
 
     db.commit()
 
-    return {"ok": True, "id": flag_id, "status": "Resolved"}
+    return {"ok": True, "id": flag_id, "status": "Resolved", "resolution_action": action}
 
 
 @router.delete("/admin/fraud-queue/{flag_id}")
