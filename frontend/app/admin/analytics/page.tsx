@@ -88,7 +88,8 @@ export default function Analytics() {
 
   // Platform Statistics state
   const [platformLoading, setPlatformLoading] = useState(true);
-  const [healthMetrics, setHealthMetrics] = useState<PlatformHealthMetrics | null>(null);
+  const [healthMetrics, setHealthMetrics] =
+    useState<PlatformHealthMetrics | null>(null);
   const [timeSeriesData, setTimeSeriesData] = useState<PlatformStats[]>([]);
   const [riskHeatmap, setRiskHeatmap] = useState<RiskHeatmapData | null>(null);
 
@@ -170,15 +171,24 @@ export default function Analytics() {
           ) : (
             <>
               {healthMetrics && (
-                <PlatformMetricsGrid metrics={healthMetrics} isLoading={platformLoading} />
+                <PlatformMetricsGrid
+                  metrics={healthMetrics}
+                  isLoading={platformLoading}
+                />
               )}
 
               {timeSeriesData.length > 0 && (
-                <GrowthTrendChart data={timeSeriesData} isLoading={platformLoading} />
+                <GrowthTrendChart
+                  data={timeSeriesData}
+                  isLoading={platformLoading}
+                />
               )}
 
               {riskHeatmap && (
-                <SectorExposureChart data={riskHeatmap} isLoading={platformLoading} />
+                <SectorExposureChart
+                  data={riskHeatmap}
+                  isLoading={platformLoading}
+                />
               )}
             </>
           )}
@@ -188,14 +198,34 @@ export default function Analytics() {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Risk Analytics</h2>
             <Select value={riskFilter} onValueChange={setRiskFilter}>
-              <SelectTrigger className="w-36">
+              <SelectTrigger className="w-36 border-gray-300 bg-white text-gray-900">
                 <SelectValue placeholder="Filter" />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Levels</SelectItem>
-                <SelectItem value="LOW">Low Risk</SelectItem>
-                <SelectItem value="MEDIUM">Medium Risk</SelectItem>
-                <SelectItem value="HIGH">High Risk</SelectItem>
+              <SelectContent className="border-gray-200 bg-white text-gray-900">
+                <SelectItem
+                  value="all"
+                  className="text-gray-900 focus:bg-gray-100"
+                >
+                  All Levels
+                </SelectItem>
+                <SelectItem
+                  value="LOW"
+                  className="text-gray-900 focus:bg-gray-100"
+                >
+                  Low Risk
+                </SelectItem>
+                <SelectItem
+                  value="MEDIUM"
+                  className="text-gray-900 focus:bg-gray-100"
+                >
+                  Medium Risk
+                </SelectItem>
+                <SelectItem
+                  value="HIGH"
+                  className="text-gray-900 focus:bg-gray-100"
+                >
+                  High Risk
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -285,7 +315,11 @@ export default function Analytics() {
                         stroke={GRID}
                         vertical={false}
                       />
-                      <XAxis dataKey="date" tick={TICK} axisLine={{ stroke: GRID }} />
+                      <XAxis
+                        dataKey="date"
+                        tick={TICK}
+                        axisLine={{ stroke: GRID }}
+                      />
                       <YAxis tick={TICK} axisLine={{ stroke: GRID }} />
                       <Tooltip contentStyle={TT} />
                       <Line
@@ -308,7 +342,11 @@ export default function Analytics() {
                       stroke={GRID}
                       vertical={false}
                     />
-                    <XAxis dataKey="month" tick={TICK} axisLine={{ stroke: GRID }} />
+                    <XAxis
+                      dataKey="month"
+                      tick={TICK}
+                      axisLine={{ stroke: GRID }}
+                    />
                     <YAxis tick={TICK} axisLine={{ stroke: GRID }} />
                     <Tooltip contentStyle={TT} />
                     <Legend />

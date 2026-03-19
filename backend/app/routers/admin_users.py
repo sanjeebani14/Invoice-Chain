@@ -1,10 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth.dependencies import get_current_admin
 from ..auth.hashing import hash_password
 from ..database import get_db
-from ..models import User, UserRole
+from ..models import (
+    EmailVerificationToken,
+    KycSubmission,
+    RefreshToken,
+    User,
+    UserRole,
+)
 from ..schemas.admin_users import (
     AdminUserCreate,
     AdminUserListResponse,
@@ -13,6 +21,54 @@ from ..schemas.admin_users import (
 )
 
 router = APIRouter(prefix="/api/v1/admin/users", tags=["Admin - Users"])
+
+
+def _quote_ident(identifier: str) -> str:
+    return '"' + identifier.replace('"', '""') + '"'
+
+
+def _cleanup_user_foreign_keys(db: Session, user_id: int) -> None:
+    """Best-effort cleanup for schema drift where tables reference users.id."""
+    inspector = inspect(db.bind)
+    nullify_column_names = {
+        "reviewed_by",
+        "resolved_by",
+        "approved_by",
+        "rejected_by",
+        "updated_by",
+        "created_by",
+        "deleted_by",
+    }
+
+    for table_name in inspector.get_table_names():
+        if table_name == "users":
+            continue
+
+        columns = {col["name"]: col for col in inspector.get_columns(table_name)}
+        for fk in inspector.get_foreign_keys(table_name):
+            referred_table = fk.get("referred_table")
+            referred_columns = fk.get("referred_columns") or []
+            constrained_columns = fk.get("constrained_columns") or []
+            if referred_table != "users" or referred_columns != ["id"] or len(constrained_columns) != 1:
+                continue
+
+            fk_column = constrained_columns[0]
+            column_info = columns.get(fk_column, {})
+            is_nullable = bool(column_info.get("nullable", True))
+
+            table_sql = _quote_ident(table_name)
+            column_sql = _quote_ident(fk_column)
+
+            if is_nullable and fk_column in nullify_column_names:
+                db.execute(
+                    text(f"UPDATE {table_sql} SET {column_sql} = NULL WHERE {column_sql} = :user_id"),
+                    {"user_id": user_id},
+                )
+            else:
+                db.execute(
+                    text(f"DELETE FROM {table_sql} WHERE {column_sql} = :user_id"),
+                    {"user_id": user_id},
+                )
 
 
 @router.post("/", response_model=AdminUserOut, status_code=status.HTTP_201_CREATED)
@@ -101,3 +157,53 @@ def update_user(
     db.refresh(user)
 
     return AdminUserOut.from_orm(user)
+
+
+@router.delete("/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if current_admin.id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account",
+        )
+
+    # Remove dependent rows first to satisfy FK constraints.
+    db.query(RefreshToken).filter(RefreshToken.user_id == user_id).delete(synchronize_session=False)
+    db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user_id).delete(synchronize_session=False)
+
+    # KYC submissions owned by this user can be removed.
+    db.query(KycSubmission).filter(KycSubmission.user_id == user_id).delete(synchronize_session=False)
+
+    # If this user acted as reviewer, keep submissions but clear reviewer reference.
+    db.query(KycSubmission).filter(KycSubmission.reviewed_by == user_id).update(
+        {KycSubmission.reviewed_by: None},
+        synchronize_session=False,
+    )
+
+    # Handle legacy/schema-drift foreign-key dependencies in local environments.
+    _cleanup_user_foreign_keys(db, user_id)
+
+    db.delete(user)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        detail = "Cannot delete user because related records still exist"
+        constraint_name = getattr(getattr(exc, "orig", None), "diag", None)
+        constraint_name = getattr(constraint_name, "constraint_name", None)
+        if constraint_name:
+            detail = f"Cannot delete user due to foreign key constraint: {constraint_name}"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=detail,
+        ) from exc
+
+    return {"message": "User deleted"}

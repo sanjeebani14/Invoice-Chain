@@ -120,7 +120,7 @@ def get_health_metrics(
     - Avg Risk Score: Average seller credit rating
     """
     try:
-        stats = PlatformStatsService.aggregate_stats(db, use_cache=True)
+        stats = PlatformStatsService.aggregate_stats(db, use_cache=False)
         
         # Curate for dashboard display
         health_metrics = {

@@ -40,6 +40,12 @@ export default function AdminLayout({
           >
             Users
           </Link>
+          <Link
+            href="/admin/kyc"
+            className="block rounded px-3 py-2 hover:bg-gray-100"
+          >
+            KYC Verification
+          </Link>
         </nav>
       </aside>
 

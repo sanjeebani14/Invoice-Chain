@@ -388,6 +388,10 @@ export const createAdminUser = async (payload: {
   return data;
 };
 
+export const deleteAdminUser = async (userId: number): Promise<void> => {
+  await adminUsersApi.delete(`/${userId}`);
+};
+
 // Platform Statistics API Methods
 export const getPlatformSummary = async (
   period?: string,

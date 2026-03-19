@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class KycSubmissionOut(BaseModel):
     id: int
+    user_id: int
     doc_type: str
     status: str
     original_filename: Optional[str] = None

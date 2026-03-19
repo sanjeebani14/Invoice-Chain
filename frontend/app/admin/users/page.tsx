@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import {
   createAdminUser,
+  deleteAdminUser,
   getAdminUsers,
   type AdminManagedUser,
   updateAdminUser,
@@ -69,6 +70,7 @@ export default function AdminUsersPage() {
   const [addRole, setAddRole] = useState<EditableRole>("seller");
   const [addActive, setAddActive] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
 
   const loadUsers = async () => {
     try {
@@ -149,6 +151,28 @@ export default function AdminUsersPage() {
     }
   };
 
+  const onDeleteUser = async (user: AdminManagedUser) => {
+    const ok = window.confirm(`Delete user ${user.email}? This action cannot be undone.`);
+    if (!ok) return;
+
+    try {
+      setDeletingUserId(user.id);
+      setError(null);
+      await deleteAdminUser(user.id);
+      setUsers((prev) => prev.filter((u) => u.id !== user.id));
+
+      if (selectedUser?.id === user.id) {
+        closeManage();
+      }
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail;
+      setError(detail || "Failed to delete user.");
+    } finally {
+      setDeletingUserId(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -205,14 +229,25 @@ export default function AdminUsersPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openManage(user)}
-                      className="border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
-                    >
-                      Manage
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openManage(user)}
+                        className="border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
+                      >
+                        Manage
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onDeleteUser(user)}
+                        disabled={deletingUserId === user.id}
+                        className="border-red-300 bg-white text-red-700 hover:bg-red-50"
+                      >
+                        {deletingUserId === user.id ? "Deleting..." : "Delete"}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

@@ -252,13 +252,21 @@ class PlatformStatsService:
         }
 
     @staticmethod
-    def calculate_user_metrics(db: Session) -> Dict[int, int]:
-        """Calculate active sellers and investors count."""
-        active_sellers = db.query(func.count(User.id)).filter(
+    def calculate_user_metrics(db: Session) -> Dict[str, int]:
+        """Calculate active user counts with seller coverage from risk records."""
+        active_seller_users = db.query(func.count(User.id)).filter(
             User.role.in_([UserRole.SELLER, UserRole.SME]),
             User.is_active == True,
             User.email_verified == True
         ).scalar() or 0
+
+        # CreditHistory is the canonical seller population for risk analytics.
+        # Use distinct seller_ids so dashboard seller count matches risk data volume.
+        sellers_in_credit_history = db.query(
+            func.count(func.distinct(CreditHistory.seller_id))
+        ).filter(CreditHistory.seller_id.isnot(None)).scalar() or 0
+
+        active_sellers = max(int(active_seller_users), int(sellers_in_credit_history))
         
         active_investors = db.query(func.count(User.id)).filter(
             User.role == UserRole.INVESTOR,

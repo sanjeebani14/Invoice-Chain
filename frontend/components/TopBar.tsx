@@ -13,7 +13,8 @@ export function TopBar() {
   const router = useRouter();
   const { currentUser, isAuthenticated, isLoading, logout } = useAuth();
 
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return null;
+  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/")))
+    return null;
   // Render bar while loading too; it should not flash/vanish.
   if (!isAuthenticated && !isLoading) return null;
 
@@ -22,15 +23,22 @@ export function TopBar() {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-background/80 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
+      <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-6">
           <Link href="/" className="font-semibold tracking-tight">
             InvoiceChain
           </Link>
           <nav className="hidden items-center gap-4 text-sm text-muted-foreground sm:flex">
-            <Link href="/kyc" className="hover:text-foreground">KYC</Link>
+            {role !== "admin" && (
+              <Link href="/kyc" className="hover:text-foreground">
+                KYC
+              </Link>
+            )}
             {role === "investor" && (
-              <Link href="/INVESTOR/marketplace" className="hover:text-foreground">
+              <Link
+                href="/INVESTOR/marketplace"
+                className="hover:text-foreground"
+              >
                 Marketplace
               </Link>
             )}
@@ -70,4 +78,3 @@ export function TopBar() {
     </header>
   );
 }
-

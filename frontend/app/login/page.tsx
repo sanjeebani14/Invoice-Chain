@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { login } from "@/lib/auth";
-import { getMyKyc } from "@/lib/kyc";
 import axios from "axios";
 
 export default function LoginPage() {
@@ -43,15 +42,8 @@ export default function LoginPage() {
         return;
       }
 
-      // Check KYC status for non-admin users.
-      const res = await getMyKyc();
-      if (!res.kyc || res.kyc.status !== "approved") {
-        await router.push("/kyc");
-      } else if (role === "investor") {
-        await router.push("/INVESTOR/marketplace");
-      } else {
-        await router.push("/upload");
-      }
+      // Force non-admin users through the KYC screen after login.
+      await router.push("/kyc");
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: { detail?: string } } })?.response?.data
