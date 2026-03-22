@@ -427,19 +427,40 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
         )
         if flagged_without_queue:
             for inv in flagged_without_queue:
+                reason_text = "Backfilled: invoice is flagged but had no fraud queue record."
+                severity = "MEDIUM"
+                anomaly_metadata = {
+                    "source": "flagged_status_backfill",
+                    "reasons": [
+                        "Invoice was marked `flagged` but no fraud queue record existed; queue entry backfilled.",
+                        "Invoice-level anomaly metadata was not recomputed during backfill, so detailed drivers may be limited.",
+                    ],
+                }
+                try:
+                    anomaly_payload = anomaly_explainer.evaluate_invoice(db, inv).to_dict()
+                    anomaly_metadata = {
+                        **anomaly_payload,
+                        "source": "flagged_status_backfill",
+                        "backfill_recomputed": True,
+                        "backfill_recomputed_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    computed_reasons = anomaly_payload.get("reasons")
+                    if isinstance(computed_reasons, list) and computed_reasons:
+                        reason_text = " | ".join(
+                            str(part).strip() for part in computed_reasons if str(part).strip()
+                        ) or reason_text
+                    severity = str(anomaly_payload.get("severity") or severity)
+                except Exception:
+                    # Keep queue backfill resilient even if anomaly recompute fails for one invoice.
+                    pass
+
                 db.add(
                     models.FraudFlag(
                         invoice_id=inv.id,
                         seller_id=inv.seller_id,
-                        reason="Backfilled: invoice is flagged but had no fraud queue record.",
-                        severity="MEDIUM",
-                        anomaly_metadata={
-                            "source": "flagged_status_backfill",
-                            "reasons": [
-                                "Invoice was marked `flagged` but no fraud queue record existed; queue entry backfilled.",
-                                "Invoice-level anomaly metadata was not recomputed during backfill, so detailed drivers may be limited.",
-                            ],
-                        },
+                        reason=reason_text,
+                        severity=severity,
+                        anomaly_metadata=anomaly_metadata,
                         is_resolved=False,
                     )
                 )
@@ -449,6 +470,56 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
         if seller_id is not None:
             query = query.filter(models.FraudFlag.seller_id == seller_id)
         flags = query.order_by(models.FraudFlag.created_at.desc()).all()
+
+        # One-time repair for legacy backfilled queue rows that still have
+        # generic reasoning text and no invoice-specific anomaly metadata.
+        repair_candidates = [
+            flag
+            for flag in flags
+            if (flag.reason or "").strip().startswith("Backfilled:")
+            and isinstance(flag.anomaly_metadata, dict)
+            and flag.anomaly_metadata.get("source") == "flagged_status_backfill"
+            and not bool(flag.anomaly_metadata.get("backfill_recomputed"))
+            and flag.invoice_id is not None
+        ]
+        if repair_candidates:
+            invoice_ids = {int(flag.invoice_id) for flag in repair_candidates if flag.invoice_id is not None}
+            invoices = (
+                db.query(models.Invoice)
+                .filter(models.Invoice.id.in_(invoice_ids))
+                .all()
+            )
+            invoice_by_id = {int(inv.id): inv for inv in invoices}
+
+            repaired = False
+            for flag in repair_candidates:
+                inv = invoice_by_id.get(int(flag.invoice_id)) if flag.invoice_id is not None else None
+                if inv is None:
+                    continue
+                try:
+                    anomaly_payload = anomaly_explainer.evaluate_invoice(db, inv).to_dict()
+                except Exception:
+                    continue
+
+                flag.anomaly_metadata = {
+                    **anomaly_payload,
+                    "source": "flagged_status_backfill",
+                    "backfill_recomputed": True,
+                    "backfill_recomputed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                computed_reasons = anomaly_payload.get("reasons")
+                if isinstance(computed_reasons, list) and computed_reasons:
+                    joined = " | ".join(
+                        str(part).strip() for part in computed_reasons if str(part).strip()
+                    )
+                    if joined:
+                        flag.reason = joined
+                flag.severity = str(anomaly_payload.get("severity") or flag.severity or "MEDIUM")
+                repaired = True
+
+            if repaired:
+                db.commit()
+                flags = query.order_by(models.FraudFlag.created_at.desc()).all()
     except Exception:
         db.rollback()
         flags = []

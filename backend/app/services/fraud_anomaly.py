@@ -160,15 +160,20 @@ class InvoiceAnomalyService:
         feature_df = self._build_feature_matrix(history, invoice)
         train_df = feature_df.iloc[:-1]
         target_df = feature_df.iloc[[-1]]
+        # Use array inputs consistently for seller-level unsupervised models.
+        # This avoids sklearn warnings when fitting with feature names and
+        # scoring with unnamed arrays internally.
+        train_x = train_df.to_numpy(dtype=float)
+        target_x = target_df.to_numpy(dtype=float)
 
         iso_forest = IsolationForest(
             n_estimators=250,
             contamination=self.contamination,
             random_state=self.random_state,
         )
-        iso_forest.fit(train_df)
-        iso_label = int(iso_forest.predict(target_df)[0])
-        iso_score = float(iso_forest.decision_function(target_df)[0])
+        iso_forest.fit(train_x)
+        iso_label = int(iso_forest.predict(target_x)[0])
+        iso_score = float(iso_forest.decision_function(target_x)[0])
 
         # LOF with novelty=True allows scoring a new invoice against seller history.
         neighbors = min(20, max(5, len(train_df) - 1))
@@ -177,9 +182,9 @@ class InvoiceAnomalyService:
             contamination=self.contamination,
             novelty=True,
         )
-        lof.fit(train_df)
-        lof_label = int(lof.predict(target_df)[0])
-        lof_score = float(lof.decision_function(target_df)[0])
+        lof.fit(train_x)
+        lof_label = int(lof.predict(target_x)[0])
+        lof_score = float(lof.decision_function(target_x)[0])
 
         # Lower decision_function means more anomalous for both models.
         seller_anomaly_score = min(iso_score, lof_score)
