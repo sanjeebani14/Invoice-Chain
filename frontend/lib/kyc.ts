@@ -1,9 +1,11 @@
 import axios from "axios";
+import { getBackendOrigin } from "@/lib/backendOrigin";
 
 axios.defaults.withCredentials = true;
 
-const KYC_BASE = "http://localhost:8000/api/v1/kyc";
-const ADMIN_KYC_BASE = "http://localhost:8000/api/v1/admin/kyc";
+const BACKEND_ORIGIN = getBackendOrigin();
+const KYC_BASE = `${BACKEND_ORIGIN}/api/v1/kyc`;
+const ADMIN_KYC_BASE = `${BACKEND_ORIGIN}/api/v1/admin/kyc`;
 
 export type KycStatus = "pending" | "approved" | "rejected";
 

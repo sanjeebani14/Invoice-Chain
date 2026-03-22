@@ -9,11 +9,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthCard } from "@/components/auth/AuthCard";
-import { login } from "@/lib/auth";
+import { login, loginWithTwoFactor } from "@/lib/auth";
 import { getBackendOrigin } from "@/lib/backendOrigin";
 import axios from "axios";
 
 const BACKEND_ORIGIN = getBackendOrigin();
+
+function resolveRoleHome(roleValue: unknown): string {
+  const role = String(roleValue ?? "").toLowerCase();
+  if (role.includes("admin")) return "/admin/dashboard";
+  if (role.includes("investor")) return "/kyc";
+  if (role.includes("seller") || role.includes("sme")) return "/kyc";
+  return "/login";
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -21,32 +29,35 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
+  const [twoFactorToken, setTwoFactorToken] = useState("");
+  const [twoFactorCode, setTwoFactorCode] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      await login({ email, password });
+      if (requiresTwoFactor && twoFactorToken) {
+        await loginWithTwoFactor({
+          two_factor_token: twoFactorToken,
+          code: twoFactorCode,
+        });
+      } else {
+        const loginResponse = await login({ email, password });
+        if (loginResponse.requires_two_factor && loginResponse.two_factor_token) {
+          setRequiresTwoFactor(true);
+          setTwoFactorToken(loginResponse.two_factor_token);
+          toast.info("Enter your authenticator app code to continue");
+          return;
+        }
+      }
+
       toast.success("Logged in successfully");
       const me = await axios.get(`${BACKEND_ORIGIN}/auth/me`, {
         withCredentials: true,
       });
-      const rawRole = String(me.data?.role ?? "").toLowerCase();
-      const role = rawRole.includes("admin")
-        ? "admin"
-        : rawRole.includes("investor")
-          ? "investor"
-          : "sme";
-
-      // Admins bypass KYC flow and always land on admin dashboard.
-      if (role === "admin") {
-        await router.push("/admin/dashboard");
-        return;
-      }
-
-      // Force non-admin users through the KYC screen after login.
-      await router.push("/kyc");
+      await router.push(resolveRoleHome(me.data?.role));
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: { detail?: string } } })?.response?.data
@@ -98,7 +109,31 @@ export default function LoginPage() {
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
+          <div className="text-right">
+            <Link
+              href="/forgot-password"
+              className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
         </div>
+
+        {requiresTwoFactor && (
+          <div className="space-y-2">
+            <Label htmlFor="two-factor-code">Authenticator code</Label>
+            <Input
+              id="two-factor-code"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              placeholder="123456"
+              value={twoFactorCode}
+              onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
+              required
+              autoComplete="one-time-code"
+            />
+          </div>
+        )}
 
         <Button
           type="submit"
@@ -108,7 +143,7 @@ export default function LoginPage() {
           disabled={loading}
         >
           {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {loading ? "Signing in..." : "Sign in"}
+          {loading ? "Signing in..." : requiresTwoFactor ? "Verify and sign in" : "Sign in"}
         </Button>
       </form>
 

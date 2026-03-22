@@ -18,7 +18,7 @@ function statusLabel(kyc: KycSubmissionOut | null) {
 }
 
 export default function KycPage() {
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { currentUser, isAuthenticated, isLoading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [kyc, setKyc] = useState<KycSubmissionOut | null>(null);
@@ -39,8 +39,16 @@ export default function KycPage() {
   }, []);
 
   const status = useMemo(() => statusLabel(kyc), [kyc]);
+  const role = String(currentUser?.role ?? "").toLowerCase();
 
-  const disabled = !isAuthenticated || authLoading || loading;
+  const pageBusy = authLoading || loading;
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (role.includes("admin")) {
+      window.location.href = "/admin/dashboard";
+    }
+  }, [authLoading, role]);
 
   const onSubmit = async () => {
     if (!file) {
@@ -59,7 +67,7 @@ export default function KycPage() {
       const role = me.data?.role as string | undefined;
       if (role === "admin") {
         window.location.href = "/admin/dashboard";
-      } else if (role === "sme") {
+      } else if (role === "sme" || role === "seller") {
         window.location.href = "/upload";
       } else {
         window.location.href = "/INVESTOR/marketplace";
@@ -106,14 +114,21 @@ export default function KycPage() {
             </p>
             <Input
               type="file"
-              accept=".pdf,.png,.jpg,.jpeg"
-              disabled={disabled || submitting}
+              accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg"
+              disabled={submitting}
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
+            {file && (
+              <p className="text-xs text-muted-foreground">Selected: {file.name}</p>
+            )}
           </div>
 
           <div className="mt-4 flex gap-3">
-            <Button onClick={onSubmit} disabled={disabled || submitting || !file} className="min-w-40">
+            <Button
+              onClick={onSubmit}
+              disabled={pageBusy || submitting || !file}
+              className="min-w-40"
+            >
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Submit KYC
             </Button>
@@ -122,7 +137,13 @@ export default function KycPage() {
               // Actions (buy/sell) must be gated server-side via require_kyc_approved.
               if (typeof window !== "undefined") {
                 window.localStorage.setItem("kycSkipped", "true");
-                window.location.href = "/INVESTOR/marketplace";
+                if (role.includes("admin")) {
+                  window.location.href = "/admin/dashboard";
+                } else if (role.includes("sme") || role.includes("seller")) {
+                  window.location.href = "/upload";
+                } else {
+                  window.location.href = "/INVESTOR/marketplace";
+                }
               }
             }}>
               Skip KYC

@@ -14,6 +14,8 @@ const NAV_GROUPS: Array<{
       { label: "Pending Invoices", href: "/admin/pending-invoices" },
       { label: "KYC Verifications", href: "/admin/kyc" },
       { label: "Settlement Tracker", href: "/admin/settlement-tracker" },
+      { label: "Auctions", href: "/admin/auctions" },
+      { label: "Marketplace Listings", href: "/admin/listings" },
     ],
   },
   {
