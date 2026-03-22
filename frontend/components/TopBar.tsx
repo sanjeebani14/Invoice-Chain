@@ -19,22 +19,27 @@ export function TopBar() {
   if (!isAuthenticated && !isLoading) return null;
 
   const role = currentUser?.role;
+  const roleValue = String(role ?? "").toLowerCase();
   const avatarLetter = (currentUser?.email?.[0] || "U").toUpperCase();
+  const homeHref =
+    roleValue === "admin"
+      ? "/admin/dashboard"
+      : "/kyc";
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-background/80 backdrop-blur">
       <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-6">
-          <Link href="/" className="font-semibold tracking-tight">
+          <Link href={homeHref} className="font-semibold tracking-tight">
             InvoiceChain
           </Link>
           <nav className="hidden items-center gap-4 text-sm text-muted-foreground sm:flex">
-            {role !== "admin" && (
+            {roleValue !== "admin" && (
               <Link href="/kyc" className="hover:text-foreground">
                 KYC
               </Link>
             )}
-            {role === "investor" && (
+            {roleValue === "investor" && (
               <Link
                 href="/INVESTOR/marketplace"
                 className="hover:text-foreground"
@@ -42,12 +47,12 @@ export function TopBar() {
                 Marketplace
               </Link>
             )}
-            {role === "sme" && (
+            {(roleValue === "sme" || roleValue === "seller") && (
               <Link href="/upload" className="hover:text-foreground">
                 Upload
               </Link>
             )}
-            {role === "admin" && (
+            {roleValue === "admin" && (
               <Link href="/admin/dashboard" className="hover:text-foreground">
                 Admin
               </Link>

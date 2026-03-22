@@ -25,8 +25,11 @@ import {
 import {
   type ConcentrationBreakdownItem,
   type InvestorCashFlow,
+  type InvestorInvestmentItem,
+  type InvestorInvestmentsResponse,
   type InvestorSummary,
   getInvestorCashFlow,
+  getInvestorInvestments,
   getInvestorSummary,
 } from "@/lib/api";
 
@@ -34,6 +37,7 @@ export default function EnhancedPortfolio() {
   const pathname = usePathname();
   const [summary, setSummary] = useState<InvestorSummary | null>(null);
   const [cashFlow, setCashFlow] = useState<InvestorCashFlow | null>(null);
+  const [investments, setInvestments] = useState<InvestorInvestmentsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,12 +46,14 @@ export default function EnhancedPortfolio() {
       setLoading(true);
       setError(null);
       try {
-        const [summaryPayload, cashFlowPayload] = await Promise.all([
+        const [summaryPayload, cashFlowPayload, investmentsPayload] = await Promise.all([
           getInvestorSummary(),
           getInvestorCashFlow(),
+          getInvestorInvestments(),
         ]);
         setSummary(summaryPayload);
         setCashFlow(cashFlowPayload);
+        setInvestments(investmentsPayload);
       } catch (err) {
         const message =
           err instanceof Error
@@ -65,6 +71,10 @@ export default function EnhancedPortfolio() {
   const topSellers = useMemo<ConcentrationBreakdownItem[]>(() => {
     return (summary?.concentration.seller_breakdown || []).slice(0, 5);
   }, [summary]);
+
+  const recentInvestments = useMemo<InvestorInvestmentItem[]>(() => {
+    return (investments?.items || []).slice(0, 8);
+  }, [investments]);
 
   const topSectors = useMemo<ConcentrationBreakdownItem[]>(() => {
     return (summary?.concentration.sector_breakdown || []).slice(0, 3);
@@ -285,6 +295,84 @@ export default function EnhancedPortfolio() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* MY INVESTMENTS */}
+      <div className="max-w-7xl mx-auto mt-12 bg-white/90 backdrop-blur-sm rounded-3xl shadow-xl border border-white overflow-hidden">
+        <div className="p-8 border-b flex items-center justify-between">
+          <h3 className="text-xl font-black text-slate-800">My Investments</h3>
+          <div className="text-xs font-semibold text-slate-500">
+            {investments?.total ?? 0} positions | Funded ${investments?.total_funded.toLocaleString() ?? "0"}
+          </div>
+        </div>
+
+        {loading && (
+          <div className="p-8 text-sm font-semibold text-slate-500">
+            Loading investments...
+          </div>
+        )}
+
+        {!loading && recentInvestments.length === 0 && (
+          <div className="p-8 text-sm font-semibold text-slate-500">
+            No investments found yet. Buy an invoice from Marketplace to see positions here.
+          </div>
+        )}
+
+        {!loading && recentInvestments.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-slate-600 uppercase text-xs tracking-wide">
+                <tr>
+                  <th className="px-6 py-4 text-left">Invoice</th>
+                  <th className="px-6 py-4 text-left">State</th>
+                  <th className="px-6 py-4 text-left">Funded</th>
+                  <th className="px-6 py-4 text-left">Target</th>
+                  <th className="px-6 py-4 text-left">PnL</th>
+                  <th className="px-6 py-4 text-left">Due</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentInvestments.map((item) => (
+                  <tr key={item.snapshot_id} className="border-t border-slate-100">
+                    <td className="px-6 py-4">
+                      <div className="font-bold text-slate-900">
+                        {item.client_name || `Invoice ${item.invoice_id}`}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {item.invoice_number || `#${item.invoice_id}`} {item.sector ? `• ${item.sector}` : ""}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${
+                          item.position_state === "repaid"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : item.position_state === "active"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {item.position_state}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 font-semibold text-slate-800">
+                      ${item.funded_amount.toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 text-slate-700">
+                      ${item.repayment_target.toLocaleString()}
+                    </td>
+                    <td className={`px-6 py-4 font-semibold ${item.estimated_pnl >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                      ${item.estimated_pnl.toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 text-slate-700">
+                      {item.due_date || "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* CASHFLOW + RETURNS */}

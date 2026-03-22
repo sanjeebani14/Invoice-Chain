@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   CircleCheck,
   Clock3,
+  Database,
   FileText,
   DollarSign,
   TrendingUp,
@@ -13,14 +14,17 @@ import {
 } from "lucide-react";
 import {
   getAdminOverview,
+  getBlockchainSyncStatus,
   getRiskMetrics,
   type AdminOverview,
+  type BlockchainSyncStatusItem,
   type RiskMetrics,
 } from "@/lib/api";
 
 export default function Dashboard() {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [risk, setRisk] = useState<RiskMetrics | null>(null);
+  const [syncStates, setSyncStates] = useState<BlockchainSyncStatusItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,12 +32,14 @@ export default function Dashboard() {
     try {
       setLoading(true);
       setError(null);
-      const [overviewData, riskData] = await Promise.all([
+      const [overviewData, riskData, syncData] = await Promise.all([
         getAdminOverview(),
         getRiskMetrics(),
+        getBlockchainSyncStatus(),
       ]);
       setOverview(overviewData);
       setRisk(riskData);
+      setSyncStates(syncData.items || []);
     } catch {
       setError("Unable to load admin overview right now.");
     } finally {
@@ -131,6 +137,8 @@ export default function Dashboard() {
       textColor: "text-cyan-600",
     },
   ];
+
+  const latestSync = syncStates[0] || null;
 
   return (
     <div className="space-y-6">
@@ -288,6 +296,49 @@ export default function Dashboard() {
           >
             View full risk metrics →
           </Link>
+        </div>
+
+        <div className="rounded-lg border-2 border-gray-200 bg-white p-6">
+          <h2 className="text-lg font-bold text-gray-900">Blockchain Sync</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Event ingestion worker cursor and latest processing state.
+          </p>
+
+          {!latestSync ? (
+            <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+              No sync cursor found yet. Enable sync worker to initialize state.
+            </div>
+          ) : (
+            <div className="mt-5 space-y-3">
+              <div className="flex items-center justify-between rounded-lg bg-slate-50 p-4">
+                <div className="flex items-center gap-3">
+                  <Database className="h-5 w-5 text-slate-600" />
+                  <span className="font-medium text-gray-900">Last synced block</span>
+                </div>
+                <span className="text-xl font-bold text-slate-700">
+                  {latestSync.last_synced_block.toLocaleString()}
+                </span>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 p-4 text-sm text-gray-700">
+                <p className="font-semibold text-gray-900">Contract</p>
+                <p className="mt-1 break-all font-mono text-xs">{latestSync.contract_address}</p>
+                <p className="mt-3 text-xs text-gray-500">
+                  Last sync time: {latestSync.last_synced_at ? new Date(latestSync.last_synced_at).toLocaleString() : "-"}
+                </p>
+              </div>
+
+              {latestSync.last_error ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                  {latestSync.last_error}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-700">
+                  Sync worker healthy. No recent processing errors.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

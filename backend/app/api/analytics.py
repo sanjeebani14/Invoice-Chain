@@ -29,6 +29,15 @@ def get_investor_cash_flow(
     return service.get_investor_cash_flow(current_user.id)
 
 
+@router.get("/investor/investments")
+def get_investor_investments(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_investor),
+):
+    service = PortfolioAnalyticsService(db)
+    return service.get_investor_investments(current_user.id)
+
+
 @router.get("/platform/concentration")
 def get_platform_concentration(
     threshold_pct: float = Query(20.0, ge=0.0, le=100.0),

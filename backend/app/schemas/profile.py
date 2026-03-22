@@ -9,6 +9,7 @@ from .kyc import KycSubmissionOut
 class UserProfileUpdate(BaseModel):
     full_name: Optional[str] = Field(default=None, max_length=200)
     phone: Optional[str] = Field(default=None, max_length=50)
+    wallet_address: Optional[str] = Field(default=None, max_length=80)
 
 
 class ProfileMeResponse(BaseModel):

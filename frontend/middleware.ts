@@ -7,11 +7,20 @@ const PUBLIC_PATHS = [
   "/login",
   "/register",
   "/verify-email",
-  "/INVESTOR",
-  "/upload",
+  "/forgot-password",
+  "/reset-password",
 ];
 
 const ADMIN_PATH = "/admin";
+const KYC_PATH = "/kyc";
+
+const getRoleHomePath = (role: string | null): string => {
+  const value = String(role ?? "").toLowerCase();
+  if (value.includes("admin")) return "/admin/dashboard";
+  if (value.includes("investor")) return "/kyc";
+  if (value.includes("seller") || value.includes("sme")) return "/kyc";
+  return "/login";
+};
 
 const isPublicPath = (pathname: string) => {
   if (pathname === "/") {
@@ -63,20 +72,31 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  const role = await getCurrentUserRole(request);
+
+  if (!role) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("from", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
   // Strict role guard: only admins can access /admin routes.
   if (isAdminPath(pathname)) {
-    const role = await getCurrentUserRole(request);
-    if (!role) {
-      const loginUrl = new URL("/login", request.url);
-      loginUrl.searchParams.set("from", pathname);
-      return NextResponse.redirect(loginUrl);
+    if (!role.includes("admin")) {
+      const destination = new URL(getRoleHomePath(role), request.url);
+      destination.searchParams.set("from", pathname);
+      return NextResponse.redirect(destination);
     }
 
-    if (!role.includes("admin")) {
-      const blockedUrl = new URL("/kyc", request.url);
-      blockedUrl.searchParams.set("from", pathname);
-      return NextResponse.redirect(blockedUrl);
+    return NextResponse.next();
+  }
+
+  // Admins should never be forced into KYC flow.
+  if (role.includes("admin")) {
+    if (pathname === KYC_PATH || pathname.startsWith(`${KYC_PATH}/`)) {
+      return NextResponse.redirect(new URL("/admin/dashboard", request.url));
     }
+    return NextResponse.next();
   }
 
   return NextResponse.next();
