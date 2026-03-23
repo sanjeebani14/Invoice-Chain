@@ -20,7 +20,7 @@ function resolveRoleHome(roleValue: unknown): string {
   const role = String(roleValue ?? "").toLowerCase();
   if (role.includes("admin")) return "/admin/dashboard";
   if (role.includes("investor")) return "/kyc";
-  if (role.includes("seller") || role.includes("sme")) return "/kyc";
+  if (role.includes("seller") || role.includes("sme")) return "/sme/dashboard";
   return "/login";
 }
 
@@ -46,7 +46,10 @@ export default function LoginPage() {
         });
       } else {
         const loginResponse = await login({ email, password });
-        if (loginResponse.requires_two_factor && loginResponse.two_factor_token) {
+        if (
+          loginResponse.requires_two_factor &&
+          loginResponse.two_factor_token
+        ) {
           setRequiresTwoFactor(true);
           setTwoFactorToken(loginResponse.two_factor_token);
           toast.info("Enter your authenticator app code to continue");
@@ -77,9 +80,12 @@ export default function LoginPage() {
           await router.push("/onboarding/risk-profile");
           return;
         }
+
+        await router.push("/sme/dashboard");
+        return;
       }
 
-      // Force non-admin users through the KYC screen after login.
+      // Keep investor flow on KYC gate after login.
       await router.push("/kyc");
     } catch (err: unknown) {
       const message =
@@ -151,7 +157,9 @@ export default function LoginPage() {
               pattern="[0-9]*"
               placeholder="123456"
               value={twoFactorCode}
-              onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
+              onChange={(e) =>
+                setTwoFactorCode(e.target.value.replace(/\D/g, "").slice(0, 10))
+              }
               required
               autoComplete="one-time-code"
             />
@@ -166,7 +174,11 @@ export default function LoginPage() {
           disabled={loading}
         >
           {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {loading ? "Signing in..." : requiresTwoFactor ? "Verify and sign in" : "Sign in"}
+          {loading
+            ? "Signing in..."
+            : requiresTwoFactor
+              ? "Verify and sign in"
+              : "Sign in"}
         </Button>
       </form>
 

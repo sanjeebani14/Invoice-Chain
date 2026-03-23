@@ -17,8 +17,40 @@ interface CorrectionFields {
   min_bid_increment: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export default function InvoiceCorrection({ data }: { data: any }) {
+interface OcrField {
+  value?: unknown;
+  confidence?: number;
+}
+
+interface InvoiceCorrectionData {
+  invoice_id: string | number;
+  filename?: string;
+  ocr_fields?: {
+    invoice_number?: OcrField;
+    client_name?: OcrField;
+    amount?: OcrField;
+    due_date?: OcrField;
+  };
+}
+
+interface ErrorResponse {
+  detail?: string;
+  message?: string;
+}
+
+interface InvoiceCorrectionProps {
+  data: InvoiceCorrectionData;
+  onSaveStart?: () => void;
+  onSaveSuccess?: (payload: unknown) => void;
+  onSaveError?: (message: string) => void;
+}
+
+export default function InvoiceCorrection({
+  data,
+  onSaveStart,
+  onSaveSuccess,
+  onSaveError,
+}: InvoiceCorrectionProps) {
   const toInputString = (value: unknown): string => {
     if (value === null || value === undefined) return "";
     return String(value);

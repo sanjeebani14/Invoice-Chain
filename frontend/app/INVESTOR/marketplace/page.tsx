@@ -11,24 +11,7 @@ import {
   ExternalLink, Filter, Calendar, BarChart3, Banknote,
   TrendingUp, AlertCircle, Zap, Users, Trophy, Activity
 } from 'lucide-react';
-import {
-  Search,
-  ShieldCheck,
-  X,
-  ShoppingCart,
-  Clock,
-  CheckCircle2,
-  Loader2,
-  Trash2,
-  Database,
-  Calendar,
-  BarChart3,
-  Banknote,
-  TrendingUp,
-  AlertCircle,
-  Zap,
-  Trophy,
-} from "lucide-react";
+
 import { MarketplaceStats } from "@/components/dashboard/MarketplaceStats";
 import { openNotificationSocket } from '@/lib/realtime';
 import type { NotificationSocketHandle } from '@/lib/realtime';

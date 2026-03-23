@@ -31,8 +31,7 @@ function statusLabel(kyc: KycSubmissionOut | null) {
 }
 
 export default function KycPage() {
-  const { currentUser, isAuthenticated, isLoading: authLoading } = useAuth();
-  const { currentUser, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { currentUser, isLoading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [kyc, setKyc] = useState<KycSubmissionOut | null>(null);
@@ -77,17 +76,16 @@ export default function KycPage() {
       toast.success("KYC submitted. Awaiting review.");
 
       // After KYC submission, route user to their primary destination.
-      const me = await axios.get("http://localhost:8000/auth/me", { withCredentials: true });
-      const role = me.data?.role as string | undefined;
-      if (role === "admin") {
-        window.location.href = "/admin/dashboard";
-      } else if (role === "sme" || role === "seller") {
-        window.location.href = "/upload";
-      } else {
-        window.location.href = "/INVESTOR/marketplace";
-      }
-    } catch (err: any) {
-      const message = err?.response?.data?.detail ?? "KYC upload failed";
+      const me = await axios.get(`${BACKEND_ORIGIN}/auth/me`, {
+        withCredentials: true,
+      });
+      window.location.href = getRoleHomePath(me.data?.role);
+    } catch (err: unknown) {
+      const message =
+        axios.isAxiosError(err) &&
+        typeof err.response?.data?.detail === "string"
+          ? err.response.data.detail
+          : "KYC upload failed";
       toast.error(message);
     } finally {
       setSubmitting(false);
@@ -137,7 +135,9 @@ export default function KycPage() {
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
             {file && (
-              <p className="text-xs text-muted-foreground">Selected: {file.name}</p>
+              <p className="text-xs text-muted-foreground">
+                Selected: {file.name}
+              </p>
             )}
           </div>
 
@@ -150,20 +150,17 @@ export default function KycPage() {
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Submit KYC
             </Button>
-            <Button variant="secondary" onClick={() => {
-              // Allow user to skip KYC and still browse the app.
-              // Actions (buy/sell) must be gated server-side via require_kyc_approved.
-              if (typeof window !== "undefined") {
-                window.localStorage.setItem("kycSkipped", "true");
-                if (role.includes("admin")) {
-                  window.location.href = "/admin/dashboard";
-                } else if (role.includes("sme") || role.includes("seller")) {
-                  window.location.href = "/upload";
-                } else {
-                  window.location.href = "/INVESTOR/marketplace";
+            <Button
+              variant="secondary"
+              onClick={() => {
+                // Allow user to skip KYC and still browse the app.
+                // Actions (buy/sell) must be gated server-side via require_kyc_approved.
+                if (typeof window !== "undefined") {
+                  window.localStorage.setItem("kycSkipped", "true");
+                  window.location.href = getRoleHomePath(role);
                 }
-              }
-            }}>
+              }}
+            >
               Skip KYC
             </Button>
           </div>

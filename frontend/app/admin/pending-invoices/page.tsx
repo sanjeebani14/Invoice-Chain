@@ -184,8 +184,9 @@ export default function PendingInvoicesPage() {
               {(selected.is_duplicate ||
                 selected.duplicate_invoice_number_exists) && (
                 <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  Duplicate detection alert: invoice number appears in existing
-                  records ({selected.duplicate_matches} matches).
+                  {selected.duplicate_matches > 0
+                    ? `Duplicate detection alert: invoice number appears in existing records (${selected.duplicate_matches} ${selected.duplicate_matches === 1 ? "match" : "matches"}).`
+                    : "Duplicate detection alert: invoice was flagged by hash/similarity checks, not invoice-number count."}
                 </div>
               )}
 
