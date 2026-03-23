@@ -1,13 +1,8 @@
-import axios from "axios";
-import { getBackendOrigin } from "@/lib/backendOrigin";
-
-import type { UserOut } from "@/lib/auth";
-import type { KycSubmissionOut } from "@/lib/kyc";
-
-const PROFILE_BASE = `${getBackendOrigin()}/api/v1/profile`;
+import { api } from "@/lib/api";
+import type { User, KycSubmissionOut } from "@/lib/api/types";
 
 export interface ProfileMeResponse {
-  user: UserOut;
+  user: User;
   kyc: KycSubmissionOut | null;
 }
 
@@ -38,17 +33,18 @@ export interface SellerRiskOnboardingResponse {
 }
 
 export async function getMyProfile(): Promise<ProfileMeResponse> {
-  const res = await axios.get<ProfileMeResponse>(`${PROFILE_BASE}/me`);
-  return res.data;
+  const { data } = await api.get<ProfileMeResponse>("/profile/me");
+  return data;
 }
 
 export async function updateMyProfile(payload: {
   full_name?: string | null;
+  company_name?: string | null;
   phone?: string | null;
   wallet_address?: string | null;
-}): Promise<UserOut> {
-  const res = await axios.patch<UserOut>(`${PROFILE_BASE}/me`, payload);
-  return res.data;
+}): Promise<User> {
+  const { data } = await api.patch<User>("/profile/me", payload);
+  return data;
 }
 
 export async function getRiskOnboardingStatus(): Promise<RiskOnboardingStatus> {

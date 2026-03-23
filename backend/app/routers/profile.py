@@ -18,7 +18,7 @@ from ..schemas.auth import UserOut
 from ..services.risk_scoring.risk_service import RiskScoringEngine
 
 
-router = APIRouter(prefix="/api/v1/profile", tags=["Profile"])
+router = APIRouter()
 WALLET_REGEX = re.compile(r"^0x[a-fA-F0-9]{40}$")
 risk_engine = RiskScoringEngine()
 
@@ -100,6 +100,8 @@ def update_profile_me(
 
     if payload.full_name is not None:
         current_user.full_name = payload.full_name.strip() or None
+    if payload.company_name is not None:
+        current_user.company_name = payload.company_name.strip() or None
     if payload.phone is not None:
         current_user.phone = payload.phone.strip() or None
     if payload.wallet_address is not None:

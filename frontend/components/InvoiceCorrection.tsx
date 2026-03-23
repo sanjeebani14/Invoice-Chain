@@ -1,7 +1,8 @@
 "use client";
 import React, { useState } from "react";
 import axios from "axios";
-import { getBackendOrigin } from "@/lib/backendOrigin";
+import { API_BASE } from "@/lib/config";
+import type { AxiosError } from "axios";
 
 type FinancingType = "fixed" | "auction" | "fractional";
 
@@ -17,40 +18,14 @@ interface CorrectionFields {
   min_bid_increment: string;
 }
 
-interface OcrField {
-  value?: unknown;
-  confidence?: number;
-}
-
-interface InvoiceCorrectionData {
-  invoice_id: string | number;
+type OCRField = { value?: string | number | null; confidence?: number };
+type InvoiceCorrectionData = {
+  invoice_id: number;
   filename?: string;
-  ocr_fields?: {
-    invoice_number?: OcrField;
-    client_name?: OcrField;
-    amount?: OcrField;
-    due_date?: OcrField;
-  };
-}
+  ocr_fields?: Record<string, OCRField>;
+};
 
-interface ErrorResponse {
-  detail?: string;
-  message?: string;
-}
-
-interface InvoiceCorrectionProps {
-  data: InvoiceCorrectionData;
-  onSaveStart?: () => void;
-  onSaveSuccess?: (payload: unknown) => void;
-  onSaveError?: (message: string) => void;
-}
-
-export default function InvoiceCorrection({
-  data,
-  onSaveStart,
-  onSaveSuccess,
-  onSaveError,
-}: InvoiceCorrectionProps) {
+export default function InvoiceCorrection({ data }: { data: InvoiceCorrectionData }) {
   const toInputString = (value: unknown): string => {
     if (value === null || value === undefined) return "";
     return String(value);
@@ -120,8 +95,8 @@ export default function InvoiceCorrection({
             : null,
       };
 
-      const response = await axios.put(
-        `${backendOrigin}/api/v1/invoice/invoices/${data.invoice_id}`,
+      await axios.put(
+        `${API_BASE}/api/v1/invoice/${data.invoice_id}`,
         payload,
         { withCredentials: true },
       );
@@ -137,8 +112,8 @@ export default function InvoiceCorrection({
         ? (error.response?.data as ErrorResponse | undefined)
         : undefined;
       const message =
-        responseData?.detail ||
-        responseData?.message ||
+        (error as AxiosError<{ detail?: string; message?: string }>)?.response?.data?.detail ||
+        (error as AxiosError<{ detail?: string; message?: string }>)?.response?.data?.message ||
         (error instanceof Error ? error.message : "Save failed");
       if (onSaveError) {
         onSaveError(message);

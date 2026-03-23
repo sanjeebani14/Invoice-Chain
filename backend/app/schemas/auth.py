@@ -72,27 +72,26 @@ class UserOut(BaseModel):
     role: str
     is_active: bool
     full_name: Optional[str] = None
+    company_name: Optional[str] = None
     phone: Optional[str] = None
-    wallet_address: Optional[str] = None
     two_factor_enabled: bool = False
     email_verified: bool
     verified_at: Optional[datetime] = None
     
     class Config:
-        from_attributes = True  # Support ORM mode for automatic conversion from DB models
+        from_attributes = True
         example = {
             "id": 1,
             "email": "user@example.com",
             "role": "seller",
             "is_active": True,
             "full_name": "Jane Doe",
+            "company_name": "Acme Pvt Ltd",
             "phone": "+91-9876543210",
-            "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
             "two_factor_enabled": False,
             "email_verified": True,
             "verified_at": "2026-03-14T10:30:00+00:00",
         }
-
 
 # ── Email Verification Schemas ─────────────────────────────────
 

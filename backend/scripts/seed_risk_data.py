@@ -17,7 +17,7 @@ def seed_from_csv():
         track = 100 if row['loan_status'] == 1 else 40
         if row['defaults_on_file'] > 0: track -= 30
 
-        # Basic SME-side metrics
+        # Basic seller-side metrics
         seller_id = int(row['customer_id'].replace('CUST', ''))
         payment_history = norm_credit
         track_record = max(0, track)

@@ -15,7 +15,7 @@ from ..models import User, Invoice, KycSubmission, FraudFlag, CreditHistory, Blo
 from ..auth.dependencies import get_current_admin
 from ..services.platform_stats import PlatformStatsService
 
-router = APIRouter(prefix="/api/v1/admin/stats", tags=["Admin - Statistics"])
+router = APIRouter()
 
 
 def _parse_due_date(raw: str | None) -> date | None:

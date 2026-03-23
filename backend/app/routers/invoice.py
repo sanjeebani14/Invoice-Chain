@@ -27,9 +27,9 @@ from ..services.storage_s3 import (
     generate_presigned_get_url,
 )
 from ..services.rate_limit import enforce_rate_limit
-from ..auth.dependencies import get_current_user, require_sme, require_admin, require_kyc_approved
+from ..auth.dependencies import get_current_user, require_seller, require_admin, require_kyc_approved
 
-router = APIRouter(prefix="/invoices", tags=["Invoice Processing"])
+router = APIRouter()
 logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = "uploads"
@@ -212,14 +212,14 @@ class SettlementConfirmPayload(BaseModel):
     notes: Optional[str] = None
 
 
-# ── POST /invoices/upload ── SME only ────────────────────────────────────────
+# ── POST /invoices/upload ── seller only ────────────────────────────────────────
 
 @router.post("/upload")
 async def upload_invoice(
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_sme),
+    current_user: User = Depends(require_seller),
     _: User = Depends(require_kyc_approved),
 ):
     enforce_rate_limit(
@@ -462,7 +462,7 @@ def list_marketplace_invoices(
 def create_listing(
     payload: ListingCreatePayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_sme),
+    current_user: User = Depends(require_seller),
     _: User = Depends(require_kyc_approved),
 ):
     invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_id).first()
@@ -700,7 +700,7 @@ def update_invoice_fields(
     invoice_id: int,
     payload: InvoiceUpdatePayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_sme),        # SME only
+    current_user: User = Depends(require_seller),        # seller only
 ):
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not invoice:

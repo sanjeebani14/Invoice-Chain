@@ -1,8 +1,10 @@
 import enum
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, JSON, Enum, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, JSON, Enum, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
+from web3 import Web3
+
 
 # ── Enums ─────────────────────────────────────────────────────────
 
@@ -10,7 +12,6 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
     INVESTOR = "investor"
     SELLER = "seller"
-    SME = "sme"  # Legacy value kept for backward compatibility.
 
 
 # ── User & Authentication ──────────────────────────────
@@ -32,9 +33,8 @@ class User(Base):
     full_name = Column(String, nullable=True)
     company_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
-    wallet_address = Column(String, nullable=True, index=True)
 
-    # Account state
+    # State and Security
     email_verified = Column(Boolean, nullable=False, default=False)
     verified_at = Column(DateTime(timezone=True), nullable=True)  # When email was verified
     is_active = Column(Boolean, nullable=False, default=True)
@@ -47,8 +47,50 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
-    invoices = relationship("Invoice", foreign_keys="Invoice.seller_id", back_populates="seller")
-    credit_history = relationship("CreditHistory", foreign_keys="CreditHistory.seller_id", back_populates="seller", uselist=False)
+    # Relationships
+    connected_wallets = relationship("LinkedWallet", back_populates="user", cascade="all, delete-orphan")
+
+# ────WALLET MODELS (Metamask / Web3 integration)────────────────────────
+class LinkedWallet(Base):
+    __tablename__ = "linked_wallets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    
+    # Wallet Data
+    wallet_address = Column(String, index=True, nullable=False)
+    wallet_label = Column(String, nullable=True)
+    balance_wei = Column(String, nullable=True)
+    balance_checked_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Network Metadata (Default: Base Sepolia)
+    chain_id = Column(Integer, nullable=False, default=84532)
+    network_name = Column(String, nullable=False, default="base_sepolia")
+
+    # Status Flags
+    is_verified = Column(Boolean, default=False, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="connected_wallets")
+
+    # Constraints
+    __table_args__ = (UniqueConstraint('wallet_address', 'user_id', name='_wallet_user_uc'),)
+    
+class WalletNonce(Base):
+    __tablename__ = "wallet_nonces"
+
+    id = Column(Integer, primary_key=True, index=True)
+    wallet_address = Column(String, index=True, nullable=False)
+    nonce = Column(String, unique=True, index=True, nullable=False)
+    
+    is_used = Column(Boolean, default=False, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 # ───────Invoice Processing Pipeline ──────────────────────────────
@@ -119,7 +161,7 @@ class CreditHistory(Base):
     client_reputation_score = Column(Integer)  # Normalized 0-100
     seller_track_record = Column(Integer)  # Normalized 0-100
 
-    # Multi-entity indicators (Three-Entity system: SME, core enterprise, relationship)
+    # Multi-entity indicators (Three-Entity system: seller, core enterprise, relationship)
     employment_years = Column(Float, nullable=True)  # Years employed from underwriting dataset
     debt_to_income = Column(Float, nullable=True)  # Debt-to-income ratio from underwriting dataset
     core_enterprise_rating = Column(Integer, nullable=True)  # Credit of the buyer (0-100)
@@ -155,7 +197,7 @@ class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", name="fk_refresh_tokens_user_id"), index=True, nullable=False)
     token_hash = Column(String, nullable=False)  # Hashed version of actual token
     fingerprint = Column(String, nullable=True)  # Browser/device fingerprint for extra security
     is_revoked = Column(Boolean, default=False, index=True)

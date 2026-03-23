@@ -20,7 +20,7 @@ from ..schemas.admin_users import (
     AdminUserUpdate,
 )
 
-router = APIRouter(prefix="/api/v1/admin/users", tags=["Admin - Users"])
+router = APIRouter()
 
 
 def _quote_ident(identifier: str) -> str:
@@ -108,11 +108,7 @@ def list_users(
     query = db.query(User)
 
     if role is not None:
-        # Include legacy SME rows when filtering for SELLER.
-        if role == UserRole.SELLER:
-            query = query.filter(User.role.in_([UserRole.SELLER, UserRole.SME]))
-        else:
-            query = query.filter(User.role == role)
+        query = query.filter(User.role == role)
 
     if is_active is not None:
         query = query.filter(User.is_active == is_active)

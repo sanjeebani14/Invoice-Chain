@@ -1,53 +1,19 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getBackendOrigin } from "@/lib/backendOrigin";
 
-// Pages anyone can visit without being logged in:
-const PUBLIC_PATHS = [
-  "/",
-  "/login",
-  "/register",
-  "/verify-email",
-  "/forgot-password",
-  "/reset-password",
-];
+const PUBLIC_PATHS = ["/login", "/register", "/verify-email", "/forgot-password", "/reset-password"];
+const AUTH_PATHS = ["/login", "/register"]; // Paths users shouldn't see if logged in
 
-const ADMIN_PATH = "/admin";
-const KYC_PATH = "/kyc";
-
-const getRoleHomePath = (role: string | null): string => {
-  const value = String(role ?? "").toLowerCase();
-  if (value.includes("admin")) return "/admin/dashboard";
-  if (value.includes("investor")) return "/kyc";
-  if (value.includes("seller") || value.includes("sme")) return "/kyc";
-  return "/login";
-};
-
-const isPublicPath = (pathname: string) => {
-  if (pathname === "/") {
-    return true;
-  }
-  return PUBLIC_PATHS.some((p) => p !== "/" && pathname.startsWith(p));
-};
-
-const isAdminPath = (pathname: string) =>
-  pathname === ADMIN_PATH || pathname.startsWith(`${ADMIN_PATH}/`);
-
-async function getCurrentUserRole(
-  request: NextRequest,
-): Promise<string | null> {
+async function getRole(request: NextRequest): Promise<string | null> {
   try {
-    const host = request.nextUrl.hostname || "localhost";
-    const res = await fetch(`http://${host}:8000/auth/me`, {
+    const res = await fetch(`${getBackendOrigin()}/api/v1/auth/me`, {
       method: "GET",
-      headers: {
-        cookie: request.headers.get("cookie") ?? "",
-      },
+      headers: { cookie: request.headers.get("cookie") ?? "" },
       cache: "no-store",
     });
-
     if (!res.ok) return null;
-
-    const payload = (await res.json()) as { role?: string };
+    const payload = await res.json();
     return String(payload.role ?? "").toLowerCase();
   } catch {
     return null;
@@ -56,53 +22,49 @@ async function getCurrentUserRole(
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  
+  // 1. Define path types
+  const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p)) || pathname === "/";
+  const isAuthPage = AUTH_PATHS.some(p => pathname.startsWith(p));
+  
+  // 2. Check for ANY session cookie (Access OR Refresh)
+  const hasSession = request.cookies.has("access_token") || request.cookies.has("refresh_token");
 
-  // Allow public pages through
-  if (isPublicPath(pathname)) {
-    return NextResponse.next();
-  }
-
-  // Backend uses HTTP-only cookies `access_token`/`refresh_token`
-  const token = request.cookies.get("access_token")?.value;
-
-  if (!token) {
-    // No token → redirect to login
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("from", pathname); // remember where they were going
-    return NextResponse.redirect(loginUrl);
-  }
-
-  const role = await getCurrentUserRole(request);
-
-  if (!role) {
+  // 3. Logic for Logged-out users
+  if (!hasSession && !isPublic) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("from", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // Strict role guard: only admins can access /admin routes.
-  if (isAdminPath(pathname)) {
-    if (!role.includes("admin")) {
-      const destination = new URL(getRoleHomePath(role), request.url);
-      destination.searchParams.set("from", pathname);
-      return NextResponse.redirect(destination);
+  // 4. Logic for Logged-in users
+  if (hasSession) {
+    const role = await getRole(request);
+
+    // If session is actually invalid/expired on backend
+    if (!role && !isPublic) {
+      const response = NextResponse.redirect(new URL("/login", request.url));
+      // Clear cookies to stop the loop
+      response.cookies.delete("access_token");
+      response.cookies.delete("refresh_token");
+      return response;
     }
 
-    return NextResponse.next();
-  }
-
-  // Admins should never be forced into KYC flow.
-  if (role.includes("admin")) {
-    if (pathname === KYC_PATH || pathname.startsWith(`${KYC_PATH}/`)) {
-      return NextResponse.redirect(new URL("/admin/dashboard", request.url));
+    // Redirect AWAY from login if already authenticated
+    if (role && isAuthPage) {
+      const dashboard = role.includes("admin") ? "/admin/dashboard" : "/profile";
+      return NextResponse.redirect(new URL(dashboard, request.url));
     }
-    return NextResponse.next();
+
+    // Admin Guard
+    if (pathname.startsWith("/admin") && !role?.includes("admin")) {
+      return NextResponse.redirect(new URL("/profile", request.url));
+    }
   }
 
   return NextResponse.next();
 }
 
-// Which paths middleware runs on (not static files, not _next):
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.png$).*)"],
 };
