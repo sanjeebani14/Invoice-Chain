@@ -141,11 +141,16 @@ async def get_current_user_from_refresh_token(
 
 
 def require_sme(current_user: User = Depends(get_current_user)):
-    """Require user to have SME role"""
-    if current_user.role not in {UserRole.SELLER, UserRole.SME}:
+    """Require user to have seller/SME role."""
+    role_value = (
+        current_user.role.value
+        if isinstance(current_user.role, UserRole)
+        else str(current_user.role).strip().lower()
+    )
+    if role_value not in {UserRole.SELLER.value, UserRole.SME.value}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only SMEs can access this"
+            detail="Only sellers/SMEs can access this"
         )
     return current_user
 

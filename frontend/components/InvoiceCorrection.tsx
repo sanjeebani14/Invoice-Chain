@@ -17,43 +17,18 @@ interface CorrectionFields {
   min_bid_increment: string;
 }
 
-type OcrField = {
-  value?: string;
-  confidence?: number;
-};
-
-type InvoiceCorrectionData = {
-  invoice_id: number;
-  filename?: string;
-  ocr_fields?: {
-    invoice_number?: OcrField;
-    client_name?: OcrField;
-    amount?: OcrField;
-    due_date?: OcrField;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export default function InvoiceCorrection({ data }: { data: any }) {
+  const toInputString = (value: unknown): string => {
+    if (value === null || value === undefined) return "";
+    return String(value);
   };
-};
 
-type ErrorResponse = {
-  detail?: string;
-  message?: string;
-};
-
-export default function InvoiceCorrection({
-  data,
-  onSaveStart,
-  onSaveSuccess,
-  onSaveError,
-}: {
-  data: InvoiceCorrectionData;
-  onSaveStart?: () => void;
-  onSaveSuccess?: (response: unknown) => void;
-  onSaveError?: (message: string) => void;
-}) {
   const [fields, setFields] = useState<CorrectionFields>({
-    invoice_number: data?.ocr_fields?.invoice_number?.value || "",
-    client_name: data?.ocr_fields?.client_name?.value || "",
-    amount: data?.ocr_fields?.amount?.value || "",
-    due_date: data?.ocr_fields?.due_date?.value || "",
+    invoice_number: toInputString(data?.ocr_fields?.invoice_number?.value),
+    client_name: toInputString(data?.ocr_fields?.client_name?.value),
+    amount: toInputString(data?.ocr_fields?.amount?.value),
+    due_date: toInputString(data?.ocr_fields?.due_date?.value),
     sector: "Technology",
     financing_type: "fixed",
     ask_price: "",
@@ -64,9 +39,10 @@ export default function InvoiceCorrection({
   const [isSaving, setIsSaving] = useState(false);
   const backendOrigin = getBackendOrigin();
 
-  const toNullableNumber = (value: string): number | null => {
-    if (value.trim() === "") return null;
-    const parsed = Number(value);
+  const toNullableNumber = (value: unknown): number | null => {
+    const normalized = toInputString(value).trim();
+    if (normalized === "") return null;
+    const parsed = Number(normalized);
     return Number.isFinite(parsed) ? parsed : null;
   };
 

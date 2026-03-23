@@ -45,6 +45,7 @@ export async function getMyProfile(): Promise<ProfileMeResponse> {
 export async function updateMyProfile(payload: {
   full_name?: string | null;
   phone?: string | null;
+  wallet_address?: string | null;
 }): Promise<UserOut> {
   const res = await axios.patch<UserOut>(`${PROFILE_BASE}/me`, payload);
   return res.data;

@@ -16,9 +16,36 @@ export default function ProfilePage() {
   const { currentUser, isAuthenticated, isLoading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [walletSaving, setWalletSaving] = useState(false);
   const [data, setData] = useState<ProfileMeResponse | null>(null);
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
+  const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
+  const [walletBalance, setWalletBalance] = useState<string | null>(null);
+
+  const allowedChainIds = new Set(["0x539", "0x7a69", "0xaa36a7"]);
+
+  const linkedWallet = data?.user.wallet_address ?? null;
+
+  const refreshWalletBalance = async (walletAddress: string) => {
+    const provider = (window as any).ethereum;
+    if (!provider || !walletAddress) {
+      setWalletBalance(null);
+      return;
+    }
+    try {
+      const weiHex = (await provider.request({
+        method: "eth_getBalance",
+        params: [walletAddress, "latest"],
+      })) as string;
+      const wei = BigInt(weiHex);
+      const integerPart = wei / 10n ** 18n;
+      const decimalPart = (wei % 10n ** 18n).toString().padStart(18, "0").slice(0, 4);
+      setWalletBalance(`${integerPart.toString()}.${decimalPart} ETH`);
+    } catch {
+      setWalletBalance(null);
+    }
+  };
 
   useEffect(() => {
     const run = async () => {
@@ -36,6 +63,15 @@ export default function ProfilePage() {
     run();
   }, []);
 
+  useEffect(() => {
+    const wallet = linkedWallet ?? connectedWallet;
+    if (!wallet) {
+      setWalletBalance(null);
+      return;
+    }
+    void refreshWalletBalance(wallet);
+  }, [linkedWallet, connectedWallet]);
+
   const kycCta = useMemo(() => {
     const kyc = data?.kyc;
     if (!kyc) return { label: "Submit KYC", href: "/kyc", tone: "text-amber-600" };
@@ -45,6 +81,57 @@ export default function ProfilePage() {
   }, [data]);
 
   const disabled = !isAuthenticated || authLoading || loading;
+
+  const connectWallet = async () => {
+    const provider = (window as any).ethereum;
+    if (!provider) {
+      toast.error("MetaMask not detected. Please install MetaMask first.");
+      return;
+    }
+
+    try {
+      const chainId = await provider.request({ method: "eth_chainId" });
+      if (!allowedChainIds.has(chainId)) {
+        toast.error("Unsupported network. Use Hardhat localhost or Sepolia.");
+        return;
+      }
+
+      const accounts = (await provider.request({ method: "eth_requestAccounts" })) as string[];
+      if (!accounts?.length) {
+        toast.error("No wallet account available.");
+        return;
+      }
+
+      const wallet = accounts[0];
+      setWalletSaving(true);
+      const updated = await updateMyProfile({ wallet_address: wallet });
+      setConnectedWallet(wallet);
+      setData((prev) => (prev ? { ...prev, user: updated } : prev));
+      await refreshWalletBalance(wallet);
+      toast.success("Wallet linked to your profile");
+    } catch (err: any) {
+      const message = err?.response?.data?.detail ?? err?.message ?? "Wallet connection failed";
+      toast.error(message);
+    } finally {
+      setWalletSaving(false);
+    }
+  };
+
+  const disconnectWallet = async () => {
+    setWalletSaving(true);
+    try {
+      const updated = await updateMyProfile({ wallet_address: "" });
+      setConnectedWallet(null);
+      setWalletBalance(null);
+      setData((prev) => (prev ? { ...prev, user: updated } : prev));
+      toast.success("Wallet unlinked");
+    } catch (err: any) {
+      const message = err?.response?.data?.detail ?? "Failed to unlink wallet";
+      toast.error(message);
+    } finally {
+      setWalletSaving(false);
+    }
+  };
 
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,6 +223,32 @@ export default function ProfilePage() {
                 Save changes
               </Button>
             </form>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-6">
+            <h2 className="text-lg font-semibold">Wallet</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Link MetaMask to use on-chain investor features.
+            </p>
+            <div className="mt-4 rounded-xl border border-border bg-background p-4">
+              <p className="text-sm text-muted-foreground">Linked wallet</p>
+              <p className="mt-1 break-all font-medium">{linkedWallet ?? connectedWallet ?? "Not linked"}</p>
+              <p className="mt-2 text-sm text-muted-foreground">Balance</p>
+              <p className="mt-1 font-medium">{walletBalance ?? "—"}</p>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Button onClick={connectWallet} disabled={disabled || walletSaving}>
+                {walletSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Connect MetaMask
+              </Button>
+              <Button
+                onClick={disconnectWallet}
+                disabled={disabled || walletSaving || !(linkedWallet ?? connectedWallet)}
+                variant="outline"
+              >
+                Unlink wallet
+              </Button>
+            </div>
           </div>
         </div>
       </div>

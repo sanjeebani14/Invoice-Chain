@@ -32,6 +32,7 @@ class User(Base):
     full_name = Column(String, nullable=True)
     company_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
+    wallet_address = Column(String, nullable=True, index=True)
 
     # Account state
     email_verified = Column(Boolean, nullable=False, default=False)
@@ -39,6 +40,8 @@ class User(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     last_login = Column(DateTime(timezone=True), nullable=True)
     last_refresh_token_issued_at = Column(DateTime(timezone=True), nullable=True)
+    two_factor_enabled = Column(Boolean, nullable=False, default=False)
+    two_factor_secret = Column(String, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -89,6 +92,12 @@ class Invoice(Base):
     # Lifecycle status
     # pending_review → approved → minted → listed → sold
     status = Column(String, default="pending_review", index=True)
+
+    # Escrow tracking for simulated settlement lifecycle.
+    escrow_status = Column(String, nullable=False, default="not_applicable", index=True)
+    escrow_reference = Column(String, nullable=True)
+    escrow_held_at = Column(DateTime(timezone=True), nullable=True)
+    escrow_released_at = Column(DateTime(timezone=True), nullable=True)
 
     # Seller (links to Users table when Gaurisha builds auth)
     seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
@@ -166,6 +175,18 @@ class EmailVerificationToken(Base):
     is_used = Column(Boolean, default=False, index=True)  # Mark as used after verification
     expires_at = Column(DateTime(timezone=True), nullable=False, index=True)  # Typically 24 hours
     used_at = Column(DateTime(timezone=True), nullable=True)  # When token was used for verification
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    token_hash = Column(String, unique=True, index=True, nullable=False)
+    is_used = Column(Boolean, default=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    used_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
@@ -302,3 +323,89 @@ class CreditEvent(Base):
     recorded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+
+
+class AuctionBid(Base):
+    __tablename__ = "auction_bids"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), index=True, nullable=False)
+    bidder_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    amount = Column(Float, nullable=False)
+    status = Column(String, nullable=False, default="active", index=True)  # active | canceled | winning | outbid
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+    canceled_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class MarketplaceListing(Base):
+    __tablename__ = "marketplace_listings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), index=True, nullable=False)
+    seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    listing_type = Column(String, nullable=False, default="fixed", index=True)  # fixed | auction | fractional
+    status = Column(String, nullable=False, default="active", index=True)  # active | paused | sold | canceled
+    ask_price = Column(Float, nullable=True)
+    share_price = Column(Float, nullable=True)
+    total_shares = Column(Integer, nullable=True)
+    available_shares = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class MarketplaceAuction(Base):
+    __tablename__ = "marketplace_auctions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), index=True, nullable=False)
+    listing_id = Column(Integer, ForeignKey("marketplace_listings.id"), index=True, nullable=True)
+    seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    status = Column(String, nullable=False, default="open", index=True)  # open | closed | canceled
+    start_price = Column(Float, nullable=False, default=0.0)
+    min_increment = Column(Float, nullable=False, default=100.0)
+    winning_bid_id = Column(Integer, ForeignKey("auction_bids.id"), nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+    ended_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class MarketplaceTransaction(Base):
+    __tablename__ = "marketplace_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), index=True, nullable=False)
+    listing_id = Column(Integer, ForeignKey("marketplace_listings.id"), index=True, nullable=True)
+    buyer_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    tx_type = Column(String, nullable=False, index=True)  # fund | bid | buy | settle | refund
+    amount = Column(Float, nullable=False, default=0.0)
+    status = Column(String, nullable=False, default="completed", index=True)  # pending | completed | failed
+    reference = Column(String, nullable=True, index=True)
+    tx_metadata = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+
+
+class SettlementRecord(Base):
+    __tablename__ = "settlement_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.id"), index=True, nullable=False)
+    investor_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    amount = Column(Float, nullable=False, default=0.0)
+    status = Column(String, nullable=False, default="pending", index=True)  # pending | confirmed | failed
+    escrow_reference = Column(String, nullable=True, index=True)
+    confirmed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+
+
+class BlockchainSyncState(Base):
+    __tablename__ = "blockchain_sync_state"
+
+    id = Column(Integer, primary_key=True, index=True)
+    contract_address = Column(String, nullable=False, unique=True, index=True)
+    last_synced_block = Column(Integer, nullable=False, default=0)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    last_error = Column(Text, nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 
 from ..database import get_db
-from ..models import User, Invoice, KycSubmission, FraudFlag, CreditHistory
+from ..models import User, Invoice, KycSubmission, FraudFlag, CreditHistory, BlockchainSyncState
 from ..auth.dependencies import get_current_admin
 from ..services.platform_stats import PlatformStatsService
 
@@ -263,6 +263,32 @@ def get_health_metrics(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving health metrics: {str(e)}"
         )
+
+
+@router.get("/blockchain-sync")
+def get_blockchain_sync_status(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    _ = current_admin
+    states = (
+        db.query(BlockchainSyncState)
+        .order_by(BlockchainSyncState.updated_at.desc())
+        .all()
+    )
+    return {
+        "count": len(states),
+        "items": [
+            {
+                "contract_address": item.contract_address,
+                "last_synced_block": int(item.last_synced_block or 0),
+                "last_synced_at": item.last_synced_at.isoformat() if item.last_synced_at else None,
+                "last_error": item.last_error,
+                "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+            }
+            for item in states
+        ],
+    }
 
 
 @router.get("/risk-heatmap")

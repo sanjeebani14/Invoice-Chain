@@ -1,8 +1,9 @@
 import os
 import logging
 import math
+from uuid import uuid4
 from datetime import date, datetime, timezone
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -17,7 +18,16 @@ from ..services.hashing import generate_invoice_hash
 from ..services.duplicate import run_duplicate_detection
 from ..services.fraud_anomaly import InvoiceAnomalyService
 from ..services.minting import get_invoice_minting_service
-from ..auth.dependencies import get_current_user, require_sme, require_admin
+from ..services.malware_scan import scan_invoice_bytes
+from ..services.realtime import notification_hub
+from ..services.storage_s3 import (
+    upload_invoice_document,
+    build_s3_uri,
+    parse_s3_uri,
+    generate_presigned_get_url,
+)
+from ..services.rate_limit import enforce_rate_limit
+from ..auth.dependencies import get_current_user, require_sme, require_admin, require_kyc_approved
 
 router = APIRouter(prefix="/invoices", tags=["Invoice Processing"])
 logger = logging.getLogger(__name__)
@@ -80,6 +90,64 @@ def _run_pending_review_anomaly(db: Session, invoice: Invoice) -> dict | None:
     return anomaly_payload
 
 
+def _upsert_listing_for_invoice(
+    db: Session,
+    invoice: Invoice,
+    listing_type: str,
+    *,
+    ask_price: Optional[float] = None,
+    share_price: Optional[float] = None,
+    total_shares: Optional[int] = None,
+) -> models.MarketplaceListing:
+    listing = (
+        db.query(models.MarketplaceListing)
+        .filter(models.MarketplaceListing.invoice_id == invoice.id)
+        .order_by(models.MarketplaceListing.created_at.desc())
+        .first()
+    )
+
+    if listing is None:
+        listing = models.MarketplaceListing(
+            invoice_id=invoice.id,
+            seller_id=invoice.seller_id,
+            listing_type=listing_type,
+            status="active",
+        )
+        db.add(listing)
+
+    listing.listing_type = listing_type
+    listing.ask_price = ask_price if ask_price is not None else invoice.ask_price
+    listing.share_price = share_price if share_price is not None else invoice.share_price
+    listing.total_shares = total_shares if total_shares is not None else invoice.supply
+    if listing.available_shares is None:
+        listing.available_shares = listing.total_shares
+
+    return listing
+
+
+def _open_or_create_auction(db: Session, invoice: Invoice, listing: models.MarketplaceListing) -> models.MarketplaceAuction:
+    auction = (
+        db.query(models.MarketplaceAuction)
+        .filter(
+            models.MarketplaceAuction.invoice_id == invoice.id,
+            models.MarketplaceAuction.status == "open",
+        )
+        .order_by(models.MarketplaceAuction.started_at.desc())
+        .first()
+    )
+    if auction is None:
+        auction = models.MarketplaceAuction(
+            invoice_id=invoice.id,
+            listing_id=listing.id,
+            seller_id=invoice.seller_id,
+            status="open",
+            start_price=float(invoice.ask_price or invoice.amount or 0.0),
+            min_increment=float(invoice.min_bid_increment or 100.0),
+        )
+        db.add(auction)
+    return auction
+
+
 class InvoiceUpdatePayload(BaseModel):
     invoice_number: Optional[str] = None
     seller_name: Optional[str] = None
@@ -111,14 +179,54 @@ class SettleInvoicePayload(BaseModel):
     notes: Optional[str] = None
 
 
+class FundInvoicePayload(BaseModel):
+    investment_amount: Optional[float] = None
+    shares: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class PlaceBidPayload(BaseModel):
+    amount: float
+
+
+class CloseAuctionPayload(BaseModel):
+    notes: Optional[str] = None
+
+
+class ListingCreatePayload(BaseModel):
+    invoice_id: int
+    listing_type: str = "fixed"  # fixed | auction | fractional
+    ask_price: Optional[float] = None
+    share_price: Optional[float] = None
+    total_shares: Optional[int] = None
+
+
+class ListingUpdatePayload(BaseModel):
+    status: Optional[str] = None  # active | paused | sold | canceled
+    ask_price: Optional[float] = None
+    share_price: Optional[float] = None
+    available_shares: Optional[int] = None
+
+
+class SettlementConfirmPayload(BaseModel):
+    notes: Optional[str] = None
+
+
 # ── POST /invoices/upload ── SME only ────────────────────────────────────────
 
 @router.post("/upload")
 async def upload_invoice(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_sme),
+    _: User = Depends(require_kyc_approved),
 ):
+    enforce_rate_limit(
+        key=f"invoice_upload:{request.client.host if request.client else 'unknown'}:{current_user.id}",
+        limit=int(os.getenv("RL_UPLOAD_LIMIT", "15")),
+        window_seconds=int(os.getenv("RL_UPLOAD_WINDOW_SECONDS", "300")),
+    )
 
     # ── Validate file type ────────────────────────────────────────────────────
     file_ext = os.path.splitext(file.filename)[1].lower()
@@ -137,11 +245,43 @@ async def upload_invoice(
             detail=f"File too large ({size_mb:.1f} MB). Maximum: {MAX_FILE_SIZE_MB} MB",
         )
 
-    # ── Save file locally ─────────────────────────────────────────────────────
-    safe_filename = f"{os.urandom(8).hex()}_{file.filename}"
-    file_path = os.path.join(UPLOAD_DIR, safe_filename)
-    with open(file_path, "wb") as f:
-        f.write(file_bytes)
+    scan_result = scan_invoice_bytes(file_bytes, file.filename)
+    if not scan_result.get("clean", False):
+        notification_hub.broadcast_from_sync(
+            "invoice_upload_blocked",
+            {
+                "filename": file.filename,
+                "seller_id": current_user.id,
+                "reason": scan_result.get("threat"),
+                "engine": scan_result.get("engine"),
+            },
+            roles={"admin"},
+            user_ids={current_user.id},
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Upload blocked by malware scanner: {scan_result.get('threat')}",
+        )
+
+    # ── Persist file to configured storage (S3 or local) ─────────────────────
+    storage_mode = os.getenv("INVOICE_STORAGE_MODE", "local").strip().lower()
+    file_path: str
+    if storage_mode == "s3":
+        try:
+            upload_result = upload_invoice_document(
+                seller_id=current_user.id,
+                filename=file.filename,
+                content_type=file.content_type,
+                file_bytes=file_bytes,
+            )
+            file_path = build_s3_uri(upload_result["bucket"], upload_result["key"])
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Invoice storage upload failed: {exc}")
+    else:
+        safe_filename = f"{os.urandom(8).hex()}_{file.filename}"
+        file_path = os.path.join(UPLOAD_DIR, safe_filename)
+        with open(file_path, "wb") as f:
+            f.write(file_bytes)
 
     # ── Run OCR ───────────────────────────────────────────────────────────────
     ocr_result = process_invoice_file(file_bytes, file.filename)
@@ -259,6 +399,7 @@ async def upload_invoice(
         "hash": hash_result["hash"],
         "canonical_string": hash_result["canonical_string"],
         "overall_ocr_confidence": ocr_result["overall_confidence"],
+        "malware_scan": scan_result,
         "duplicate_check": duplicate_result,
         "status": invoice.status,
         "anomaly": latest_flag.anomaly_metadata if latest_flag else None,
@@ -315,6 +456,222 @@ def list_marketplace_invoices(
 
     invoices = query.offset(skip).limit(limit).all()
     return {"invoices": [_invoice_to_dict(inv, db) for inv in invoices], "total": query.count()}
+
+
+@router.post("/listings")
+def create_listing(
+    payload: ListingCreatePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_sme),
+    _: User = Depends(require_kyc_approved),
+):
+    invoice = db.query(Invoice).filter(Invoice.id == payload.invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if invoice.seller_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorised to list this invoice")
+
+    normalized_type = (payload.listing_type or "fixed").lower()
+    if normalized_type not in {"fixed", "auction", "fractional"}:
+        raise HTTPException(status_code=400, detail="listing_type must be fixed, auction, or fractional")
+
+    invoice.financing_type = normalized_type
+    if payload.ask_price is not None:
+        invoice.ask_price = payload.ask_price
+    if payload.share_price is not None:
+        invoice.share_price = payload.share_price
+    if payload.total_shares is not None and payload.total_shares > 0:
+        invoice.supply = payload.total_shares
+    invoice.status = "listed"
+
+    listing = _upsert_listing_for_invoice(
+        db,
+        invoice,
+        normalized_type,
+        ask_price=payload.ask_price,
+        share_price=payload.share_price,
+        total_shares=payload.total_shares,
+    )
+    db.flush()
+
+    auction = None
+    if normalized_type == "auction":
+        auction = _open_or_create_auction(db, invoice, listing)
+
+    db.commit()
+    db.refresh(listing)
+
+    return {
+        "message": "Listing created",
+        "listing": {
+            "id": listing.id,
+            "invoice_id": listing.invoice_id,
+            "listing_type": listing.listing_type,
+            "status": listing.status,
+            "ask_price": listing.ask_price,
+            "share_price": listing.share_price,
+            "total_shares": listing.total_shares,
+            "available_shares": listing.available_shares,
+            "created_at": listing.created_at.isoformat() if listing.created_at else None,
+            "auction_id": auction.id if auction else None,
+        },
+    }
+
+
+@router.get("/listings")
+def list_listings(
+    status: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = db.query(models.MarketplaceListing)
+    if current_user.role != UserRole.ADMIN:
+        query = query.filter(models.MarketplaceListing.seller_id == current_user.id)
+    if status:
+        query = query.filter(models.MarketplaceListing.status == status)
+
+    rows = query.order_by(models.MarketplaceListing.created_at.desc()).offset(skip).limit(limit).all()
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "invoice_id": row.invoice_id,
+                "seller_id": row.seller_id,
+                "listing_type": row.listing_type,
+                "status": row.status,
+                "ask_price": row.ask_price,
+                "share_price": row.share_price,
+                "total_shares": row.total_shares,
+                "available_shares": row.available_shares,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ],
+        "total": query.count(),
+    }
+
+
+@router.put("/listings/{listing_id:int}")
+def update_listing(
+    listing_id: int,
+    payload: ListingUpdatePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_kyc_approved),
+):
+    listing = db.query(models.MarketplaceListing).filter(models.MarketplaceListing.id == listing_id).first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if current_user.role != UserRole.ADMIN and listing.seller_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorised to update this listing")
+
+    if payload.status is not None:
+        normalized = payload.status.lower()
+        if normalized not in {"active", "paused", "sold", "canceled"}:
+            raise HTTPException(status_code=400, detail="Invalid listing status")
+        listing.status = normalized
+    if payload.ask_price is not None:
+        listing.ask_price = payload.ask_price
+    if payload.share_price is not None:
+        listing.share_price = payload.share_price
+    if payload.available_shares is not None:
+        listing.available_shares = max(payload.available_shares, 0)
+
+    invoice = db.query(Invoice).filter(Invoice.id == listing.invoice_id).first()
+    if invoice:
+        if payload.ask_price is not None:
+            invoice.ask_price = payload.ask_price
+        if payload.share_price is not None:
+            invoice.share_price = payload.share_price
+
+    db.commit()
+    return {"message": "Listing updated", "listing_id": listing.id, "status": listing.status}
+
+
+@router.delete("/listings/{listing_id:int}")
+def delete_listing(
+    listing_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_kyc_approved),
+):
+    listing = db.query(models.MarketplaceListing).filter(models.MarketplaceListing.id == listing_id).first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    if current_user.role != UserRole.ADMIN and listing.seller_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorised to delete this listing")
+
+    listing.status = "canceled"
+    invoice = db.query(Invoice).filter(Invoice.id == listing.invoice_id).first()
+    if invoice and invoice.status == "listed":
+        invoice.status = "approved"
+
+    db.commit()
+    return {"message": "Listing canceled", "listing_id": listing.id}
+
+
+@router.get("/settlements/history")
+def settlement_history(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = db.query(models.SettlementRecord)
+    if current_user.role != UserRole.ADMIN:
+        query = query.filter(
+            (models.SettlementRecord.seller_id == current_user.id)
+            | (models.SettlementRecord.investor_id == current_user.id)
+        )
+
+    rows = query.order_by(models.SettlementRecord.created_at.desc()).offset(skip).limit(limit).all()
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "invoice_id": row.invoice_id,
+                "investor_id": row.investor_id,
+                "seller_id": row.seller_id,
+                "amount": row.amount,
+                "status": row.status,
+                "escrow_reference": row.escrow_reference,
+                "confirmed_by": row.confirmed_by,
+                "confirmed_at": row.confirmed_at.isoformat() if row.confirmed_at else None,
+                "notes": row.notes,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ],
+        "total": query.count(),
+    }
+
+
+@router.post("/settlements/{invoice_id:int}/confirm")
+def confirm_settlement(
+    invoice_id: int,
+    payload: SettlementConfirmPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    record = (
+        db.query(models.SettlementRecord)
+        .filter(models.SettlementRecord.invoice_id == invoice_id)
+        .order_by(models.SettlementRecord.created_at.desc())
+        .first()
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="No settlement record found")
+
+    record.status = "confirmed"
+    record.confirmed_by = current_user.id
+    record.confirmed_at = datetime.now(timezone.utc)
+    if payload.notes is not None:
+        record.notes = payload.notes
+
+    db.commit()
+    return {"message": "Settlement confirmed", "settlement_id": record.id, "status": record.status}
 
 
 # ── GET /invoices/{invoice_id} ── owner or admin ──────────────────────────────
@@ -473,6 +830,15 @@ def _parse_date(raw: Optional[str]) -> Optional[date]:
 def _to_upload_url(file_path: Optional[str]) -> Optional[str]:
     if not file_path:
         return None
+
+    parsed_s3 = parse_s3_uri(file_path)
+    if parsed_s3 is not None:
+        bucket, key = parsed_s3
+        try:
+            return generate_presigned_get_url(bucket=bucket, key=key)
+        except Exception:
+            return None
+
     filename = os.path.basename(file_path)
     if not filename:
         return None
@@ -661,6 +1027,10 @@ def settlement_tracker(
                     else "Due date unavailable"
                 ),
                 "can_settle": inv.status != "settled",
+                "escrow_status": inv.escrow_status,
+                "escrow_reference": inv.escrow_reference,
+                "escrow_held_at": inv.escrow_held_at.isoformat() if inv.escrow_held_at else None,
+                "escrow_released_at": inv.escrow_released_at.isoformat() if inv.escrow_released_at else None,
                 "investor_id": snapshot.investor_id if snapshot else None,
                 "funded_amount": snapshot.funded_amount if snapshot else inv.ask_price,
                 "created_at": str(inv.created_at),
@@ -758,7 +1128,50 @@ def settle_invoice(
             credit.risk_contributors = contributors
 
     invoice.status = "settled"
+    invoice.escrow_status = "released"
+    invoice.escrow_released_at = now
+
+    db.add(
+        models.SettlementRecord(
+            invoice_id=invoice.id,
+            investor_id=snapshot.investor_id if snapshot else None,
+            seller_id=invoice.seller_id,
+            amount=float(settled_amount or 0.0),
+            status="pending",
+            escrow_reference=invoice.escrow_reference,
+            notes=payload.notes,
+        )
+    )
+    db.add(
+        models.MarketplaceTransaction(
+            invoice_id=invoice.id,
+            buyer_id=snapshot.investor_id if snapshot else None,
+            seller_id=invoice.seller_id,
+            tx_type="settle",
+            amount=float(settled_amount or 0.0),
+            status="completed",
+            reference=invoice.escrow_reference,
+            tx_metadata={"event_type": event_type, "days_late": days_late},
+        )
+    )
     db.commit()
+
+    notification_hub.broadcast_from_sync(
+        "invoice_settled",
+        {
+            "invoice_id": invoice.id,
+            "status": invoice.status,
+            "days_late": days_late,
+            "event_type": event_type,
+            "settled_amount": settled_amount,
+            "escrow_status": invoice.escrow_status,
+            "escrow_reference": invoice.escrow_reference,
+            "settled_by": current_user.id,
+        },
+        roles={"admin"},
+        user_ids={uid for uid in [invoice.seller_id, snapshot.investor_id if snapshot else None] if uid is not None},
+        invoice_id=invoice.id,
+    )
 
     return {
         "message": "Invoice settled successfully",
@@ -768,6 +1181,8 @@ def settle_invoice(
         "event_type": event_type,
         "settled_amount": settled_amount,
         "credit_event_id": credit_event.id,
+        "escrow_status": invoice.escrow_status,
+        "escrow_reference": invoice.escrow_reference,
     }
 
 
@@ -827,6 +1242,561 @@ def mint_invoice_nft(
         "tx_hash": mint_result["tx_hash"],
         "supply": mint_result["supply"],
         "status": "minted",
+    }
+
+
+@router.post("/{invoice_id:int}/fund")
+def fund_invoice(
+    invoice_id: int,
+    payload: FundInvoicePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_kyc_approved),
+):
+    """
+    Simulated investor funding flow.
+    Creates RepaymentSnapshot rows used by analytics and settlement tracking.
+    """
+    if current_user.role not in {UserRole.INVESTOR, UserRole.ADMIN}:
+        raise HTTPException(status_code=403, detail="Only investors can fund invoices")
+
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    if invoice.status in {"settled", "defaulted", "rejected", "flagged"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invoice with status '{invoice.status}' cannot be funded",
+        )
+
+    if invoice.status not in {"approved", "listed", "minted", "funded", "active"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invoice is not yet available for funding. "
+                "Expected approved/listed/minted status."
+            ),
+        )
+
+    target_amount = float(invoice.ask_price or invoice.amount or 0.0)
+    if target_amount <= 0:
+        raise HTTPException(status_code=400, detail="Invoice price is not configured")
+
+    funded_total = float(
+        db.query(func.coalesce(func.sum(models.RepaymentSnapshot.funded_amount), 0.0))
+        .filter(models.RepaymentSnapshot.invoice_id == invoice.id)
+        .scalar()
+        or 0.0
+    )
+    remaining_amount = max(target_amount - funded_total, 0.0)
+
+    if remaining_amount <= 0:
+        raise HTTPException(status_code=400, detail="Invoice is already fully funded")
+
+    is_fractional = (invoice.financing_type or "").lower() == "fractional"
+
+    shares = None
+    if is_fractional:
+        share_price = float(invoice.share_price or 0.0)
+        total_shares = int(invoice.supply or 0)
+        if share_price <= 0 or total_shares <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Fractional invoice configuration is invalid",
+            )
+
+        if payload.shares is not None:
+            shares = payload.shares
+        elif payload.investment_amount is not None:
+            shares = int(math.floor(payload.investment_amount / share_price))
+        else:
+            shares = 1
+
+        if shares is None or shares <= 0:
+            raise HTTPException(status_code=400, detail="shares must be greater than 0")
+
+        funded_amount = round(shares * share_price, 2)
+        if funded_amount > remaining_amount + 1e-6:
+            raise HTTPException(
+                status_code=400,
+                detail="Selected shares exceed remaining available amount",
+            )
+    else:
+        funded_amount = float(payload.investment_amount or remaining_amount)
+        if funded_amount <= 0:
+            raise HTTPException(status_code=400, detail="investment_amount must be greater than 0")
+
+        # Non-fractional invoices require full funding in one transaction.
+        if abs(funded_amount - remaining_amount) > 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "This invoice supports full funding only. "
+                    f"Expected amount: {remaining_amount:.2f}"
+                ),
+            )
+
+    snapshot = models.RepaymentSnapshot(
+        invoice_id=invoice.id,
+        investor_id=current_user.id,
+        seller_id=invoice.seller_id,
+        funded_amount=funded_amount,
+        funded_at=datetime.now(timezone.utc),
+        industry_sector=invoice.sector,
+    )
+    db.add(snapshot)
+
+    new_funded_total = funded_total + funded_amount
+    if new_funded_total + 1e-6 >= target_amount:
+        invoice.status = "funded"
+    else:
+        invoice.status = "listed"
+    invoice.escrow_status = "held"
+    invoice.escrow_held_at = datetime.now(timezone.utc)
+    invoice.escrow_reference = f"esc_{uuid4().hex[:16]}"
+
+    db.commit()
+    db.refresh(snapshot)
+    db.refresh(invoice)
+
+    listing = (
+        db.query(models.MarketplaceListing)
+        .filter(models.MarketplaceListing.invoice_id == invoice.id)
+        .order_by(models.MarketplaceListing.created_at.desc())
+        .first()
+    )
+    if listing is not None:
+        listing.status = "sold" if invoice.status == "funded" else listing.status
+        if listing.available_shares is not None and shares is not None:
+            listing.available_shares = max(0, listing.available_shares - shares)
+
+    tx_reference = f"sim_{uuid4().hex[:16]}"
+    db.add(
+        models.MarketplaceTransaction(
+            invoice_id=invoice.id,
+            listing_id=listing.id if listing else None,
+            buyer_id=current_user.id,
+            seller_id=invoice.seller_id,
+            tx_type="fund",
+            amount=float(funded_amount),
+            status="completed",
+            reference=tx_reference,
+            tx_metadata={"shares": shares, "notes": payload.notes},
+        )
+    )
+    db.commit()
+
+    simulated_tx_id = tx_reference
+    notification_hub.broadcast_from_sync(
+        "invoice_funded",
+        {
+            "invoice_id": invoice.id,
+            "status": invoice.status,
+            "funded_amount": funded_amount,
+            "target_amount": target_amount,
+            "remaining_amount": max(target_amount - new_funded_total, 0.0),
+            "escrow_status": invoice.escrow_status,
+            "escrow_reference": invoice.escrow_reference,
+            "investor_id": current_user.id,
+        },
+        roles={"admin", "investor"},
+        user_ids={uid for uid in [invoice.seller_id, current_user.id] if uid is not None},
+        invoice_id=invoice.id,
+    )
+    return {
+        "message": "Funding simulated successfully",
+        "invoice_id": invoice.id,
+        "status": invoice.status,
+        "funded_amount": funded_amount,
+        "target_amount": target_amount,
+        "remaining_amount": max(target_amount - new_funded_total, 0.0),
+        "shares": shares,
+        "repayment_snapshot_id": snapshot.id,
+        "simulated_transaction_id": simulated_tx_id,
+        "escrow_status": invoice.escrow_status,
+        "escrow_reference": invoice.escrow_reference,
+        "notes": payload.notes,
+    }
+
+
+@router.get("/{invoice_id:int}/bids")
+def list_invoice_bids(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    bids = (
+        db.query(models.AuctionBid)
+        .filter(models.AuctionBid.invoice_id == invoice_id)
+        .order_by(models.AuctionBid.amount.desc(), models.AuctionBid.created_at.asc())
+        .all()
+    )
+
+    highest_active = next((b for b in bids if b.status == "active"), None)
+    min_increment = float(invoice.min_bid_increment or 100.0)
+    base_price = float(invoice.ask_price or invoice.amount or 0.0)
+    next_min = (
+        (float(highest_active.amount) + min_increment)
+        if highest_active is not None
+        else base_price
+    )
+
+    return {
+        "invoice_id": invoice_id,
+        "highest_bid": float(highest_active.amount) if highest_active else None,
+        "next_min_bid": round(next_min, 2),
+        "my_active_bid_id": highest_active.id if highest_active and highest_active.bidder_id == current_user.id else None,
+        "bids": [
+            {
+                "id": bid.id,
+                "invoice_id": bid.invoice_id,
+                "bidder_id": bid.bidder_id,
+                "amount": float(bid.amount),
+                "status": bid.status,
+                "is_mine": bid.bidder_id == current_user.id,
+                "created_at": bid.created_at.isoformat() if bid.created_at else None,
+            }
+            for bid in bids
+        ],
+    }
+
+
+@router.post("/{invoice_id:int}/bids")
+def place_invoice_bid(
+    invoice_id: int,
+    payload: PlaceBidPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_kyc_approved),
+):
+    if current_user.role not in {UserRole.INVESTOR, UserRole.ADMIN}:
+        raise HTTPException(status_code=403, detail="Only investors can place bids")
+
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    if (invoice.financing_type or "").lower() != "auction":
+        raise HTTPException(status_code=400, detail="This invoice is not configured for auction bidding")
+
+    if invoice.status not in {"approved", "listed", "minted"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invoice is not open for auction bidding. "
+                "Expected approved/listed/minted status."
+            ),
+        )
+
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Bid amount must be greater than 0")
+
+    active_bids = (
+        db.query(models.AuctionBid)
+        .filter(
+            models.AuctionBid.invoice_id == invoice_id,
+            models.AuctionBid.status == "active",
+        )
+        .order_by(models.AuctionBid.amount.desc(), models.AuctionBid.created_at.asc())
+        .all()
+    )
+
+    highest = active_bids[0] if active_bids else None
+    min_increment = float(invoice.min_bid_increment or 100.0)
+    base_price = float(invoice.ask_price or invoice.amount or 0.0)
+    minimum_allowed = (float(highest.amount) + min_increment) if highest else base_price
+
+    if payload.amount + 1e-9 < minimum_allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bid too low. Minimum allowed bid is {minimum_allowed:.2f}",
+        )
+
+    for bid in active_bids:
+        if bid.bidder_id != current_user.id:
+            notification_hub.broadcast_from_sync(
+                "auction_outbid",
+                {
+                    "invoice_id": invoice_id,
+                    "outbidder_id": bid.bidder_id,
+                    "new_high_bid": float(payload.amount),
+                },
+                user_ids={bid.bidder_id},
+            )
+        bid.status = "outbid"
+
+    new_bid = models.AuctionBid(
+        invoice_id=invoice_id,
+        bidder_id=current_user.id,
+        amount=float(payload.amount),
+        status="active",
+    )
+    db.add(new_bid)
+    listing = _upsert_listing_for_invoice(
+        db,
+        invoice,
+        "auction",
+        ask_price=invoice.ask_price,
+        share_price=invoice.share_price,
+        total_shares=invoice.supply,
+    )
+    db.flush()
+    _open_or_create_auction(db, invoice, listing)
+
+    db.add(
+        models.MarketplaceTransaction(
+            invoice_id=invoice.id,
+            listing_id=listing.id,
+            buyer_id=current_user.id,
+            seller_id=invoice.seller_id,
+            tx_type="bid",
+            amount=float(payload.amount),
+            status="completed",
+            reference=f"bid_{new_bid.id if new_bid.id else uuid4().hex[:8]}",
+            tx_metadata={"bid_status": "active"},
+        )
+    )
+    db.commit()
+    db.refresh(new_bid)
+
+    notification_hub.broadcast_from_sync(
+        "auction_bid_placed",
+        {
+            "invoice_id": invoice_id,
+            "bid_id": new_bid.id,
+            "bidder_id": new_bid.bidder_id,
+            "amount": float(new_bid.amount),
+            "status": new_bid.status,
+        },
+        roles={"admin", "investor"},
+        user_ids={uid for uid in [invoice.seller_id, current_user.id] if uid is not None},
+        invoice_id=invoice.id,
+    )
+
+    return {
+        "message": "Bid placed successfully",
+        "invoice_id": invoice_id,
+        "bid": {
+            "id": new_bid.id,
+            "bidder_id": new_bid.bidder_id,
+            "amount": float(new_bid.amount),
+            "status": new_bid.status,
+            "created_at": new_bid.created_at.isoformat() if new_bid.created_at else None,
+        },
+    }
+
+
+@router.post("/{invoice_id:int}/bids/cancel-my-active")
+def cancel_my_active_bid(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_kyc_approved),
+):
+    if current_user.role not in {UserRole.INVESTOR, UserRole.ADMIN}:
+        raise HTTPException(status_code=403, detail="Only investors can cancel bids")
+
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    if (invoice.financing_type or "").lower() != "auction":
+        raise HTTPException(status_code=400, detail="This invoice is not configured for auction bidding")
+
+    if invoice.status in {"funded", "active", "settled", "defaulted"}:
+        raise HTTPException(status_code=400, detail="Auction is already closed for this invoice")
+
+    my_active_bid = (
+        db.query(models.AuctionBid)
+        .filter(
+            models.AuctionBid.invoice_id == invoice_id,
+            models.AuctionBid.bidder_id == current_user.id,
+            models.AuctionBid.status == "active",
+        )
+        .order_by(models.AuctionBid.amount.desc(), models.AuctionBid.created_at.asc())
+        .first()
+    )
+
+    if my_active_bid is None:
+        raise HTTPException(status_code=404, detail="No active bid found to retract")
+
+    my_active_bid.status = "canceled"
+    my_active_bid.canceled_at = datetime.now(timezone.utc)
+
+    # Promote the next best non-canceled bid so auction can continue from prior leader.
+    candidate_bids = (
+        db.query(models.AuctionBid)
+        .filter(
+            models.AuctionBid.invoice_id == invoice_id,
+            models.AuctionBid.status.in_(["active", "outbid"]),
+        )
+        .order_by(models.AuctionBid.amount.desc(), models.AuctionBid.created_at.asc())
+        .all()
+    )
+
+    if candidate_bids:
+        candidate_bids[0].status = "active"
+        for bid in candidate_bids[1:]:
+            bid.status = "outbid"
+
+    db.commit()
+
+    highest_active = next((bid for bid in candidate_bids if bid.status == "active"), None)
+    min_increment = float(invoice.min_bid_increment or 100.0)
+    base_price = float(invoice.ask_price or invoice.amount or 0.0)
+    next_min = (
+        (float(highest_active.amount) + min_increment)
+        if highest_active is not None
+        else base_price
+    )
+
+    notification_hub.broadcast_from_sync(
+        "auction_bid_retracted",
+        {
+            "invoice_id": invoice_id,
+            "canceled_bid_id": my_active_bid.id,
+            "bidder_id": current_user.id,
+            "highest_bid": float(highest_active.amount) if highest_active else None,
+            "next_min_bid": round(next_min, 2),
+        },
+        roles={"admin", "investor"},
+        user_ids={uid for uid in [invoice.seller_id, current_user.id] if uid is not None},
+        invoice_id=invoice.id,
+    )
+
+    return {
+        "message": "Active bid retracted successfully",
+        "invoice_id": invoice_id,
+        "canceled_bid_id": my_active_bid.id,
+        "highest_bid": float(highest_active.amount) if highest_active else None,
+        "next_min_bid": round(next_min, 2),
+    }
+
+
+@router.post("/{invoice_id:int}/auction/close")
+def close_invoice_auction(
+    invoice_id: int,
+    payload: CloseAuctionPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    if (invoice.financing_type or "").lower() != "auction":
+        raise HTTPException(status_code=400, detail="Invoice is not an auction listing")
+
+    if invoice.status in {"funded", "active", "settled", "defaulted"}:
+        raise HTTPException(status_code=400, detail=f"Invoice status '{invoice.status}' cannot be auction-closed")
+
+    winner = (
+        db.query(models.AuctionBid)
+        .filter(
+            models.AuctionBid.invoice_id == invoice_id,
+            models.AuctionBid.status == "active",
+        )
+        .order_by(models.AuctionBid.amount.desc(), models.AuctionBid.created_at.asc())
+        .first()
+    )
+
+    if winner is None:
+        raise HTTPException(status_code=400, detail="Cannot close auction without active bids")
+
+    winner_user = db.query(User).filter(User.id == winner.bidder_id).first()
+
+    winner.status = "winning"
+    invoice.ask_price = float(winner.amount)
+    invoice.status = "funded"
+    invoice.escrow_status = "held"
+    invoice.escrow_held_at = datetime.now(timezone.utc)
+    invoice.escrow_reference = f"esc_{uuid4().hex[:16]}"
+
+    snapshot = models.RepaymentSnapshot(
+        invoice_id=invoice.id,
+        investor_id=winner.bidder_id,
+        seller_id=invoice.seller_id,
+        funded_amount=float(winner.amount),
+        funded_at=datetime.now(timezone.utc),
+        industry_sector=invoice.sector,
+    )
+    db.add(snapshot)
+
+    listing = _upsert_listing_for_invoice(
+        db,
+        invoice,
+        "auction",
+        ask_price=invoice.ask_price,
+        share_price=invoice.share_price,
+        total_shares=invoice.supply,
+    )
+    listing.status = "sold"
+
+    auction = _open_or_create_auction(db, invoice, listing)
+    auction.status = "closed"
+    auction.winning_bid_id = winner.id
+    auction.ended_at = datetime.now(timezone.utc)
+
+    auction_tx_ref = f"sim_auction_{uuid4().hex[:16]}"
+    db.add(
+        models.MarketplaceTransaction(
+            invoice_id=invoice.id,
+            listing_id=listing.id,
+            buyer_id=winner.bidder_id,
+            seller_id=invoice.seller_id,
+            tx_type="buy",
+            amount=float(winner.amount),
+            status="completed",
+            reference=auction_tx_ref,
+            tx_metadata={"winner_bid_id": winner.id, "notes": payload.notes},
+        )
+    )
+
+    db.commit()
+    db.refresh(snapshot)
+
+    simulated_tx_id = auction_tx_ref
+    closed_at = datetime.now(timezone.utc)
+    notification_hub.broadcast_from_sync(
+        "auction_closed",
+        {
+            "invoice_id": invoice.id,
+            "status": invoice.status,
+            "winning_bid": float(winner.amount),
+            "winner_bidder_id": winner.bidder_id,
+            "winner_name": winner_user.full_name if winner_user else None,
+            "winner_email": winner_user.email if winner_user else None,
+            "escrow_status": invoice.escrow_status,
+            "escrow_reference": invoice.escrow_reference,
+            "closed_by": current_user.id,
+            "closed_at": closed_at.isoformat(),
+        },
+        roles={"admin", "investor"},
+        user_ids={uid for uid in [invoice.seller_id, winner.bidder_id] if uid is not None},
+        invoice_id=invoice.id,
+    )
+    return {
+        "message": "Auction closed successfully",
+        "invoice_id": invoice.id,
+        "status": invoice.status,
+        "winning_bid": float(winner.amount),
+        "winner_bid_id": winner.id,
+        "winner_bidder_id": winner.bidder_id,
+        "winner_name": winner_user.full_name if winner_user else None,
+        "winner_email": winner_user.email if winner_user else None,
+        "winner_created_at": winner.created_at.isoformat() if winner.created_at else None,
+        "repayment_snapshot_id": snapshot.id,
+        "simulated_transaction_id": simulated_tx_id,
+        "escrow_status": invoice.escrow_status,
+        "escrow_reference": invoice.escrow_reference,
+        "closed_at": closed_at.isoformat(),
+        "closed_by": current_user.id,
+        "notes": payload.notes,
     }
 
 
@@ -909,6 +1879,10 @@ def _invoice_to_dict(invoice: Invoice, db: Session | None = None) -> dict:
         "status": invoice.status,
         "ocr_confidence": invoice.ocr_confidence,
         "seller_id": invoice.seller_id,
+        "escrow_status": invoice.escrow_status,
+        "escrow_reference": invoice.escrow_reference,
+        "escrow_held_at": invoice.escrow_held_at.isoformat() if invoice.escrow_held_at else None,
+        "escrow_released_at": invoice.escrow_released_at.isoformat() if invoice.escrow_released_at else None,
         "anomaly": latest_flag.anomaly_metadata if latest_flag else None,
         "fraud_flag": {
             "id": latest_flag.id,

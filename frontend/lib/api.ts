@@ -8,38 +8,41 @@ const ADMIN_STATS_BASE = `${BACKEND_ORIGIN}/api/v1/admin/stats`;
 const ANALYTICS_BASE = `${BACKEND_ORIGIN}/api/v1/analytics`;
 const INVOICE_BASE = `${BACKEND_ORIGIN}/api/v1/invoice/invoices`;
 
+const DEFAULT_TIMEOUT_MS = 10000;
+const INVESTOR_FLOW_TIMEOUT_MS = 30000;
+
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 10000,
+  timeout: DEFAULT_TIMEOUT_MS,
 });
 
 const adminUsersApi = axios.create({
   baseURL: ADMIN_USERS_BASE,
-  timeout: 10000,
+  timeout: DEFAULT_TIMEOUT_MS,
   withCredentials: true,
 });
 
 const adminStatsApi = axios.create({
   baseURL: ADMIN_STATS_BASE,
-  timeout: 10000,
+  timeout: DEFAULT_TIMEOUT_MS,
   withCredentials: true,
 });
 
 const analyticsApi = axios.create({
   baseURL: ANALYTICS_BASE,
-  timeout: 10000,
+  timeout: INVESTOR_FLOW_TIMEOUT_MS,
   withCredentials: true,
 });
 
 const invoiceApi = axios.create({
   baseURL: INVOICE_BASE,
-  timeout: 10000,
+  timeout: INVESTOR_FLOW_TIMEOUT_MS,
   withCredentials: true,
 });
 
 const authApi = axios.create({
   baseURL: `${BACKEND_ORIGIN}/auth`,
-  timeout: 10000,
+  timeout: DEFAULT_TIMEOUT_MS,
   withCredentials: true,
 });
 
@@ -277,6 +280,32 @@ export interface InvestorCashFlow {
   };
 }
 
+export interface InvestorInvestmentItem {
+  snapshot_id: number;
+  invoice_id: number;
+  invoice_number?: string | null;
+  client_name?: string | null;
+  sector?: string | null;
+  status: string;
+  position_state: "pending" | "active" | "repaid";
+  funded_amount: number;
+  repayment_target: number;
+  repaid_amount: number;
+  estimated_pnl: number;
+  due_date?: string | null;
+  days_to_due?: number | null;
+  funded_at?: string | null;
+  repaid_at?: string | null;
+}
+
+export interface InvestorInvestmentsResponse {
+  investor_id: number;
+  total: number;
+  total_funded: number;
+  total_repaid: number;
+  items: InvestorInvestmentItem[];
+}
+
 export interface AdminOverviewInsight {
   type: string;
   priority: "low" | "medium" | "high";
@@ -298,6 +327,63 @@ export interface AdminOverview {
     sellers_count: number;
   };
   actionable_insights: AdminOverviewInsight[];
+}
+
+export interface BlockchainSyncStatusItem {
+  contract_address: string;
+  last_synced_block: number;
+  last_synced_at?: string | null;
+  last_error?: string | null;
+  updated_at?: string | null;
+}
+
+export interface MarketplaceInvoiceItem {
+  id: number;
+  invoice_number?: string | null;
+  client_name?: string | null;
+  amount?: number | null;
+  due_date?: string | null;
+  sector?: string | null;
+  financing_type?: "fixed" | "auction" | "fractional" | null;
+  ask_price?: number | null;
+  share_price?: number | null;
+  min_bid_increment?: number | null;
+  canonical_hash?: string | null;
+  ocr_confidence?: { overall?: number } | null;
+}
+
+export interface MarketplaceListingItem {
+  id: number;
+  invoice_id: number;
+  seller_id: number;
+  listing_type: "fixed" | "auction" | "fractional";
+  status: "active" | "paused" | "sold" | "canceled";
+  ask_price?: number | null;
+  share_price?: number | null;
+  total_shares?: number | null;
+  available_shares?: number | null;
+  created_at?: string | null;
+}
+
+export interface MarketplaceListingUpdatePayload {
+  status?: "active" | "paused" | "sold" | "canceled";
+  ask_price?: number;
+  share_price?: number;
+  available_shares?: number;
+}
+
+export interface SettlementHistoryItem {
+  id: number;
+  invoice_id: number;
+  investor_id?: number | null;
+  seller_id?: number | null;
+  amount: number;
+  status: string;
+  escrow_reference?: string | null;
+  confirmed_by?: number | null;
+  confirmed_at?: string | null;
+  notes?: string | null;
+  created_at?: string | null;
 }
 
 export interface AdminPendingInvoice {
@@ -347,9 +433,56 @@ export interface AdminSettlementItem {
   is_overdue: boolean;
   countdown_label: string;
   can_settle: boolean;
+  escrow_status?: string | null;
+  escrow_reference?: string | null;
+  escrow_held_at?: string | null;
+  escrow_released_at?: string | null;
   investor_id?: number | null;
   funded_amount?: number | null;
   created_at: string;
+}
+
+export interface AdminAuctionInvoice {
+  id: number;
+  invoice_number?: string | null;
+  seller_name?: string | null;
+  client_name?: string | null;
+  amount?: number | null;
+  ask_price?: number | null;
+  financing_type?: string | null;
+  min_bid_increment?: number | null;
+  status: string;
+  due_date?: string | null;
+  created_at: string;
+}
+
+export interface InvoiceBidItem {
+  id: number;
+  invoice_id: number;
+  bidder_id: number;
+  amount: number;
+  status: string;
+  is_mine?: boolean;
+  created_at?: string | null;
+}
+
+export interface CloseAuctionResponse {
+  message: string;
+  invoice_id: number;
+  status: string;
+  winning_bid: number;
+  winner_bid_id: number;
+  winner_bidder_id: number;
+  winner_name?: string | null;
+  winner_email?: string | null;
+  winner_created_at?: string | null;
+  repayment_snapshot_id: number;
+  simulated_transaction_id: string;
+  escrow_status?: string | null;
+  escrow_reference?: string | null;
+  closed_at?: string;
+  closed_by?: number;
+  notes?: string | null;
 }
 
 // API functions with mock fallback
@@ -559,6 +692,13 @@ export const getInvestorCashFlow = async (): Promise<InvestorCashFlow> => {
   return data;
 };
 
+export const getInvestorInvestments = async (): Promise<InvestorInvestmentsResponse> => {
+  const { data } = await analyticsApi.get<InvestorInvestmentsResponse>(
+    "/investor/investments",
+  );
+  return data;
+};
+
 export const getPlatformConcentration = async (
   thresholdPct: number = 20,
 ): Promise<ConcentrationAnalysis> => {
@@ -571,6 +711,17 @@ export const getPlatformConcentration = async (
 
 export const getAdminOverview = async (): Promise<AdminOverview> => {
   const { data } = await adminStatsApi.get<AdminOverview>("/overview");
+  return data;
+};
+
+export const getBlockchainSyncStatus = async (): Promise<{
+  count: number;
+  items: BlockchainSyncStatusItem[];
+}> => {
+  const { data } = await adminStatsApi.get<{
+    count: number;
+    items: BlockchainSyncStatusItem[];
+  }>("/blockchain-sync");
   return data;
 };
 
@@ -664,5 +815,151 @@ export const settleInvoice = async (
   credit_event_id: number;
 }> => {
   const { data } = await invoiceApi.post(`/${invoiceId}/settle`, payload ?? {});
+  return data;
+};
+
+export const getAdminAuctionInvoices = async (): Promise<{
+  invoices: AdminAuctionInvoice[];
+  total: number;
+}> => {
+  const { data } = await invoiceApi.get<{
+    invoices: AdminAuctionInvoice[];
+    total: number;
+  }>("/marketplace", { params: { limit: 200 } });
+
+  const auctions = (data.invoices || []).filter(
+    (inv) => (inv.financing_type || "").toLowerCase() === "auction",
+  );
+
+  return {
+    invoices: auctions,
+    total: auctions.length,
+  };
+};
+
+export const getMarketplaceInvoices = async (params?: {
+  skip?: number;
+  limit?: number;
+}): Promise<{ invoices: MarketplaceInvoiceItem[]; total: number }> => {
+  const { data } = await invoiceApi.get<{
+    invoices: MarketplaceInvoiceItem[];
+    total: number;
+  }>("/marketplace", { params });
+  return data;
+};
+
+export const fundInvoice = async (
+  invoiceId: number,
+  payload: { investment_amount?: number; shares?: number; notes?: string },
+): Promise<{ message: string; invoice_id: number; status: string }> => {
+  const { data } = await invoiceApi.post<{
+    message: string;
+    invoice_id: number;
+    status: string;
+  }>(`/${invoiceId}/fund`, payload);
+  return data;
+};
+
+export const placeInvoiceBid = async (
+  invoiceId: number,
+  amount: number,
+): Promise<{ message: string; invoice_id: number; bid_id: number; highest_bid: number }> => {
+  const { data } = await invoiceApi.post<{
+    message: string;
+    invoice_id: number;
+    bid_id: number;
+    highest_bid: number;
+  }>(`/${invoiceId}/bids`, { amount });
+  return data;
+};
+
+export const getMarketplaceListings = async (params?: {
+  status?: string;
+  skip?: number;
+  limit?: number;
+}): Promise<{ items: MarketplaceListingItem[]; total: number }> => {
+  const { data } = await invoiceApi.get<{
+    items: MarketplaceListingItem[];
+    total: number;
+  }>("/listings", { params });
+  return data;
+};
+
+export const updateMarketplaceListing = async (
+  listingId: number,
+  payload: MarketplaceListingUpdatePayload,
+): Promise<{ message: string; listing_id: number; status: string }> => {
+  const { data } = await invoiceApi.put<{
+    message: string;
+    listing_id: number;
+    status: string;
+  }>(`/listings/${listingId}`, payload);
+  return data;
+};
+
+export const cancelMarketplaceListing = async (
+  listingId: number,
+): Promise<{ message: string; listing_id: number }> => {
+  const { data } = await invoiceApi.delete<{
+    message: string;
+    listing_id: number;
+  }>(`/listings/${listingId}`);
+  return data;
+};
+
+export const getSettlementHistory = async (params?: {
+  skip?: number;
+  limit?: number;
+}): Promise<{ items: SettlementHistoryItem[]; total: number }> => {
+  const { data } = await invoiceApi.get<{
+    items: SettlementHistoryItem[];
+    total: number;
+  }>("/settlements/history", { params });
+  return data;
+};
+
+export const confirmSettlement = async (
+  invoiceId: number,
+  payload?: { notes?: string },
+): Promise<{ message: string; settlement_id: number; status: string }> => {
+  const { data } = await invoiceApi.post<{
+    message: string;
+    settlement_id: number;
+    status: string;
+  }>(`/settlements/${invoiceId}/confirm`, payload ?? {});
+  return data;
+};
+
+export const getInvoiceBids = async (
+  invoiceId: number,
+): Promise<{ invoice_id: number; bids: InvoiceBidItem[]; highest_bid?: number | null; next_min_bid?: number; my_active_bid_id?: number | null }> => {
+  const { data } = await invoiceApi.get<{
+    invoice_id: number;
+    bids: InvoiceBidItem[];
+    highest_bid?: number | null;
+    next_min_bid?: number;
+    my_active_bid_id?: number | null;
+  }>(`/${invoiceId}/bids`);
+  return data;
+};
+
+export const cancelMyActiveBid = async (
+  invoiceId: number,
+): Promise<{
+  message: string;
+  invoice_id: number;
+  canceled_bid_id: number;
+  highest_bid?: number | null;
+  next_min_bid?: number;
+}> => {
+  const { data } = await invoiceApi.post(`/${invoiceId}/bids/cancel-my-active`);
+  return data;
+};
+
+export const closeAuction = async (
+  invoiceId: number,
+  payload?: { notes?: string },
+): Promise<CloseAuctionResponse> => {
+  const { data } = await invoiceApi.post<CloseAuctionResponse>(`/${invoiceId}/auction/close`, payload ?? {});
   return data;
 };
