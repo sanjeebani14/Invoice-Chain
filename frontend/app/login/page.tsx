@@ -13,7 +13,7 @@ import { AuthCard } from "@/components/auth/AuthCard";
 
 // Centralized Logic
 import { login, loginWithTwoFactor } from "@/lib/auth";
-import { getMyProfile, getWalletNonce, api } from "@/lib/api"; 
+import { getMyProfile, getWalletNonce, api } from "@/lib/api";
 import { useWallet } from "@/context/WalletContext";
 import { useAuth } from "@/hooks/useAuth";
 import * as web3 from "@/lib/web3";
@@ -25,24 +25,19 @@ import type { ProfileMeResponse } from "@/lib/api/types";
  * Prioritizes profile completion over dashboard access.
  */
 function resolveUserDestination(profile: ProfileMeResponse): string {
-  const { user, kyc, primary_wallet } = profile;
+  const { user, kyc } = profile;
+  const primaryWallet = (profile as { primary_wallet?: unknown })
+    .primary_wallet;
   const role = String(user.role || "").toLowerCase();
 
   // Admins bypass the completion checks to ensure platform management isn't blocked
-import { getBackendOrigin } from "@/lib/backendOrigin";
-import axios from "axios";
-import { getRiskOnboardingStatus } from "@/lib/profile";
-
-const BACKEND_ORIGIN = getBackendOrigin();
-
-function resolveRoleHome(roleValue: unknown): string {
-  const role = String(roleValue ?? "").toLowerCase();
   if (role.includes("admin")) return "/admin/dashboard";
 
   // Identify "Pending" or "Incomplete" items
-  const isProfileIncomplete = !user.full_name || !user.phone || !user.company_name;
+  const isProfileIncomplete =
+    !user.full_name || !user.phone || !user.company_name;
   const isKycPending = kyc?.status !== "approved";
-  const isWalletMissing = !primary_wallet;
+  const isWalletMissing = !primaryWallet;
 
   // Reroute to profile if ANY check fails
   if (isProfileIncomplete || isKycPending || isWalletMissing) {
@@ -63,9 +58,9 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [walletLoading, setWalletLoading] = useState(false);
-  
+
   const { login: authLogin } = useAuth();
-  
+
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [twoFactorToken, setTwoFactorToken] = useState("");
   const [twoFactorCode, setTwoFactorCode] = useState("");
@@ -80,9 +75,9 @@ export default function LoginPage() {
     try {
       const profile = await getMyProfile();
       const destination = resolveUserDestination(profile);
-      
+
       // Clear router cache and redirect
-      router.refresh(); 
+      router.refresh();
       router.push(destination);
     } catch (err) {
       toast.error("Failed to verify profile status");
@@ -100,18 +95,19 @@ export default function LoginPage() {
 
       const { message, nonce } = await getWalletNonce(acct);
       const signature = await web3.signMessage(message, acct);
-      
-      await api.post("/wallet/verify-signature", { 
-        wallet_address: acct, 
-        nonce, 
-        signature 
+
+      await api.post("/wallet/verify-signature", {
+        wallet_address: acct,
+        nonce,
+        signature,
       });
 
       toast.success("Signed in with wallet");
       await handlePostLoginRouting();
     } catch (e: unknown) {
-      const message = (e as AxiosError<{ detail?: string }>).response?.data?.detail || 
-                      (e instanceof Error ? e.message : "Wallet sign-in failed");
+      const message =
+        (e as AxiosError<{ detail?: string }>).response?.data?.detail ||
+        (e instanceof Error ? e.message : "Wallet sign-in failed");
       toast.error(message);
     } finally {
       setWalletLoading(false);
@@ -124,32 +120,34 @@ export default function LoginPage() {
 
     try {
       if (requiresTwoFactor && twoFactorToken) {
-        await loginWithTwoFactor({ 
-          two_factor_token: twoFactorToken, 
-          code: twoFactorCode 
+        await loginWithTwoFactor({
+          two_factor_token: twoFactorToken,
+          code: twoFactorCode,
         });
       } else {
-        await authLogin(email, password); 
+        await authLogin(email, password);
       }
 
       toast.success("Logged in successfully");
       await handlePostLoginRouting();
     } catch (err: unknown) {
-      const message = (err as AxiosError<{ detail?: string }>).response?.data?.detail || "Invalid credentials";
+      const message =
+        (err as AxiosError<{ detail?: string }>).response?.data?.detail ||
+        "Invalid credentials";
       toast.error(message);
     } finally {
       setLoading(false);
     }
   };
-  
+
   return (
     <AuthCard title="Welcome back" subtitle="Sign in to your account">
       <div className="mb-4 space-y-2">
-        <Button 
-          type="button" 
-          variant="outline" 
-          className="w-full" 
-          onClick={continueWithWallet} 
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          onClick={continueWithWallet}
           disabled={walletLoading}
         >
           {walletLoading ? "Connecting..." : "Continue with MetaMask"}
@@ -159,7 +157,7 @@ export default function LoginPage() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* ... (Rest of your JSX inputs stay the same) ... */}
-        
+
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input
@@ -199,7 +197,9 @@ export default function LoginPage() {
             <Input
               id="two-factor-code"
               value={twoFactorCode}
-              onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ""))}
+              onChange={(e) =>
+                setTwoFactorCode(e.target.value.replace(/\D/g, ""))
+              }
               required
             />
           </div>
@@ -212,7 +212,13 @@ export default function LoginPage() {
       </form>
 
       <p className="mt-6 text-center text-sm text-muted-foreground">
-        Don&apos;t have an account? <Link href="/register" className="font-medium text-foreground hover:underline">Register</Link>
+        Don&apos;t have an account?{" "}
+        <Link
+          href="/register"
+          className="font-medium text-foreground hover:underline"
+        >
+          Register
+        </Link>
       </p>
     </AuthCard>
   );

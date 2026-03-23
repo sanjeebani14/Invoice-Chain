@@ -255,7 +255,9 @@ class PlatformStatsService:
     def calculate_user_metrics(db: Session) -> Dict[str, int]:
         """Calculate active user counts with seller coverage from risk records."""
         active_seller_users = db.query(func.count(User.id)).filter(
-            User.role.in_([UserRole.SELLER, UserRole.seller]),
+            # SME role is stored as the enum value "seller" (see UserRole.SME),
+            # so use the enum member directly.
+            User.role.in_([UserRole.SELLER, UserRole.SME]),
             User.is_active == True,
             User.email_verified == True
         ).scalar() or 0

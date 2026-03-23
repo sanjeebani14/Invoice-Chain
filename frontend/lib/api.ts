@@ -2,10 +2,10 @@ import axios from "axios";
 import { getBackendOrigin } from "@/lib/backendOrigin";
 
 // 1. Fixed the import path and added all missing types
-import type { 
-  SellerScore, 
-  FraudQueueItem, 
-  RiskMetrics, 
+import type {
+  SellerScore,
+  FraudQueueItem,
+  RiskMetrics,
   AdminManagedUser,
   ManualFraudFlagPayload,
   InvoiceAnomalyExplanation,
@@ -27,7 +27,39 @@ import type {
   AdminSettlementItem,
   AdminAuctionInvoice,
   InvoiceBidItem,
-  CloseAuctionResponse, ProfileMeResponse
+  CloseAuctionResponse,
+  ProfileMeResponse,
+} from "./api/types";
+
+export type {
+  ConcentrationBreakdownItem,
+  SellerScore,
+  FraudQueueItem,
+  RiskMetrics,
+  AdminManagedUser,
+  ManualFraudFlagPayload,
+  InvoiceAnomalyExplanation,
+  GetAdminUsersParams,
+  PlatformStats,
+  PlatformHealthMetrics,
+  RiskHeatmapData,
+  ConcentrationAnalysis,
+  InvestorSummary,
+  InvestorCashFlow,
+  InvestorInvestmentItem,
+  InvestorInvestmentsResponse,
+  AdminOverview,
+  BlockchainSyncStatusItem,
+  MarketplaceInvoiceItem,
+  MarketplaceListingItem,
+  MarketplaceListingUpdatePayload,
+  SettlementHistoryItem,
+  AdminPendingInvoice,
+  AdminSettlementItem,
+  AdminAuctionInvoice,
+  InvoiceBidItem,
+  CloseAuctionResponse,
+  ProfileMeResponse,
 } from "./api/types";
 
 const BACKEND_ORIGIN = getBackendOrigin();
@@ -102,17 +134,17 @@ export { withAuthRefreshRetry };
 
 // 1. Get a unique nonce from the backend to sign with MetaMask
 export const getWalletNonce = async (walletAddress: string) => {
-  const { data } = await api.post("/wallet/nonce", { 
-    wallet_address: walletAddress 
+  const { data } = await api.post("/wallet/nonce", {
+    wallet_address: walletAddress,
   });
   return data; // Returns { nonce: string }
 };
 
 // 2. Link the signed wallet to the currently logged-in user
-export const linkWallet = async (payload: { 
-  wallet_address: string; 
-  nonce: string; 
-  signature: string 
+export const linkWallet = async (payload: {
+  wallet_address: string;
+  nonce: string;
+  signature: string;
 }) => {
   const { data } = await api.post("/wallet/link", payload);
   return data;
@@ -235,7 +267,9 @@ export const manualFraudFlag = async (
 export const explainInvoiceAnomaly = async (
   invoiceId: number,
 ): Promise<InvoiceAnomalyExplanation> => {
-  const { data } = await api.get(`/risk/admin/invoice-anomaly-explain/${invoiceId}`);
+  const { data } = await api.get(
+    `/risk/admin/invoice-anomaly-explain/${invoiceId}`,
+  );
   return data as InvoiceAnomalyExplanation;
 };
 
@@ -338,10 +372,23 @@ export const getPlatformHealthMetrics =
 
 export const getRiskHeatmap = async (): Promise<RiskHeatmapData> => {
   try {
-    const { data } = await adminStatsApi.get<RiskHeatmapData>("/risk-heatmap");
+    const { data } = await withAuthRefreshRetry(() =>
+      adminStatsApi.get<RiskHeatmapData>("/risk-heatmap"),
+    );
     return data;
   } catch {
-    throw new Error("Unable to fetch risk heatmap");
+    // Keep analytics page usable even when this optional widget is unavailable.
+    return {
+      sector_exposure: {},
+      top_sector: null,
+      concentration_ratio: 0,
+      risk_levels: {
+        high: 0,
+        medium: 0,
+        low: 0,
+      },
+      avg_score: 0,
+    };
   }
 };
 
@@ -368,12 +415,13 @@ export const getInvestorCashFlow = async (): Promise<InvestorCashFlow> => {
   return data;
 };
 
-export const getInvestorInvestments = async (): Promise<InvestorInvestmentsResponse> => {
-  const { data } = await analyticsApi.get<InvestorInvestmentsResponse>(
-    "/investor/investments",
-  );
-  return data;
-};
+export const getInvestorInvestments =
+  async (): Promise<InvestorInvestmentsResponse> => {
+    const { data } = await analyticsApi.get<InvestorInvestmentsResponse>(
+      "/investor/investments",
+    );
+    return data;
+  };
 
 export const getPlatformConcentration = async (
   thresholdPct: number = 20,
@@ -401,7 +449,10 @@ export const getBlockchainSyncStatus = async (): Promise<{
   return data;
 };
 
-export const getAdminPendingInvoices = async (params?: { skip?: number; limit?: number }) => {
+export const getAdminPendingInvoices = async (params?: {
+  skip?: number;
+  limit?: number;
+}) => {
   try {
     // This part is just for your dev console
     if (process.env.NODE_ENV !== "production") {
@@ -412,19 +463,21 @@ export const getAdminPendingInvoices = async (params?: { skip?: number; limit?: 
       });
     }
 
-    const { data } = await withAuthRefreshRetry(() =>
-      invoiceApi.get<{
-        invoices: AdminPendingInvoice[];
-        total: number;
-      }>("/admin/pending-review", { params }), // Just use the relative path here
+    const { data } = await withAuthRefreshRetry(
+      () =>
+        invoiceApi.get<{
+          invoices: AdminPendingInvoice[];
+          total: number;
+        }>("/admin/pending-review", { params }), // Just use the relative path here
     );
-    
+
     return data;
   } catch (error) {
     // Keep your detailed error handling so you don't get silent 500s
     if (axios.isAxiosError(error)) {
       const detail = error.response?.data?.detail;
-      const message = typeof detail === "string" ? detail : "Unable to load pending invoices";
+      const message =
+        typeof detail === "string" ? detail : "Unable to load pending invoices";
       throw new Error(message);
     }
     throw new Error("Network error occurred");
@@ -518,7 +571,12 @@ export const fundInvoice = async (
 export const placeInvoiceBid = async (
   invoiceId: number,
   amount: number,
-): Promise<{ message: string; invoice_id: number; bid_id: number; highest_bid: number }> => {
+): Promise<{
+  message: string;
+  invoice_id: number;
+  bid_id: number;
+  highest_bid: number;
+}> => {
   const { data } = await invoiceApi.post<{
     message: string;
     invoice_id: number;
@@ -587,7 +645,13 @@ export const confirmSettlement = async (
 
 export const getInvoiceBids = async (
   invoiceId: number,
-): Promise<{ invoice_id: number; bids: InvoiceBidItem[]; highest_bid?: number | null; next_min_bid?: number; my_active_bid_id?: number | null }> => {
+): Promise<{
+  invoice_id: number;
+  bids: InvoiceBidItem[];
+  highest_bid?: number | null;
+  next_min_bid?: number;
+  my_active_bid_id?: number | null;
+}> => {
   const { data } = await invoiceApi.get<{
     invoice_id: number;
     bids: InvoiceBidItem[];
@@ -615,9 +679,11 @@ export const closeAuction = async (
   invoiceId: number,
   payload?: { notes?: string },
 ): Promise<CloseAuctionResponse> => {
-  const { data } = await invoiceApi.post<CloseAuctionResponse>(`/${invoiceId}/auction/close`, payload ?? {});
+  const { data } = await invoiceApi.post<CloseAuctionResponse>(
+    `/${invoiceId}/auction/close`,
+    payload ?? {},
+  );
   return data;
 };
-
 
 export default api;

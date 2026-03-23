@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models import CreditHistory, Invoice, User
 from app.services.risk_scoring.risk_service import RiskScoringEngine
 
-router = APIRouter(prefix="/api/v1/sme/dashboard", tags=["SME Dashboard"])
+router = APIRouter(prefix="/sme/dashboard", tags=["SME Dashboard"])
 risk_engine = RiskScoringEngine()
 
 

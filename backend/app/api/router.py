@@ -3,6 +3,7 @@ from fastapi import APIRouter
 # Import all your individual functional routers
 from app.api.risk import router as risk_router
 from app.api.analytics import router as analytics_router
+from app.api.sme_dashboard import router as sme_dashboard_router
 from app.routers.invoice import router as invoice_router
 from app.routers.auth import router as auth_router
 from app.routers.kyc import router as kyc_router, admin_router as admin_kyc_router
@@ -29,3 +30,4 @@ api_router.include_router(admin_kyc_router, prefix="/admin/kyc", tags=["Admin KY
 api_router.include_router(invoice_router, prefix="/invoice", tags=["Invoice Processing"])
 api_router.include_router(risk_router, prefix="/risk", tags=["Risk & Fraud"])
 api_router.include_router(analytics_router, prefix="/analytics", tags=["Analytics"])
+api_router.include_router(sme_dashboard_router)

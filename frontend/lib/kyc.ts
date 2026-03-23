@@ -1,9 +1,16 @@
 import { api } from "./api";
-import type { 
-  KycStatus, 
-  KycSubmissionOut, 
-  KycMeResponse, 
-  AdminKycListResponse 
+import type {
+  KycStatus,
+  KycSubmissionOut,
+  KycMeResponse,
+  AdminKycListResponse,
+} from "./api/types";
+
+export type {
+  KycStatus,
+  KycSubmissionOut,
+  KycMeResponse,
+  AdminKycListResponse,
 } from "./api/types";
 
 /**
@@ -18,7 +25,7 @@ export async function getMyKyc(): Promise<KycMeResponse> {
 export async function submitPan(file: File): Promise<KycSubmissionOut> {
   const form = new FormData();
   form.append("file", file);
-  
+
   const { data } = await api.post<KycSubmissionOut>("/kyc/submissions", form, {
     headers: { "Content-Type": "multipart/form-data" },
   });
@@ -34,20 +41,33 @@ export async function adminListKyc(params?: {
   skip?: number;
   limit?: number;
 }): Promise<AdminKycListResponse> {
-  const { data } = await api.get<AdminKycListResponse>("/admin/kyc/submissions", {
-    params: params 
-  });
+  const { data } = await api.get<AdminKycListResponse>(
+    "/admin/kyc/submissions",
+    {
+      params: params,
+    },
+  );
   return data;
 }
 
-export async function adminApproveKyc(submissionId: number): Promise<KycSubmissionOut> {
-  const { data } = await api.post<KycSubmissionOut>(`/admin/kyc/${submissionId}/approve`);
+export async function adminApproveKyc(
+  submissionId: number,
+): Promise<KycSubmissionOut> {
+  const { data } = await api.post<KycSubmissionOut>(
+    `/admin/kyc/${submissionId}/approve`,
+  );
   return data;
 }
 
-export async function adminRejectKyc(submissionId: number, reason: string): Promise<KycSubmissionOut> {
-  const { data } = await api.post<KycSubmissionOut>(`/admin/kyc/${submissionId}/reject`, { 
-    reason 
-  });
+export async function adminRejectKyc(
+  submissionId: number,
+  reason: string,
+): Promise<KycSubmissionOut> {
+  const { data } = await api.post<KycSubmissionOut>(
+    `/admin/kyc/${submissionId}/reject`,
+    {
+      reason,
+    },
+  );
   return data;
 }

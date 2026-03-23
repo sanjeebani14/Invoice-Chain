@@ -62,13 +62,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await getMyProfile();
       setCurrentUser(data.user || data);
     } catch (err: unknown) {
-      const message =
-        typeof err === "object" &&
-        err !== null &&
-        "response" in err &&
-        typeof (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail === "string"
-          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-          : "Login failed";
+      const detail =
+        typeof err === "object" && err !== null && "response" in err
+          ? (err as { response?: { data?: { detail?: unknown } } }).response
+              ?.data?.detail
+          : undefined;
+      const message = typeof detail === "string" ? detail : "Login failed";
       setError(message);
       throw err;
     } finally {

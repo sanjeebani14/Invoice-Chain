@@ -7,15 +7,33 @@ export class MetaMaskRejectedError extends Error {}
 export class InvalidNetworkError extends Error {}
 export class InvalidAddressError extends Error {}
 
+type Eip1193Listener = (...args: unknown[]) => void;
+type AccountsChangedHandler = (accounts: string[]) => void;
+type ChainChangedHandler = (chainId: string) => void;
+type WalletEventCallback =
+  | AccountsChangedHandler
+  | ChainChangedHandler
+  | Eip1193Listener;
+
 declare global {
   interface EthereumProvider {
-    request(args: { method: string; params?: unknown[] | object }): Promise<unknown>;
-    on(event: string, callback: (...args: unknown[]) => void): void;
-    removeListener(event: string, callback: (...args: unknown[]) => void): void;
+    request(args: {
+      method: string;
+      params?: unknown[] | object;
+    }): Promise<unknown>;
+    on(event: string, callback: Eip1193Listener): void;
+    removeListener(event: string, callback: Eip1193Listener): void;
   }
   interface Window {
     ethereum?: EthereumProvider;
   }
+}
+
+function getEthereumOrThrow(): EthereumProvider {
+  if (typeof window === "undefined" || !window.ethereum) {
+    throw new MetaMaskNotInstalledError("MetaMask not installed");
+  }
+  return window.ethereum;
 }
 
 export async function isMetaMaskAvailable(): Promise<boolean> {
@@ -23,24 +41,31 @@ export async function isMetaMaskAvailable(): Promise<boolean> {
 }
 
 export async function requestAccounts(): Promise<string[]> {
-  if (!await isMetaMaskAvailable()) throw new MetaMaskNotInstalledError("MetaMask not installed");
+  if (!(await isMetaMaskAvailable()))
+    throw new MetaMaskNotInstalledError("MetaMask not installed");
   try {
-    const accounts: string[] = await window.ethereum.request({ method: "eth_requestAccounts" });
-    return accounts;
+    const ethereum = getEthereumOrThrow();
+    const result = await ethereum.request({ method: "eth_requestAccounts" });
+    return Array.isArray(result) ? (result as string[]) : [];
   } catch (err: unknown) {
-    throw new MetaMaskRejectedError(err instanceof Error ? err.message : "User rejected request");
+    throw new MetaMaskRejectedError(
+      err instanceof Error ? err.message : "User rejected request",
+    );
   }
 }
 
 export async function getConnectedAccounts(): Promise<string[]> {
-  if (!await isMetaMaskAvailable()) return [];
-  const result = await window.ethereum.request({ method: "eth_accounts" });
+  if (!(await isMetaMaskAvailable())) return [];
+  const ethereum = getEthereumOrThrow();
+  const result = await ethereum.request({ method: "eth_accounts" });
   return Array.isArray(result) ? (result as string[]) : [];
 }
 
 export async function getChainId(): Promise<number> {
-  if (!await isMetaMaskAvailable()) throw new MetaMaskNotInstalledError();
-  const hex: string = await window.ethereum.request({ method: "eth_chainId" });
+  if (!(await isMetaMaskAvailable())) throw new MetaMaskNotInstalledError();
+  const ethereum = getEthereumOrThrow();
+  const result = await ethereum.request({ method: "eth_chainId" });
+  const hex = String(result);
   return Number(hex);
 }
 
@@ -56,10 +81,11 @@ export async function getNetworkName(chainId: number): Promise<string> {
 }
 
 export async function switchNetwork(chainId: number): Promise<boolean> {
-  if (!await isMetaMaskAvailable()) throw new MetaMaskNotInstalledError();
+  if (!(await isMetaMaskAvailable())) throw new MetaMaskNotInstalledError();
   const hex = "0x" + chainId.toString(16);
   try {
-    await window.ethereum.request({
+    const ethereum = getEthereumOrThrow();
+    await ethereum.request({
       method: "wallet_switchEthereumChain",
       params: [{ chainId: hex }],
     });
@@ -73,15 +99,19 @@ export async function switchNetwork(chainId: number): Promise<boolean> {
       (err as { code?: number }).code === 4001
     ) {
       throw new MetaMaskRejectedError(
-        err instanceof Error ? err.message : "User rejected request"
+        err instanceof Error ? err.message : "User rejected request",
       );
     }
     throw err;
   }
 }
 
-export async function getBalance(address: string, providerUrl: string): Promise<string> {
-  if (!/^(0x)?[0-9a-fA-F]{40}$/.test(address)) throw new InvalidAddressError("Invalid address format");
+export async function getBalance(
+  address: string,
+  providerUrl: string,
+): Promise<string> {
+  if (!/^(0x)?[0-9a-fA-F]{40}$/.test(address))
+    throw new InvalidAddressError("Invalid address format");
   const body = {
     jsonrpc: "2.0",
     id: 1,
@@ -106,7 +136,7 @@ export function convertWeiToMatic(weiString: string): string {
   } catch {
     // fallback using ethers
     try {
-      return ethers.utils.formatEther(weiString);
+      return ethers.formatEther(weiString);
     } catch {
       return "0";
     }
@@ -120,35 +150,57 @@ export function formatBalance(balanceWei: string): string {
   return `${num.toFixed(decimals)} MATIC`;
 }
 
-export async function signMessage(message: string, account?: string): Promise<string> {
-  if (!await isMetaMaskAvailable()) throw new MetaMaskNotInstalledError();
+export async function signMessage(
+  message: string,
+  account?: string,
+): Promise<string> {
+  if (!(await isMetaMaskAvailable())) throw new MetaMaskNotInstalledError();
   const accounts = account ? [account] : await getConnectedAccounts();
-  if (!accounts || accounts.length === 0) throw new MetaMaskRejectedError("No accounts connected");
+  if (!accounts || accounts.length === 0)
+    throw new MetaMaskRejectedError("No accounts connected");
   const from = accounts[0];
   try {
-    const signature = await window.ethereum.request({ method: "personal_sign", params: [message, from] });
+    const ethereum = getEthereumOrThrow();
+    const signature = await ethereum.request({
+      method: "personal_sign",
+      params: [message, from],
+    });
     return String(signature);
   } catch (err: unknown) {
-    throw new MetaMaskRejectedError(err instanceof Error ? err.message : "User rejected signature request");
+    throw new MetaMaskRejectedError(
+      err instanceof Error ? err.message : "User rejected signature request",
+    );
   }
 }
 
-export function onAccountsChanged(callback: (accounts: string[]) => void): void {
+export function onAccountsChanged(callback: AccountsChangedHandler): void {
   if (typeof window === "undefined" || !window.ethereum) return;
-  window.ethereum.on("accountsChanged", callback);
+  window.ethereum.on("accountsChanged", callback as Eip1193Listener);
 }
 
-export function onChainChanged(callback: (chainId: string) => void): void {
+export function onChainChanged(callback: ChainChangedHandler): void {
   if (typeof window === "undefined" || !window.ethereum) return;
-  window.ethereum.on("chainChanged", callback);
+  window.ethereum.on("chainChanged", callback as Eip1193Listener);
 }
 
 export function removeListener(
+  eventName: "accountsChanged",
+  callback: AccountsChangedHandler,
+): void;
+export function removeListener(
+  eventName: "chainChanged",
+  callback: ChainChangedHandler,
+): void;
+export function removeListener(
   eventName: string,
-  callback: (...args: unknown[]) => void,
+  callback: Eip1193Listener,
+): void;
+export function removeListener(
+  eventName: string,
+  callback: WalletEventCallback,
 ): void {
   if (typeof window === "undefined" || !window.ethereum) return;
-  window.ethereum.removeListener(eventName, callback);
+  window.ethereum.removeListener(eventName, callback as Eip1193Listener);
 }
 
 export function isValidAddress(address: string): boolean {
@@ -157,7 +209,7 @@ export function isValidAddress(address: string): boolean {
 
 export function toChecksumAddress(address: string): string {
   try {
-    return ethers.utils.getAddress(address);
+    return ethers.getAddress(address);
   } catch {
     throw new InvalidAddressError("Invalid address for checksum conversion");
   }

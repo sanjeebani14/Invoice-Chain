@@ -1,20 +1,38 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import axios from "axios";
 import { toast } from "sonner";
-import { 
-  Search, ShieldCheck, X, ShoppingCart, Clock, 
-  CheckCircle2, Loader2, Trash2, Database, 
-  ExternalLink, Filter, Calendar, BarChart3, Banknote,
-  TrendingUp, AlertCircle, Zap, Users, Trophy, Activity
-} from 'lucide-react';
+import {
+  Search,
+  ShieldCheck,
+  X,
+  ShoppingCart,
+  Clock,
+  CheckCircle2,
+  Loader2,
+  Trash2,
+  Database,
+  Calendar,
+  BarChart3,
+  Banknote,
+  TrendingUp,
+  AlertCircle,
+  Zap,
+  Trophy,
+} from "lucide-react";
 
 import { MarketplaceStats } from "@/components/dashboard/MarketplaceStats";
-import { openNotificationSocket } from '@/lib/realtime';
-import type { NotificationSocketHandle } from '@/lib/realtime';
+import { openNotificationSocket } from "@/lib/realtime";
+import type { NotificationSocketHandle } from "@/lib/realtime";
 import {
   cancelMyActiveBid,
   fundInvoice,
@@ -55,23 +73,6 @@ interface Invoice {
   bids?: Bid[];
   totalShares?: number; // New
   availableShares?: number; // New
-}
-
-interface BidApiItem {
-  id: number;
-  bidder_id: number;
-  amount: number;
-  status: string;
-  is_mine?: boolean;
-  created_at: string | null;
-}
-
-interface BidListResponse {
-  invoice_id: number;
-  highest_bid: number | null;
-  next_min_bid: number;
-  my_active_bid_id?: number | null;
-  bids: BidApiItem[];
 }
 
 const safeDate = (value?: string | null): string => {
@@ -153,7 +154,9 @@ export default function FullMarketplace() {
     "idle" | "processing" | "success"
   >("idle");
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
-  const [quickBuyLoadingId, setQuickBuyLoadingId] = useState<string | null>(null);
+  const [quickBuyLoadingId, setQuickBuyLoadingId] = useState<string | null>(
+    null,
+  );
   const [quickBuyError, setQuickBuyError] = useState<string | null>(null);
   const [quickBuySuccess, setQuickBuySuccess] = useState<string | null>(null);
   const [fractionalShares, setFractionalShares] = useState<number>(1);
@@ -178,10 +181,15 @@ export default function FullMarketplace() {
     try {
       const payload = await getMarketplaceInvoices({ limit: 200 });
 
-      const mapped = (payload?.invoices ?? []).map((item) => toMarketplaceInvoice(item));
+      const mapped = (payload?.invoices ?? [])
+        .filter((item) => item.amount != null)
+        .map((item) => toMarketplaceInvoice(item));
       setInvoices(mapped);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to load marketplace invoices";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to load marketplace invoices";
       setLoadError(message);
       setInvoices([]);
     } finally {
@@ -258,32 +266,34 @@ export default function FullMarketplace() {
       const selected = selectedInvRef.current;
 
       if (
-        (msg.event === "auction_bid_placed" || msg.event === "auction_bid_retracted") &&
+        (msg.event === "auction_bid_placed" ||
+          msg.event === "auction_bid_retracted") &&
         selected?.type === "auction" &&
         selected.id === invoiceId
       ) {
         void getInvoiceBids(Number(selected.id)).then((payload) => {
-            const mapped: Bid[] = payload.bids.map((item) => ({
-              id: item.id,
-              bidderId: item.bidder_id,
-              isMine: item.is_mine,
-              user: item.bidder_id === 0 ? "System" : `Investor ${item.bidder_id}`,
-              amount: item.amount,
-              time: item.created_at
-                ? new Date(item.created_at).toLocaleString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })
-                : "just now",
-              status: item.status,
-            }));
+          const mapped: Bid[] = payload.bids.map((item) => ({
+            id: item.id,
+            bidderId: item.bidder_id,
+            isMine: item.is_mine,
+            user:
+              item.bidder_id === 0 ? "System" : `Investor ${item.bidder_id}`,
+            amount: item.amount,
+            time: item.created_at
+              ? new Date(item.created_at).toLocaleString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })
+              : "just now",
+            status: item.status,
+          }));
 
-            setBids(mapped);
-            setMyActiveBidId(payload.my_active_bid_id ?? null);
-            setHighestBid(payload.highest_bid ?? selected.price);
-          });
+          setBids(mapped);
+          setMyActiveBidId(payload.my_active_bid_id ?? null);
+          setHighestBid(payload.highest_bid ?? selected.price);
+        });
       }
 
       if (msg.event === "auction_closed") {
@@ -411,36 +421,38 @@ export default function FullMarketplace() {
 
   const handleBatchCheckout = async () => {
     setPurchaseError(null);
-    setPurchaseStep('processing');
+    setPurchaseStep("processing");
 
     try {
       await Promise.all(
         cart.map((item) => {
           const payload =
-            item.type === 'fractional'
+            item.type === "fractional"
               ? {
                   shares: item.shares,
                   investment_amount: item.selectedAmount,
-                  notes: 'Simulated cart checkout',
+                  notes: "Simulated cart checkout",
                 }
               : {
                   investment_amount: item.selectedAmount,
-                  notes: 'Simulated cart checkout',
+                  notes: "Simulated cart checkout",
                 };
 
           return fundInvoice(Number(item.id), payload);
-        })
+        }),
       );
 
-      setPurchaseStep('success');
+      setPurchaseStep("success");
       setCart([]);
       await fetchMarketplaceInvoices();
     } catch (error) {
       const detail = axios.isAxiosError(error)
         ? (error.response?.data as { detail?: string } | undefined)?.detail
         : null;
-      setPurchaseError(detail || 'Purchase simulation failed. Please try again.');
-      setPurchaseStep('idle');
+      setPurchaseError(
+        detail || "Purchase simulation failed. Please try again.",
+      );
+      setPurchaseStep("idle");
     }
   };
 
@@ -754,11 +766,15 @@ export default function FullMarketplace() {
                   </div>
                 </div>
 
-                <h3 className="text-xl font-black text-slate-800 mb-2 group-hover:text-blue-600 transition-colors">{inv.client}</h3>
+                <h3 className="text-xl font-black text-slate-800 mb-2 group-hover:text-blue-600 transition-colors">
+                  {inv.client}
+                </h3>
                 <p className="text-[11px] font-semibold text-slate-500 mb-2">
-                  {inv.invoiceNumber ? `${inv.invoiceNumber} (ID #${inv.id})` : `Invoice #${inv.id}`}
+                  {inv.invoiceNumber
+                    ? `${inv.invoiceNumber} (ID #${inv.id})`
+                    : `Invoice #${inv.id}`}
                 </p>
-                
+
                 <div className="flex items-center gap-2 text-slate-500 text-xs font-medium mb-6">
                   <Clock size={12} />
                   <span>
@@ -792,7 +808,7 @@ export default function FullMarketplace() {
                     </div>
                   </div>
 
-                  {inv.type === 'fixed' && (
+                  {inv.type === "fixed" && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -801,7 +817,9 @@ export default function FullMarketplace() {
                       disabled={quickBuyLoadingId === inv.id}
                       className="mt-4 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
                     >
-                      {quickBuyLoadingId === inv.id ? 'Processing...' : 'Buy Now'}
+                      {quickBuyLoadingId === inv.id
+                        ? "Processing..."
+                        : "Buy Now"}
                     </button>
                   )}
                 </div>
@@ -834,7 +852,9 @@ export default function FullMarketplace() {
             <div className="p-8 bg-gradient-to-r from-slate-900 to-slate-800 text-white">
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h3 className="text-3xl font-black mb-2">{viewingDetails.client}</h3>
+                  <h3 className="text-3xl font-black mb-2">
+                    {viewingDetails.client}
+                  </h3>
                   <p className="text-xs font-semibold text-slate-300 mb-2">
                     {viewingDetails.invoiceNumber
                       ? `${viewingDetails.invoiceNumber} (ID #${viewingDetails.id})`
@@ -976,9 +996,9 @@ export default function FullMarketplace() {
             </div>
 
             <div className="p-8 border-t bg-slate-50">
-              <button 
+              <button
                 onClick={async () => {
-                  if (viewingDetails.type === 'fixed') {
+                  if (viewingDetails.type === "fixed") {
                     await handleQuickBuy(viewingDetails);
                     setViewingDetails(null);
                     return;
@@ -988,12 +1008,19 @@ export default function FullMarketplace() {
                   setViewingDetails(null);
                   setFractionalShares(1);
                 }}
-                disabled={viewingDetails.type === 'fixed' && quickBuyLoadingId === viewingDetails.id}
+                disabled={
+                  viewingDetails.type === "fixed" &&
+                  quickBuyLoadingId === viewingDetails.id
+                }
                 className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-bold text-lg hover:shadow-xl transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {viewingDetails.type === 'auction' ? 'Join Auction' : 
-                 viewingDetails.type === 'fractional' ? 'Purchase Shares' : 
-                 quickBuyLoadingId === viewingDetails.id ? 'Processing...' : 'Buy Now'}
+                {viewingDetails.type === "auction"
+                  ? "Join Auction"
+                  : viewingDetails.type === "fractional"
+                    ? "Purchase Shares"
+                    : quickBuyLoadingId === viewingDetails.id
+                      ? "Processing..."
+                      : "Buy Now"}
               </button>
             </div>
           </div>
@@ -1082,7 +1109,7 @@ export default function FullMarketplace() {
                     disabled={isPlacingBid || isRetractingBid}
                     className="w-full py-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-2xl font-bold text-lg hover:shadow-xl transition-all mb-3 disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    {isPlacingBid ? 'Placing Bid...' : 'Place Bid'}
+                    {isPlacingBid ? "Placing Bid..." : "Place Bid"}
                   </button>
 
                   {myActiveBidId ? (
@@ -1098,7 +1125,8 @@ export default function FullMarketplace() {
                       ) : (
                         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
                           <p className="mb-3 text-xs font-semibold text-amber-800">
-                            Confirm retract? You may lose the leading position for this auction.
+                            Confirm retract? You may lose the leading position
+                            for this auction.
                           </p>
                           <div className="flex gap-2">
                             <button
@@ -1106,7 +1134,9 @@ export default function FullMarketplace() {
                               disabled={isPlacingBid || isRetractingBid}
                               className="flex-1 rounded-xl bg-amber-600 py-2.5 text-xs font-bold text-white transition-all hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-70"
                             >
-                              {isRetractingBid ? 'Retracting...' : 'Yes, Retract'}
+                              {isRetractingBid
+                                ? "Retracting..."
+                                : "Yes, Retract"}
                             </button>
                             <button
                               onClick={() => setConfirmRetract(false)}
@@ -1145,14 +1175,24 @@ export default function FullMarketplace() {
                       </h4>
                       <div className="space-y-2">
                         {bids.slice(0, 3).map((b, i) => (
-                          <div key={i} className={`flex justify-between items-center p-3 rounded-xl ${
-                            i === 0 ? 'bg-purple-50 border border-purple-200' : 'bg-slate-50'
-                          }`}>
+                          <div
+                            key={i}
+                            className={`flex justify-between items-center p-3 rounded-xl ${
+                              i === 0
+                                ? "bg-purple-50 border border-purple-200"
+                                : "bg-slate-50"
+                            }`}
+                          >
                             <span className="font-semibold text-slate-700">
-                              {b.user}{b.isMine ? ' (You)' : ''}
+                              {b.user}
+                              {b.isMine ? " (You)" : ""}
                             </span>
-                            <span className="font-bold text-purple-600">${b.amount.toLocaleString()}</span>
-                            <span className="text-xs text-slate-400">{b.status || 'active'} • {b.time}</span>
+                            <span className="font-bold text-purple-600">
+                              ${b.amount.toLocaleString()}
+                            </span>
+                            <span className="text-xs text-slate-400">
+                              {b.status || "active"} • {b.time}
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -1354,16 +1394,16 @@ export default function FullMarketplace() {
                     ${cartTotal.toLocaleString()}
                   </span>
                 </div>
-                
-                {purchaseStep === 'idle' && (
+
+                {purchaseStep === "idle" && (
                   <>
                     {purchaseError && (
                       <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
                         {purchaseError}
                       </div>
                     )}
-                    <button 
-                      onClick={handleBatchCheckout} 
+                    <button
+                      onClick={handleBatchCheckout}
                       className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-bold text-lg hover:shadow-xl transition-all hover:scale-[1.02]"
                     >
                       Complete Purchase

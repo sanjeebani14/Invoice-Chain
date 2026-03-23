@@ -14,11 +14,20 @@ type InvoiceUploadResponse = {
   overall_ocr_confidence?: number;
 };
 
-export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (data: InvoiceUploadResponse) => void }) {
+interface InvoiceUploadProps {
+  onUploadSuccess: (data: InvoiceUploadResponse) => void;
+  onUploadStart?: () => void;
+  onUploadError?: (message: string) => void;
+}
+
+export default function InvoiceUpload({
+  onUploadSuccess,
+  onUploadStart,
+  onUploadError,
+}: InvoiceUploadProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
-  const backendOrigin = getBackendOrigin();
 
   const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -53,7 +62,6 @@ export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (d
       const data = response.data as InvoiceUploadResponse;
 
       onUploadSuccess(data);
-
     } catch (err: unknown) {
       const message =
         (err as AxiosError<{ detail?: string }>).response?.data?.detail ??

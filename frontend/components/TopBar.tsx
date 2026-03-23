@@ -7,14 +7,14 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 // FIX: Import from centralized API
-import { getMyProfile } from "@/lib/api"; 
+import { getMyProfile } from "@/lib/api";
 
 const PUBLIC_PATHS = ["/", "/login", "/register", "/verify-email"];
 
 export function TopBar() {
   const pathname = usePathname();
   const router = useRouter();
-  
+
   const { currentUser, isAuthenticated, isLoading, logout } = useAuth();
   const [kycStatus, setKycStatus] = useState<string | null>(null);
 
@@ -31,17 +31,21 @@ export function TopBar() {
         if (mounted) setKycStatus(null);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [isAuthenticated]);
 
-  const isPublicPath = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
-  
+  const isPublicPath = PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+
   if (isPublicPath) return null;
   if (!isAuthenticated && !isLoading) return null;
 
   const roleValue = String(currentUser?.role ?? "").toLowerCase();
   const avatarLetter = (currentUser?.email?.[0] || "U").toUpperCase();
-  
+
   // FIX: Redirect to /profile instead of /kyc
   const homeHref = roleValue === "admin" ? "/admin/dashboard" : "/profile";
   const isKycPending = kycStatus === "pending" || kycStatus === "review";
@@ -55,22 +59,31 @@ export function TopBar() {
       )}
       <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-6">
-          <Link href={homeHref} className="font-bold tracking-tight text-primary">
+          <Link
+            href={homeHref}
+            className="font-bold tracking-tight text-primary"
+          >
             InvoiceChain
           </Link>
-          
+
           <nav className="hidden items-center gap-5 text-sm font-medium text-muted-foreground sm:flex">
             {roleValue !== "admin" && (
-              <Link href="/profile" className="hover:text-foreground transition-colors">
+              <Link
+                href="/profile"
+                className="hover:text-foreground transition-colors"
+              >
                 Verification
               </Link>
             )}
             {roleValue === "investor" && (
-              <Link href="/INVESTOR/marketplace" className="hover:text-foreground transition-colors">
+              <Link
+                href="/INVESTOR/marketplace"
+                className="hover:text-foreground transition-colors"
+              >
                 Marketplace
               </Link>
             )}
-            {(role === "sme" || role === "seller") && (
+            {(roleValue === "sme" || roleValue === "seller") && (
               <>
                 <Link href="/sme/dashboard" className="hover:text-foreground">
                   SME Dashboard

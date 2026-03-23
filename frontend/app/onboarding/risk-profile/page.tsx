@@ -52,10 +52,7 @@ export default function RiskProfileOnboardingPage() {
 
   const onNumber = (key: keyof SellerRiskOnboardingPayload, value: string) => {
     const parsed = Number(value);
-    setForm((prev) => ({
-      ...prev,
-      [key]: Number.isFinite(parsed) ? parsed : 0,
-    }));
+    setForm((prev) => ({ ...prev, [key]: Number.isFinite(parsed) ? parsed : 0 }));
   };
 
   const onSubmit = async (event: React.FormEvent) => {
@@ -88,50 +85,38 @@ export default function RiskProfileOnboardingPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-100 to-white px-4 py-10">
       <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-semibold text-slate-900">
-          Complete Seller Risk Profile
-        </h1>
+        <h1 className="text-2xl font-semibold text-slate-900">Complete Seller Risk Profile</h1>
         <p className="mt-2 text-sm text-slate-600">
           We need this once to initialize your XGBoost risk model inputs.
         </p>
 
         <form className="mt-6 grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
           <div className="space-y-2">
-            <Label htmlFor="payment_history_score">
-              Payment History Score (0-100)
-            </Label>
+            <Label htmlFor="payment_history_score">Payment History Score (0-100)</Label>
             <Input
               id="payment_history_score"
               type="number"
               min={0}
               max={100}
               value={form.payment_history_score}
-              onChange={(e) =>
-                onNumber("payment_history_score", e.target.value)
-              }
+              onChange={(e) => onNumber("payment_history_score", e.target.value)}
               required
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="client_reputation_score">
-              Client Reputation Score (0-100)
-            </Label>
+            <Label htmlFor="client_reputation_score">Client Reputation Score (0-100)</Label>
             <Input
               id="client_reputation_score"
               type="number"
               min={0}
               max={100}
               value={form.client_reputation_score}
-              onChange={(e) =>
-                onNumber("client_reputation_score", e.target.value)
-              }
+              onChange={(e) => onNumber("client_reputation_score", e.target.value)}
               required
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="seller_track_record">
-              Seller Track Record (0-100)
-            </Label>
+            <Label htmlFor="seller_track_record">Seller Track Record (0-100)</Label>
             <Input
               id="seller_track_record"
               type="number"
@@ -169,25 +154,19 @@ export default function RiskProfileOnboardingPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="core_enterprise_rating">
-              Core Enterprise Rating (0-100)
-            </Label>
+            <Label htmlFor="core_enterprise_rating">Core Enterprise Rating (0-100)</Label>
             <Input
               id="core_enterprise_rating"
               type="number"
               min={0}
               max={100}
               value={form.core_enterprise_rating}
-              onChange={(e) =>
-                onNumber("core_enterprise_rating", e.target.value)
-              }
+              onChange={(e) => onNumber("core_enterprise_rating", e.target.value)}
               required
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="transaction_stability">
-              Transaction Stability (years)
-            </Label>
+            <Label htmlFor="transaction_stability">Transaction Stability (years)</Label>
             <Input
               id="transaction_stability"
               type="number"
@@ -195,25 +174,19 @@ export default function RiskProfileOnboardingPage() {
               max={50}
               step="0.1"
               value={form.transaction_stability}
-              onChange={(e) =>
-                onNumber("transaction_stability", e.target.value)
-              }
+              onChange={(e) => onNumber("transaction_stability", e.target.value)}
               required
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="logistics_consistency">
-              Logistics Consistency (0-100)
-            </Label>
+            <Label htmlFor="logistics_consistency">Logistics Consistency (0-100)</Label>
             <Input
               id="logistics_consistency"
               type="number"
               min={0}
               max={100}
               value={form.logistics_consistency}
-              onChange={(e) =>
-                onNumber("logistics_consistency", e.target.value)
-              }
+              onChange={(e) => onNumber("logistics_consistency", e.target.value)}
               required
             />
           </div>

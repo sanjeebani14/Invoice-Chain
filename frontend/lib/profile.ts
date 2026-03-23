@@ -48,20 +48,18 @@ export async function updateMyProfile(payload: {
 }
 
 export async function getRiskOnboardingStatus(): Promise<RiskOnboardingStatus> {
-  const res = await axios.get<RiskOnboardingStatus>(
-    `${PROFILE_BASE}/risk-onboarding/status`,
-    { withCredentials: true },
+  const { data } = await api.get<RiskOnboardingStatus>(
+    "/profile/risk-onboarding/status",
   );
-  return res.data;
+  return data;
 }
 
 export async function submitRiskOnboarding(
   payload: SellerRiskOnboardingPayload,
 ): Promise<SellerRiskOnboardingResponse> {
-  const res = await axios.put<SellerRiskOnboardingResponse>(
-    `${PROFILE_BASE}/risk-onboarding`,
+  const { data } = await api.put<SellerRiskOnboardingResponse>(
+    "/profile/risk-onboarding",
     payload,
-    { withCredentials: true },
   );
-  return res.data;
+  return data;
 }

@@ -11,7 +11,15 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 
 from ..database import get_db
-from ..models import User, Invoice, KycSubmission, FraudFlag, CreditHistory, BlockchainSyncState
+from ..models import (
+    User,
+    UserRole,
+    Invoice,
+    KycSubmission,
+    FraudFlag,
+    CreditHistory,
+    BlockchainSyncState,
+)
 from ..auth.dependencies import get_current_admin
 from ..services.platform_stats import PlatformStatsService
 
@@ -60,7 +68,7 @@ def get_admin_overview(
         db.query(func.count(func.distinct(CreditHistory.seller_id)))
         .join(User, User.id == CreditHistory.seller_id)
         .filter(CreditHistory.seller_id.isnot(None))
-        .filter(User.role.in_(["seller", "sme"]))
+        .filter(User.role.in_([UserRole.SELLER, UserRole.SME]))
         .scalar()
         or 0
     )

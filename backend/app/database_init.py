@@ -60,7 +60,16 @@ def run_database_maintenance():
         ("two_factor_secret", "VARCHAR")
     ])
 
-    # 4. Fix Repayment Snapshots Table
+    # 4. Fix Linked Wallets Table (network metadata added after initial release)
+    _add_columns_if_missing("linked_wallets", [
+        ("chain_id", "INTEGER DEFAULT 84532"),
+        ("network_name", "VARCHAR DEFAULT 'base_sepolia'"),
+        # Older DBs may be missing these wallet state flags.
+        ("is_active", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("is_verified", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ])
+
+    # 5. Fix Repayment Snapshots Table
     _add_columns_if_missing("repayment_snapshots", [
         ("invoice_id", "INTEGER"),
         ("investor_id", "INTEGER"),
@@ -77,7 +86,7 @@ def run_database_maintenance():
         ("updated_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()")
     ])
 
-    # 5. Postgres-Specific Logic (Enums & Performance Indexes)
+    # 6. Postgres-Specific Logic (Enums, backfills, and performance indexes)
     if engine.dialect.name == "postgresql":
         _run_postgres_specific_maintenance()
 
@@ -104,7 +113,20 @@ def _run_postgres_specific_maintenance():
         except Exception as e:
             logger.warning(f"Role migration skipped: {e}")
 
-    # Task 3: Performance Indexes (Independent Transaction)
+    # Task 3: Backfill linked wallet defaults for older rows.
+    with engine.begin() as conn:
+        try:
+            conn.execute(text("""
+                UPDATE linked_wallets
+                SET chain_id = COALESCE(chain_id, 84532),
+                    network_name = COALESCE(network_name, 'base_sepolia')
+            """))
+            conn.execute(text("ALTER TABLE linked_wallets ALTER COLUMN chain_id SET DEFAULT 84532"))
+            conn.execute(text("ALTER TABLE linked_wallets ALTER COLUMN network_name SET DEFAULT 'base_sepolia'"))
+        except Exception as e:
+            logger.warning(f"Linked wallet backfill/default migration skipped: {e}")
+
+    # Task 4: Performance Indexes (Independent Transaction)
     with engine.begin() as conn:
         conn.execute(text("""
             CREATE INDEX IF NOT EXISTS ix_linked_wallets_user_active 

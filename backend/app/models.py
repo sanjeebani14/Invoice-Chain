@@ -12,6 +12,7 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
     INVESTOR = "investor"
     SELLER = "seller"
+    SME = "seller"  # Backward-compatible alias for legacy role checks.
 
 
 # ── User & Authentication ──────────────────────────────
@@ -49,6 +50,8 @@ class User(Base):
 
     # Relationships
     connected_wallets = relationship("LinkedWallet", back_populates="user", cascade="all, delete-orphan")
+    invoices = relationship("Invoice", back_populates="seller", foreign_keys="Invoice.seller_id")
+    credit_history = relationship("CreditHistory", back_populates="seller", foreign_keys="CreditHistory.seller_id", uselist=False)
 
 # ────WALLET MODELS (Metamask / Web3 integration)────────────────────────
 class LinkedWallet(Base):

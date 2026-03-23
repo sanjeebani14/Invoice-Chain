@@ -2,7 +2,6 @@
 import React, { useState } from "react";
 import axios from "axios";
 import { API_BASE } from "@/lib/config";
-import type { AxiosError } from "axios";
 
 type FinancingType = "fixed" | "auction" | "fractional";
 
@@ -25,7 +24,24 @@ type InvoiceCorrectionData = {
   ocr_fields?: Record<string, OCRField>;
 };
 
-export default function InvoiceCorrection({ data }: { data: InvoiceCorrectionData }) {
+interface ErrorResponse {
+  detail?: string;
+  message?: string;
+}
+
+interface InvoiceCorrectionProps {
+  data: InvoiceCorrectionData;
+  onSaveStart?: () => void;
+  onSaveSuccess?: (payload: unknown) => void;
+  onSaveError?: (message: string) => void;
+}
+
+export default function InvoiceCorrection({
+  data,
+  onSaveStart,
+  onSaveSuccess,
+  onSaveError,
+}: InvoiceCorrectionProps) {
   const toInputString = (value: unknown): string => {
     if (value === null || value === undefined) return "";
     return String(value);
@@ -44,7 +60,6 @@ export default function InvoiceCorrection({ data }: { data: InvoiceCorrectionDat
   });
 
   const [isSaving, setIsSaving] = useState(false);
-  const backendOrigin = getBackendOrigin();
 
   const toNullableNumber = (value: unknown): number | null => {
     const normalized = toInputString(value).trim();
@@ -95,7 +110,7 @@ export default function InvoiceCorrection({ data }: { data: InvoiceCorrectionDat
             : null,
       };
 
-      await axios.put(
+      const response = await axios.put(
         `${API_BASE}/api/v1/invoice/${data.invoice_id}`,
         payload,
         { withCredentials: true },
@@ -112,8 +127,8 @@ export default function InvoiceCorrection({ data }: { data: InvoiceCorrectionDat
         ? (error.response?.data as ErrorResponse | undefined)
         : undefined;
       const message =
-        (error as AxiosError<{ detail?: string; message?: string }>)?.response?.data?.detail ||
-        (error as AxiosError<{ detail?: string; message?: string }>)?.response?.data?.message ||
+        responseData?.detail ||
+        responseData?.message ||
         (error instanceof Error ? error.message : "Save failed");
       if (onSaveError) {
         onSaveError(message);

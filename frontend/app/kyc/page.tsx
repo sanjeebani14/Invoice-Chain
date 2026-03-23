@@ -7,7 +7,8 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
-import { getMyKyc, submitPan, type KycSubmissionOut } from "@/lib/kyc";
+import { getMyKyc, submitPan } from "@/lib/kyc";
+import type { KycSubmissionOut } from "@/lib/api/types";
 import { getBackendOrigin } from "@/lib/backendOrigin";
 import axios from "axios";
 

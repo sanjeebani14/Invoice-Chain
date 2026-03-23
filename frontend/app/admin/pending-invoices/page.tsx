@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getAdminPendingInvoices,
   reviewAdminPendingInvoice,
-  type AdminPendingInvoice,
 } from "@/lib/api";
+import type { AdminPendingInvoice } from "@/lib/api/types";
 
 const BACKEND_ORIGIN = "http://localhost:8000";
 
