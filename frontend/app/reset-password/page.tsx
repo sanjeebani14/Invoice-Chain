@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import type { AxiosError } from "axios";
 
 import { AuthCard } from "@/components/auth/AuthCard";
 import { Button } from "@/components/ui/button";
@@ -41,11 +42,13 @@ function ResetPasswordForm() {
 
     setLoading(true);
     try {
-      await resetPassword({ token, new_password: password });
+      await resetPassword(token, password);
       toast.success("Password reset successful. Please sign in.");
       router.push("/login");
-    } catch (err: any) {
-      const message = err?.response?.data?.detail ?? "Failed to reset password";
+    } catch (err: unknown) {
+      const message =
+        (err as AxiosError<{ detail?: string }>).response?.data?.detail ??
+        "Failed to reset password";
       toast.error(message);
     } finally {
       setLoading(false);

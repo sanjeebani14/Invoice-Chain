@@ -1,119 +1,65 @@
-import axios from "axios";
-import { getBackendOrigin } from "@/lib/backendOrigin";
+import { api } from "./api";
+import type { 
+  RegisterData, 
+  LoginData, 
+  TwoFactorLoginData, 
+  MessageResponse, 
+  LoginResponse 
+} from "./api/types"; // Import types from central types file
 
-const AUTH_BASE = `${getBackendOrigin()}/auth`;
+/**
+ * AUTH SERVICES
+ * Uses the centralized api instance to inherit 401 interceptors and cookies.
+ */
 
-// Configure axios to send cookies with requests
-axios.defaults.withCredentials = true;
-
-// ── Types ─────────────────────────────────────────────────────
-export interface RegisterData {
-  email: string;
-  password: string;
-  role: "sme" | "investor" | "admin";
-}
-
-export interface LoginData {
-  email: string;
-  password: string;
-  two_factor_code?: string;
-}
-
-export interface TwoFactorLoginData {
-  two_factor_token: string;
-  code: string;
-}
-
-export interface MessageResponse {
-  message: string;
-}
-
-export interface LoginResponse extends MessageResponse {
-  requires_two_factor?: boolean;
-  two_factor_token?: string | null;
-}
-
-export interface ForgotPasswordData {
-  email: string;
-}
-
-export interface ResetPasswordData {
-  token: string;
-  new_password: string;
-}
-
-export interface UserOut {
-  id: number;
-  email: string;
-  role: string;
-  is_active: boolean;
-  full_name?: string | null;
-  phone?: string | null;
-  wallet_address?: string | null;
-  two_factor_enabled?: boolean;
-  email_verified: boolean;
-  verified_at?: string | null;
-}
-
-// ── API calls ─────────────────────────────────────────────────
+// 1. Register a new account
 export async function register(data: RegisterData): Promise<MessageResponse> {
-  const response = await axios.post<MessageResponse>(
-    `${AUTH_BASE}/register`,
-    data,
-  );
+  const response = await api.post<MessageResponse>("/auth/register", data);
   return response.data;
 }
 
+// 2. Standard Login
 export async function login(data: LoginData): Promise<LoginResponse> {
-  const response = await axios.post<LoginResponse>(
-    `${AUTH_BASE}/login`,
-    data,
-  );
+  const response = await api.post<LoginResponse>("/auth/login", data);
   return response.data;
 }
 
-export async function loginWithTwoFactor(
-  data: TwoFactorLoginData,
-): Promise<MessageResponse> {
-  const response = await axios.post<MessageResponse>(`${AUTH_BASE}/login/2fa`, data);
+// 3. Two-Factor Authentication Login
+export async function loginWithTwoFactor(data: TwoFactorLoginData): Promise<MessageResponse> {
+  const response = await api.post<MessageResponse>("/auth/login/2fa", data);
   return response.data;
 }
 
+// 4. Logout (Clears session and redirects)
 export async function logout(): Promise<MessageResponse> {
   try {
-    const response = await axios.post<MessageResponse>(`${AUTH_BASE}/logout`);
-    // Cookies are automatically cleared by the backend
-    window.location.href = "/login";
+    const response = await api.post<MessageResponse>("/auth/logout");
     return response.data;
-  } catch (error) {
-    // Even if logout fails, clear local state and redirect
-    window.location.href = "/login";
-    throw error;
+  } finally {
+    // Always clear the window state and redirect to login
+    if (typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
   }
 }
 
+// 5. Explicit Token Refresh (Usually handled automatically by interceptors)
 export async function refreshToken(): Promise<MessageResponse> {
-  const response = await axios.post<MessageResponse>(`${AUTH_BASE}/refresh`);
-  // New access token is automatically set in cookie by the backend
+  const response = await api.post<MessageResponse>("/auth/refresh");
   return response.data;
 }
 
-export async function forgotPassword(
-  data: ForgotPasswordData,
-): Promise<MessageResponse> {
-  const response = await axios.post<MessageResponse>(
-    `${AUTH_BASE}/forgot-password`,
-    data,
-  );
+// 6. Password Recovery
+export async function forgotPassword(email: string): Promise<MessageResponse> {
+  const response = await api.post<MessageResponse>("/auth/forgot-password", { email });
   return response.data;
 }
 
-export async function resetPassword(
-  data: ResetPasswordData,
-): Promise<MessageResponse> {
-  const response = await axios.post<MessageResponse>(
-    `${AUTH_BASE}/reset-password`,
-    data,
-  );
+// 7. Password Reset
+export async function resetPassword(token: string, newPassword: string): Promise<MessageResponse> {
+  const response = await api.post<MessageResponse>("/auth/reset-password", {
+    token,
+    new_password: newPassword,
+  });
   return response.data;
 }

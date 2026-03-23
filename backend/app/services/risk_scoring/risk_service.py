@@ -299,7 +299,7 @@ class RiskScoringEngine:
     ) -> pd.DataFrame:
         """
         Constructs the feature vector for the ML model from:
-        - SME financial behaviour (payment history, track record)
+        - seller financial behaviour (payment history, track record)
         - Core enterprise strength (core_enterprise_rating)
         - Relationship & logistics (transaction_stability, logistics_consistency)
         - ESG signal (esg_score)

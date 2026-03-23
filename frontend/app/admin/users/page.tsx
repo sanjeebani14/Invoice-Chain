@@ -40,7 +40,7 @@ import {
 type EditableRole = "admin" | "investor" | "seller";
 
 const normalizeRole = (role: AdminManagedUser["role"]): EditableRole => {
-  if (role === "sme") return "seller";
+  if (role === "seller") return "seller";
   return role;
 };
 

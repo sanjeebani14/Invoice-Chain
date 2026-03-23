@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/hooks/useAuth";
+import { WalletProvider } from "@/context/WalletContext";
+import { RPC_PROVIDER } from "@/lib/config";
 import { TopBar } from "@/components/TopBar";
 import "./globals.css";
 
@@ -31,9 +33,11 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
-          <TopBar />
-          {children}
-          <Toaster />
+          <WalletProvider rpcProvider={RPC_PROVIDER}>
+            <TopBar />
+            {children}
+            <Toaster />
+          </WalletProvider>
         </AuthProvider>
       </body>
     </html>

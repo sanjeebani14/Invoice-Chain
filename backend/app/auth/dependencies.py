@@ -2,10 +2,9 @@ from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from jose import JWTError, ExpiredSignatureError
 from datetime import datetime
-from ..models import User, UserRole, RefreshToken, KycSubmission, KycStatus
+from ..models import User, UserRole, RefreshToken, KycSubmission, KycStatus, LinkedWallet
 from .tokens import decode_token
 from ..database import get_db
-
 
 async def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     """
@@ -140,19 +139,18 @@ async def get_current_user_from_refresh_token(
     return user
 
 
-def require_sme(current_user: User = Depends(get_current_user)):
-    """Require user to have seller/SME role."""
-    role_value = (
-        current_user.role.value
-        if isinstance(current_user.role, UserRole)
-        else str(current_user.role).strip().lower()
-    )
-    if role_value not in {UserRole.SELLER.value, UserRole.SME.value}:
+def require_seller(current_user: User = Depends(get_current_user)):
+    """Require user to have seller role"""
+    if current_user.role != UserRole.SELLER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only sellers/SMEs can access this"
+            detail="Only sellers can access this"
         )
     return current_user
+
+
+def require_seller(current_user: User = Depends(get_current_user)):
+    return require_seller(current_user)
 
 
 def require_investor(current_user: User = Depends(get_current_user)):
@@ -201,3 +199,29 @@ def require_kyc_approved(
             detail="KYC required",
         )
     return current_user
+
+
+async def verify_wallet_ownership(
+    wallet_address: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> LinkedWallet:
+    """
+    Verifies that the specific wallet_address in the path belongs to the current user.
+    Returns the LinkedWallet object for use in the endpoint.
+    """
+    from web3 import Web3
+    addr = Web3.to_checksum_address(wallet_address)
+    
+    wallet = db.query(LinkedWallet).filter_by(
+        user_id=current_user.id,
+        wallet_address=addr,
+        is_active=True
+    ).first()
+
+    if not wallet:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not own this wallet or it is inactive."
+        )
+    return wallet

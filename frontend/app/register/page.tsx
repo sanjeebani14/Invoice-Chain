@@ -24,7 +24,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [role, setRole] = useState<"sme" | "investor">("sme");
+  const [role, setRole] = useState<"seller" | "investor">("seller");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,7 +48,7 @@ export default function RegisterPage() {
   return (
     <AuthCard
       title="Create an account"
-      subtitle="Join InvoiceChain as an SME or Investor"
+      subtitle="Join InvoiceChain as a Seller or Investor"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
@@ -92,12 +92,12 @@ export default function RegisterPage() {
         <div className="space-y-2">
           <Label htmlFor="role">Role</Label>
           {/* Uses the exact same Select component as admin/sellers/page.tsx */}
-          <Select value={role} onValueChange={(v: string) => setRole(v as "sme" | "investor")}>
+          <Select value={role} onValueChange={(v: string) => setRole(v as "seller" | "investor")}>
             <SelectTrigger id="role" className="bg-card border-border">
               <SelectValue placeholder="Select your role" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="sme">SME (Invoice Seller)</SelectItem>
+              <SelectItem value="seller">Seller (Invoice Seller)</SelectItem>
               <SelectItem value="investor">Investor (Invoice Buyer)</SelectItem>
             </SelectContent>
           </Select>

@@ -5,12 +5,12 @@ import { keccak256, toBytes, parseEther, getAddress } from "viem";
 
 describe("Marketplace", async function () {
 
-  // mints 1 whole invoice (supply=1) to SME,
-  // and approves the Marketplace to transfer on SME's behalf.
+  // mints 1 whole invoice (supply=1) to seller,
+  // and approves the Marketplace to transfer on seller's behalf.
 
   async function deployAndMintFixture() {
     const { viem } = await network.connect();
-    const [admin, sme, investor, feeWallet, attacker] = await viem.getWalletClients();
+    const [admin, seller, investor, feeWallet, attacker] = await viem.getWalletClients();
     const publicClient = await viem.getPublicClient();
 
     const invoiceNFT = await viem.deployContract("InvoiceNFT", [
@@ -28,20 +28,20 @@ describe("Marketplace", async function () {
     const faceValue = parseEther("10000");
 
     await invoiceNFT.write.mint(
-      [sme.account.address, invoiceHash, faceValue, dueDate, 1n, "ipfs://QmTestInvoice001"],
+      [seller.account.address, invoiceHash, faceValue, dueDate, 1n, "ipfs://QmTestInvoice001"],
       { account: admin.account }
     );
 
     await invoiceNFT.write.setApprovalForAll(
       [marketplace.address, true],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     return {
       invoiceNFT,
       marketplace,
       admin,
-      sme,
+      seller,
       investor,
       feeWallet,
       attacker,
@@ -54,7 +54,7 @@ describe("Marketplace", async function () {
 
   async function deployAndMintFractionalFixture() {
     const { viem } = await network.connect();
-    const [admin, sme, investor, feeWallet, investor2] = await viem.getWalletClients();
+    const [admin, seller, investor, feeWallet, investor2] = await viem.getWalletClients();
     const publicClient = await viem.getPublicClient();
 
     const invoiceNFT = await viem.deployContract("InvoiceNFT", [
@@ -71,20 +71,20 @@ describe("Marketplace", async function () {
     const dueDate = BigInt(Math.floor(Date.now() / 1000) + 86400 * 30);
 
     await invoiceNFT.write.mint(
-      [sme.account.address, invoiceHash, parseEther("100000"), dueDate, 100n, "ipfs://QmFractional"],
+      [seller.account.address, invoiceHash, parseEther("100000"), dueDate, 100n, "ipfs://QmFractional"],
       { account: admin.account }
     );
 
     await invoiceNFT.write.setApprovalForAll(
       [marketplace.address, true],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     return {
       invoiceNFT,
       marketplace,
       admin,
-      sme,
+      seller,
       investor,
       investor2,
       feeWallet,
@@ -151,18 +151,18 @@ describe("Marketplace", async function () {
   // listInvoice()
 
   it("creates a listing with correct fields", async function () {
-    const { marketplace, sme, tokenId } = await deployAndMintFixture();
+    const { marketplace, seller, tokenId } = await deployAndMintFixture();
     const pricePerShare = parseEther("9000");
 
     await marketplace.write.listInvoice(
       [tokenId, pricePerShare, 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     const listing = await marketplace.read.getListing([1n]);
     assert.equal(listing.listingId, 1n);
     assert.equal(listing.tokenId, tokenId);
-    assert.equal(listing.seller, getAddress(sme.account.address));
+    assert.equal(listing.seller, getAddress(seller.account.address));
     assert.equal(listing.pricePerShare, pricePerShare);
     assert.equal(listing.sharesListed, 1n);
     assert.equal(listing.sharesAvailable, 1n);
@@ -170,78 +170,78 @@ describe("Marketplace", async function () {
   });
 
   it("records the listing under the seller address", async function () {
-    const { marketplace, sme, tokenId } = await deployAndMintFixture();
+    const { marketplace, seller, tokenId } = await deployAndMintFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("9000"), 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     const sellerListings = await marketplace.read.getSellerListings([
-      sme.account.address,
+      seller.account.address,
     ]);
     assert.deepEqual(sellerListings, [1n]);
   });
 
   it("reverts if caller does not own enough shares", async function () {
-    const { marketplace, sme, tokenId } = await deployAndMintFixture();
+    const { marketplace, seller, tokenId } = await deployAndMintFixture();
 
     await assert.rejects(
       marketplace.write.listInvoice(
         [tokenId, parseEther("9000"), 2n],
-        { account: sme.account }
+        { account: seller.account }
       ),
       /insufficient token balance/
     );
   });
 
   it("reverts if approval has not been granted", async function () {
-    const { invoiceNFT, marketplace, sme, tokenId } = await deployAndMintFixture();
+    const { invoiceNFT, marketplace, seller, tokenId } = await deployAndMintFixture();
 
     await invoiceNFT.write.setApprovalForAll(
       [marketplace.address, false],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     await assert.rejects(
       marketplace.write.listInvoice(
         [tokenId, parseEther("9000"), 1n],
-        { account: sme.account }
+        { account: seller.account }
       ),
       /approve this contract first/
     );
   });
 
   it("reverts if token already has an active listing", async function () {
-    const { marketplace, sme, tokenId } = await deployAndMintFractionalFixture();
+    const { marketplace, seller, tokenId } = await deployAndMintFractionalFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("100"), 10n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     await assert.rejects(
       marketplace.write.listInvoice(
         [tokenId, parseEther("200"), 10n],
-        { account: sme.account }
+        { account: seller.account }
       ),
       /already has an active listing/
     );
   });
 
   it("allows re-listing after previous listing is cancelled", async function () {
-    const { marketplace, sme, tokenId } = await deployAndMintFractionalFixture();
+    const { marketplace, seller, tokenId } = await deployAndMintFractionalFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("100"), 10n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
-    await marketplace.write.cancelListing([1n], { account: sme.account });
+    await marketplace.write.cancelListing([1n], { account: seller.account });
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("200"), 10n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     const listing = await marketplace.read.getListing([2n]);
@@ -252,12 +252,12 @@ describe("Marketplace", async function () {
   // buyShares()
 
   it("transfers the full token to buyer on a whole-invoice purchase", async function () {
-    const { invoiceNFT, marketplace, sme, investor, tokenId } =
+    const { invoiceNFT, marketplace, seller, investor, tokenId } =
       await deployAndMintFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("9000"), 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     await marketplace.write.buyShares([1n, 1n], {
@@ -270,18 +270,18 @@ describe("Marketplace", async function () {
       1n
     );
     assert.equal(
-      await invoiceNFT.read.balanceOf([sme.account.address, tokenId]),
+      await invoiceNFT.read.balanceOf([seller.account.address, tokenId]),
       0n
     );
   });
 
   it("supports partial purchases on fractional listings", async function () {
-    const { invoiceNFT, marketplace, sme, investor, tokenId } =
+    const { invoiceNFT, marketplace, seller, investor, tokenId } =
       await deployAndMintFractionalFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("1"), 100n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     await marketplace.write.buyShares([1n, 30n], {
@@ -300,12 +300,12 @@ describe("Marketplace", async function () {
   });
 
   it("marks listing inactive when all shares are purchased", async function () {
-    const { marketplace, sme, investor, tokenId } =
+    const { marketplace, seller, investor, tokenId } =
       await deployAndMintFractionalFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("1"), 100n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     await marketplace.write.buyShares([1n, 100n], {
@@ -319,15 +319,15 @@ describe("Marketplace", async function () {
   });
 
   it("distributes ETH correctly — 2.5% fee to feeWallet, rest to seller", async function () {
-    const { marketplace, sme, investor, feeWallet, tokenId, publicClient } =
+    const { marketplace, seller, investor, feeWallet, tokenId, publicClient } =
       await deployAndMintFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("100"), 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
-    const smeBefore = await publicClient.getBalance({ address: sme.account.address });
+    const smeBefore = await publicClient.getBalance({ address: seller.account.address });
     const feeBefore = await publicClient.getBalance({ address: feeWallet.account.address });
 
     await marketplace.write.buyShares([1n, 1n], {
@@ -335,7 +335,7 @@ describe("Marketplace", async function () {
       value: parseEther("100"),
     });
 
-    const smeAfter = await publicClient.getBalance({ address: sme.account.address });
+    const smeAfter = await publicClient.getBalance({ address: seller.account.address });
     const feeAfter = await publicClient.getBalance({ address: feeWallet.account.address });
 
     assert.equal(feeAfter - feeBefore, parseEther("2.5"));
@@ -343,12 +343,12 @@ describe("Marketplace", async function () {
   });
 
   it("refunds overpayment to the buyer", async function () {
-    const { marketplace, sme, investor, tokenId, publicClient } =
+    const { marketplace, seller, investor, tokenId, publicClient } =
       await deployAndMintFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("100"), 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     const buyerBefore = await publicClient.getBalance({ address: investor.account.address });
@@ -368,16 +368,16 @@ describe("Marketplace", async function () {
   });
 
   it("reverts if seller tries to buy their own listing", async function () {
-    const { marketplace, sme, tokenId } = await deployAndMintFixture();
+    const { marketplace, seller, tokenId } = await deployAndMintFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("100"), 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     await assert.rejects(
       marketplace.write.buyShares([1n, 1n], {
-        account: sme.account,
+        account: seller.account,
         value: parseEther("100"),
       }),
       /seller cannot buy their own listing/
@@ -385,11 +385,11 @@ describe("Marketplace", async function () {
   });
 
   it("reverts if insufficient ETH sent", async function () {
-    const { marketplace, sme, investor, tokenId } = await deployAndMintFixture();
+    const { marketplace, seller, investor, tokenId } = await deployAndMintFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("100"), 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     await assert.rejects(
@@ -402,14 +402,14 @@ describe("Marketplace", async function () {
   });
 
   it("reverts if listing is not active", async function () {
-    const { marketplace, sme, investor, tokenId } = await deployAndMintFixture();
+    const { marketplace, seller, investor, tokenId } = await deployAndMintFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("100"), 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
-    await marketplace.write.cancelListing([1n], { account: sme.account });
+    await marketplace.write.cancelListing([1n], { account: seller.account });
 
     await assert.rejects(
       marketplace.write.buyShares([1n, 1n], {
@@ -421,12 +421,12 @@ describe("Marketplace", async function () {
   });
 
   it("reverts if requesting more shares than available", async function () {
-    const { marketplace, sme, investor, tokenId } =
+    const { marketplace, seller, investor, tokenId } =
       await deployAndMintFractionalFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("1"), 10n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     await assert.rejects(
@@ -441,25 +441,25 @@ describe("Marketplace", async function () {
   // cancelListing()
 
   it("seller can cancel their own listing", async function () {
-    const { marketplace, sme, tokenId } = await deployAndMintFixture();
+    const { marketplace, seller, tokenId } = await deployAndMintFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("100"), 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
-    await marketplace.write.cancelListing([1n], { account: sme.account });
+    await marketplace.write.cancelListing([1n], { account: seller.account });
 
     const listing = await marketplace.read.getListing([1n]);
     assert.equal(listing.active, false);
   });
 
   it("admin can cancel any listing", async function () {
-    const { marketplace, sme, admin, tokenId } = await deployAndMintFixture();
+    const { marketplace, seller, admin, tokenId } = await deployAndMintFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("100"), 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     await marketplace.write.cancelListing([1n], { account: admin.account });
@@ -469,11 +469,11 @@ describe("Marketplace", async function () {
   });
 
   it("third party cannot cancel a listing", async function () {
-    const { marketplace, sme, attacker, tokenId } = await deployAndMintFixture();
+    const { marketplace, seller, attacker, tokenId } = await deployAndMintFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("100"), 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     await assert.rejects(
@@ -485,11 +485,11 @@ describe("Marketplace", async function () {
   // quotePurchase()
 
   it("returns correct cost breakdown for a partial purchase", async function () {
-    const { marketplace, sme, tokenId } = await deployAndMintFractionalFixture();
+    const { marketplace, seller, tokenId } = await deployAndMintFractionalFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("1"), 100n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     const [totalCost, fee, sellerProceeds] =
@@ -544,44 +544,44 @@ describe("Marketplace", async function () {
   // pause
 
   it("paused contract blocks listInvoice", async function () {
-    const { marketplace, sme, admin, tokenId } = await deployAndMintFixture();
+    const { marketplace, seller, admin, tokenId } = await deployAndMintFixture();
 
     await marketplace.write.pause({ account: admin.account });
 
     await assert.rejects(
       marketplace.write.listInvoice(
         [tokenId, parseEther("100"), 1n],
-        { account: sme.account }
+        { account: seller.account }
       ),
       /EnforcedPause/
     );
   });
 
   it("cancelListing still works while paused", async function () {
-    const { marketplace, sme, admin, tokenId } = await deployAndMintFixture();
+    const { marketplace, seller, admin, tokenId } = await deployAndMintFixture();
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("100"), 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     await marketplace.write.pause({ account: admin.account });
 
-    await marketplace.write.cancelListing([1n], { account: sme.account });
+    await marketplace.write.cancelListing([1n], { account: seller.account });
 
     const listing = await marketplace.read.getListing([1n]);
     assert.equal(listing.active, false);
   });
 
   it("operations resume after unpause", async function () {
-    const { marketplace, sme, admin, tokenId } = await deployAndMintFixture();
+    const { marketplace, seller, admin, tokenId } = await deployAndMintFixture();
 
     await marketplace.write.pause({ account: admin.account });
     await marketplace.write.unpause({ account: admin.account });
 
     await marketplace.write.listInvoice(
       [tokenId, parseEther("100"), 1n],
-      { account: sme.account }
+      { account: seller.account }
     );
 
     const listing = await marketplace.read.getListing([1n]);

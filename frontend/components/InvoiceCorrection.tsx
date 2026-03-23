@@ -1,6 +1,8 @@
 "use client";
 import React, { useState } from "react";
 import axios from "axios";
+import { API_BASE } from "@/lib/config";
+import type { AxiosError } from "axios";
 
 type FinancingType = "fixed" | "auction" | "fractional";
 
@@ -16,8 +18,14 @@ interface CorrectionFields {
   min_bid_increment: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export default function InvoiceCorrection({ data }: { data: any }) {
+type OCRField = { value?: string | number | null; confidence?: number };
+type InvoiceCorrectionData = {
+  invoice_id: number;
+  filename?: string;
+  ocr_fields?: Record<string, OCRField>;
+};
+
+export default function InvoiceCorrection({ data }: { data: InvoiceCorrectionData }) {
   const toInputString = (value: unknown): string => {
     if (value === null || value === undefined) return "";
     return String(value);
@@ -72,7 +80,7 @@ export default function InvoiceCorrection({ data }: { data: any }) {
       };
 
       await axios.put(
-        `http://localhost:8000/api/v1/invoice/invoices/${data.invoice_id}`,
+        `${API_BASE}/api/v1/invoice/${data.invoice_id}`,
         payload,
         { withCredentials: true }
       );
@@ -81,8 +89,8 @@ export default function InvoiceCorrection({ data }: { data: any }) {
     } catch (error) {
       console.error("Save failed", error);
       const message =
-        (error as any)?.response?.data?.detail ||
-        (error as any)?.response?.data?.message ||
+        (error as AxiosError<{ detail?: string; message?: string }>)?.response?.data?.detail ||
+        (error as AxiosError<{ detail?: string; message?: string }>)?.response?.data?.message ||
         (error instanceof Error ? error.message : "Save failed");
       alert(message);
     } finally {

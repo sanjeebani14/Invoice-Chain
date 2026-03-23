@@ -23,7 +23,6 @@ interface TopNavbarProps {
 export function TopNavbar({ autoRefresh, onToggleRefresh }: TopNavbarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
-  const [unread, setUnread] = useState(0);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   const toNotification = (event: string, payload: Record<string, unknown>): NotificationItem => {
@@ -63,7 +62,6 @@ export function TopNavbar({ autoRefresh, onToggleRefresh }: TopNavbarProps) {
     const socket: NotificationSocketHandle = openNotificationSocket((message) => {
       const next = toNotification(message.event, message.payload || {});
       setItems((prev) => [next, ...prev].slice(0, 20));
-      setUnread((prev) => prev + 1);
     });
 
     return () => {
@@ -83,16 +81,11 @@ export function TopNavbar({ autoRefresh, onToggleRefresh }: TopNavbarProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    if (isOpen) {
-      setUnread(0);
-    }
-  }, [isOpen]);
-
   const orderedItems = useMemo(
     () => [...items].sort((a, b) => b.createdAt - a.createdAt),
     [items],
   );
+  const unread = isOpen ? 0 : orderedItems.length;
 
   return (
     <header className="h-12 border-b border-border bg-card flex items-center justify-between px-4 gap-4">

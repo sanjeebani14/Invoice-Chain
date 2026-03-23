@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import type { AxiosError } from "axios";
 
 import { AuthCard } from "@/components/auth/AuthCard";
 import { Button } from "@/components/ui/button";
@@ -19,10 +20,12 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await forgotPassword({ email });
+      const res = await forgotPassword(email);
       toast.success(res.message);
-    } catch (err: any) {
-      const message = err?.response?.data?.detail ?? "Failed to process request";
+    } catch (err: unknown) {
+      const message =
+        (err as AxiosError<{ detail?: string }>).response?.data?.detail ??
+        "Failed to process request";
       toast.error(message);
     } finally {
       setLoading(false);
