@@ -42,10 +42,15 @@ export function TopBar() {
                 Marketplace
               </Link>
             )}
-            {role === "sme" && (
-              <Link href="/upload" className="hover:text-foreground">
-                Upload
-              </Link>
+            {(role === "sme" || role === "seller") && (
+              <>
+                <Link href="/sme/dashboard" className="hover:text-foreground">
+                  SME Dashboard
+                </Link>
+                <Link href="/upload" className="hover:text-foreground">
+                  SME Upload
+                </Link>
+              </>
             )}
             {role === "admin" && (
               <Link href="/admin/dashboard" className="hover:text-foreground">

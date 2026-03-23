@@ -11,6 +11,7 @@ import logging
 # Import Routers
 from app.api.risk import router as risk_router
 from app.api.analytics import router as analytics_router
+from app.api.sme_dashboard import router as sme_dashboard_router
 from app.routers.invoice import router as invoice_router
 from app.routers.auth import router as auth_router
 from app.routers.kyc import router as kyc_router, admin_router as admin_kyc_router
@@ -223,6 +224,9 @@ app.include_router(risk_router, prefix="/api/v1/risk", tags=["Risk & Fraud"])
 
 # Investor and platform analytics
 app.include_router(analytics_router)
+
+# SME dashboard summary and activity
+app.include_router(sme_dashboard_router)
 
 # Invoice logic
 app.include_router(invoice_router, prefix="/api/v1/invoice", tags=["Invoice Processing"])

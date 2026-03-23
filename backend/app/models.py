@@ -44,6 +44,9 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
+    invoices = relationship("Invoice", foreign_keys="Invoice.seller_id", back_populates="seller")
+    credit_history = relationship("CreditHistory", foreign_keys="CreditHistory.seller_id", back_populates="seller", uselist=False)
+
 
 # ───────Invoice Processing Pipeline ──────────────────────────────
 
@@ -88,11 +91,13 @@ class Invoice(Base):
     status = Column(String, default="pending_review", index=True)
 
     # Seller (links to Users table when Gaurisha builds auth)
-    seller_id = Column(Integer, index=True, nullable=True)
+    seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    seller = relationship("User", foreign_keys=[seller_id], back_populates="invoices")
 
 
 # ────RISK AND ANALYTICS──────────────────────────────
@@ -100,7 +105,7 @@ class CreditHistory(Base):
     __tablename__ = "credit_history"
 
     id = Column(Integer, primary_key=True, index=True)
-    seller_id = Column(Integer, unique=True, index=True)
+    seller_id = Column(Integer, ForeignKey("users.id"), unique=True, index=True)
     payment_history_score = Column(Integer)  # Normalized 0-100 (from CSV credit_score)
     client_reputation_score = Column(Integer)  # Normalized 0-100
     seller_track_record = Column(Integer)  # Normalized 0-100
@@ -119,6 +124,8 @@ class CreditHistory(Base):
 
     composite_score = Column(Integer, default=0)  # Final Risk Score (0-100)
     last_updated = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+    seller = relationship("User", foreign_keys=[seller_id], back_populates="credit_history")
 
 class FraudFlag(Base):
     __tablename__ = "fraud_flags"

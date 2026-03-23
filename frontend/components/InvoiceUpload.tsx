@@ -1,17 +1,30 @@
 "use client";
 import React, { useState } from "react";
 import axios from "axios";
+import { getBackendOrigin } from "@/lib/backendOrigin";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (data: any) => void }) {
+export default function InvoiceUpload({
+  onUploadSuccess,
+  onUploadStart,
+  onUploadError,
+}: {
+  onUploadSuccess: (data: unknown) => void;
+  onUploadStart?: () => void;
+  onUploadError?: (message: string) => void;
+}) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
+  const backendOrigin = getBackendOrigin();
 
   const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && (droppedFile.type === "application/pdf" || droppedFile.type.startsWith("image/"))) {
+    if (
+      droppedFile &&
+      (droppedFile.type === "application/pdf" ||
+        droppedFile.type.startsWith("image/"))
+    ) {
       setFile(droppedFile);
       setError("");
     } else {
@@ -23,24 +36,30 @@ export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (d
     if (!file) return;
     setIsUploading(true);
     setError("");
+    onUploadStart?.();
 
     const formData = new FormData();
     formData.append("file", file);
 
     try {
       const response = await axios.post(
-        "http://localhost:8000/api/v1/invoice/invoices/upload",
+        `${backendOrigin}/api/v1/invoice/invoices/upload`,
         formData,
-        { withCredentials: true }
+        { withCredentials: true },
       );
       const data = response.data;
 
       onUploadSuccess(data);
-
-    } catch (err: any) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const message = err?.response?.data?.detail ?? (err as any).message ?? "An error occurred";
+    } catch (err: unknown) {
+      const message = axios.isAxiosError(err)
+        ? typeof err.response?.data?.detail === "string"
+          ? err.response?.data?.detail
+          : err.message
+        : err instanceof Error
+          ? err.message
+          : "An error occurred";
       setError(message);
+      onUploadError?.(message);
     } finally {
       setIsUploading(false);
     }
@@ -49,8 +68,8 @@ export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (d
   return (
     <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
       <h2 className="text-xl font-semibold mb-6">Upload New Invoice</h2>
-      
-      <div 
+
+      <div
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleFileDrop}
         className="border-2 border-dashed border-gray-300 rounded-lg p-12 flex flex-col items-center justify-center hover:bg-gray-50 transition-colors cursor-pointer"
@@ -59,8 +78,12 @@ export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (d
           <p className="text-green-600 font-medium text-lg">{file.name}</p>
         ) : (
           <div className="text-center">
-            <p className="text-gray-600 font-medium">Drag & drop your invoice here</p>
-            <p className="text-gray-400 text-sm mt-2">Supports PDF, PNG, JPG up to 10MB</p>
+            <p className="text-gray-600 font-medium">
+              Drag & drop your invoice here
+            </p>
+            <p className="text-gray-400 text-sm mt-2">
+              Supports PDF, PNG, JPG up to 10MB
+            </p>
           </div>
         )}
       </div>
@@ -71,7 +94,7 @@ export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (d
         </div>
       )}
 
-      <button 
+      <button
         onClick={uploadFile}
         disabled={!file || isUploading}
         className="mt-6 w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"

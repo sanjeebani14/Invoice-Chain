@@ -12,6 +12,7 @@ import { AuthCard } from "@/components/auth/AuthCard";
 import { login } from "@/lib/auth";
 import { getBackendOrigin } from "@/lib/backendOrigin";
 import axios from "axios";
+import { getRiskOnboardingStatus } from "@/lib/profile";
 
 const BACKEND_ORIGIN = getBackendOrigin();
 
@@ -43,6 +44,14 @@ export default function LoginPage() {
       if (role === "admin") {
         await router.push("/admin/dashboard");
         return;
+      }
+
+      if (role === "sme") {
+        const status = await getRiskOnboardingStatus();
+        if (status.required) {
+          await router.push("/onboarding/risk-profile");
+          return;
+        }
       }
 
       // Force non-admin users through the KYC screen after login.

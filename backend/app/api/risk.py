@@ -167,6 +167,17 @@ def _to_iso(dt: datetime | None) -> str | None:
 
 @router.get("/score/{seller_id}")
 def get_score(seller_id: int, db: Session = Depends(get_db)):
+    seller_user = (
+        db.query(models.User)
+        .filter(
+            models.User.id == seller_id,
+            models.User.role.in_([models.UserRole.SELLER, models.UserRole.SME]),
+        )
+        .first()
+    )
+    if not seller_user:
+        raise HTTPException(status_code=404, detail="Seller user not found.")
+
     # 1. Get deterministic canonical seller record (old datasets may have duplicates).
     seller = _canonical_credit_history_by_seller(db, {seller_id}).get(seller_id)
 
@@ -207,8 +218,19 @@ def get_score(seller_id: int, db: Session = Depends(get_db)):
 
 @router.get("/sellers")
 def get_sellers(db: Session = Depends(get_db)):
+    valid_seller_ids = {
+        row[0]
+        for row in db.query(models.User.id)
+        .filter(models.User.role.in_([models.UserRole.SELLER, models.UserRole.SME]))
+        .all()
+    }
+
     # Canonicalized list keeps one stable row per seller_id.
-    sellers = list(_canonical_credit_history_by_seller(db).values())
+    sellers = [
+        s
+        for s in _canonical_credit_history_by_seller(db).values()
+        if s.seller_id in valid_seller_ids
+    ]
 
     # Backfill only records whose scoring inputs changed or were never scored.
     stale_sellers = [s for s in sellers if risk_engine.should_recompute(s)]
@@ -223,6 +245,16 @@ def get_sellers(db: Session = Depends(get_db)):
     return [
         {
             "seller_id": s.seller_id,
+            "seller_email": (
+                db.query(models.User.email)
+                .filter(models.User.id == s.seller_id)
+                .scalar()
+            ),
+            "seller_name": (
+                db.query(models.User.full_name)
+                .filter(models.User.id == s.seller_id)
+                .scalar()
+            ),
             "composite_score": s.composite_score or 0,
             "risk_level": _to_risk_level(s.composite_score or 0),
             "credit_score": s.payment_history_score,
@@ -238,6 +270,13 @@ def get_sellers(db: Session = Depends(get_db)):
 
 @router.get("/admin/risk-metrics")
 def get_risk_metrics(db: Session = Depends(get_db)):
+    valid_seller_ids = {
+        row[0]
+        for row in db.query(models.User.id)
+        .filter(models.User.role.in_([models.UserRole.SELLER, models.UserRole.SME]))
+        .all()
+    }
+
     # Use one record per seller_id to keep counts consistent with /sellers
     records = (
         db.query(models.CreditHistory)
@@ -248,6 +287,8 @@ def get_risk_metrics(db: Session = Depends(get_db)):
     seen: dict[int, models.CreditHistory] = {}
     for rec in records:
         if rec.seller_id is None:
+            continue
+        if rec.seller_id not in valid_seller_ids:
             continue
         if rec.seller_id not in seen:
             seen[rec.seller_id] = rec

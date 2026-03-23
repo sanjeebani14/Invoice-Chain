@@ -55,10 +55,12 @@ def get_admin_overview(
 
     investors_count = db.query(func.count(User.id)).filter(User.role == "investor").scalar() or 0
 
-    # Keep this aligned with the Seller Explorer page, which is based on CreditHistory rows.
+    # Keep this aligned with Seller Explorer and ensure rows map to real seller users.
     sellers_count = (
         db.query(func.count(func.distinct(CreditHistory.seller_id)))
+        .join(User, User.id == CreditHistory.seller_id)
         .filter(CreditHistory.seller_id.isnot(None))
+        .filter(User.role.in_(["seller", "sme"]))
         .scalar()
         or 0
     )

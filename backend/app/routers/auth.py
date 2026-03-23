@@ -14,7 +14,7 @@ from ..schemas.auth import (
 )
 from ..auth.hashing import hash_password, verify_password
 from ..auth.tokens import create_access_token, create_refresh_token, decode_token
-from ..models import EmailVerificationToken, User, RefreshToken, UserRole
+from ..models import CreditHistory, EmailVerificationToken, User, RefreshToken, UserRole
 from ..services import email_verification, email as email_service
 from jose import JWTError
 
@@ -81,6 +81,23 @@ def _normalize_registration_role(raw_role: str | None) -> UserRole:
     if role == "seller":
         return UserRole.SELLER
     return UserRole.SELLER
+
+
+def _ensure_credit_history_row(db: Session, user: User) -> None:
+    if user.role not in {UserRole.SELLER, UserRole.SME}:
+        return
+
+    existing = (
+        db.query(CreditHistory)
+        .filter(CreditHistory.seller_id == user.id)
+        .order_by(CreditHistory.id.asc())
+        .first()
+    )
+    if existing:
+        return
+
+    db.add(CreditHistory(seller_id=user.id, composite_score=0))
+    db.commit()
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -350,6 +367,8 @@ async def login(credentials: UserLogin, response: Response, db: Session = Depend
     if not user.is_active:
         user.is_active = True
         db.commit()
+
+    _ensure_credit_history_row(db, user)
     
     # Create tokens
     access_token = create_access_token(user.id)
