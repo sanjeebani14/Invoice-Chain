@@ -5,8 +5,7 @@ import InvoiceUpload from "../../components/InvoiceUpload";
 import InvoiceCorrection from "../../components/InvoiceCorrection";
 
 export default function UploadPage() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [invoiceData, setInvoiceData] = useState<any>(null);
+  const [invoiceData, setInvoiceData] = useState<unknown>(null);
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">

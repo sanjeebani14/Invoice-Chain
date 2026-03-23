@@ -1,11 +1,9 @@
 import os
-import smtplib
 import logging
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
+import requests
+import smtplib
 
-MAX_RETRIES = 5
 SMTP_TIMEOUT = 30
 load_dotenv()
 
@@ -59,34 +57,25 @@ def _send_email(to_email: str, subject: str, html_body: str) -> bool:
     if not SMTP_USERNAME or not SMTP_PASSWORD:
         logger.error("SMTP credentials not configured")
         return False
-    
+
     try:
         server = _get_smtp_connection()
         if not server:
             return False
-        
-        # Create message
-        message = MIMEMultipart("alternative")
-        message["Subject"] = subject
-        message["From"] = SENDER_EMAIL
-        message["To"] = to_email
-        
-        # Attach HTML body
-        html_part = MIMEText(html_body, "html")
-        message.attach(html_part)
-        
-        # Send email
-        server.sendmail(SENDER_EMAIL, to_email, message.as_string())
+
+        from email.mime.text import MIMEText
+        msg = MIMEText(html_body, "html")
+        msg["Subject"] = subject
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = to_email
+
+        server.sendmail(SENDER_EMAIL, [to_email], msg.as_string())
         server.quit()
-        
-        logger.info(f"Email sent successfully to {to_email}")
+
+        logger.info(f"SMTP: Email sent successfully to {to_email}")
         return True
-        
-    except smtplib.SMTPException as e:
-        logger.error(f"Failed to send email to {to_email}: {str(e)}")
-        return False
     except Exception as e:
-        logger.error(f"Unexpected error sending email to {to_email}: {str(e)}")
+        logger.error(f"SMTP send failed for {to_email}: {str(e)}")
         return False
 
 
@@ -131,7 +120,7 @@ def send_verification_email(user_email: str, verification_token: str) -> bool:
     """
     try:
         # Build verification link pointing to backend so cookies can be set server-side
-        verification_link = f"{BACKEND_URL}/auth/verify-email?token={verification_token}"
+        verification_link = f"{BACKEND_URL}/api/v1/auth/verify-email?token={verification_token}"
         
         # Build HTML body
         html_body = (

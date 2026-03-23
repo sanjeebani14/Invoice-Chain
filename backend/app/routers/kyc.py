@@ -12,8 +12,8 @@ from ..schemas.kyc import KycAdminListResponse, KycMeResponse, KycRejectRequest,
 from ..services.storage_s3 import upload_kyc_document
 
 
-router = APIRouter(prefix="/api/v1/kyc", tags=["KYC"])
-admin_router = APIRouter(prefix="/api/v1/admin/kyc", tags=["Admin - KYC"])
+router = APIRouter()
+admin_router = APIRouter()
 
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 MAX_FILE_SIZE_MB = 10

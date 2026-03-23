@@ -6,7 +6,7 @@ from ..database import get_db
 from ..models import User
 from ..services.portfolio_service import PortfolioAnalyticsService
 
-router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"])
+router = APIRouter()
 
 
 @router.get("/investor/summary")

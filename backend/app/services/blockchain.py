@@ -121,7 +121,7 @@ class BlockchainService:
         Mint an InvoiceNFT with fractional share support.
         
         Args:
-            recipient_address: SME wallet receiving the NFT
+            recipient_address: seller wallet receiving the NFT
             invoice_hash: keccak256 hash of invoice (hex string with or without 0x)
             face_value_wei: Invoice amount in wei
             due_date_unix: Unix timestamp of due date

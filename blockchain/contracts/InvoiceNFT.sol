@@ -24,7 +24,7 @@ contract InvoiceNFT is ERC1155, AccessControl, ReentrancyGuard, Pausable {
     // tokenId → metadata URI (IPFS CID of invoice document)
     mapping(uint256 => string) private _tokenURIs;
 
-    // tokenId → original minter / SME address
+    // tokenId → original minter / seller address
     mapping(uint256 => address) public originalMinter;
 
     // tokenId → invoice face value in wei (for marketplace reference)
@@ -61,7 +61,7 @@ contract InvoiceNFT is ERC1155, AccessControl, ReentrancyGuard, Pausable {
 
     /**
      * @notice Mint an invoice NFT.
-     * @param to          The SME wallet receiving the token.
+    * @param to          The seller wallet receiving the token.
      * @param invoiceHash keccak256 hash of the canonical invoice string
      *                    (computed off-chain).
      * @param faceValue   Invoice amount in wei.

@@ -11,3 +11,5 @@ export const getBackendOrigin = (): string => {
 
   return "http://localhost:8000";
 };
+
+export const getApiV1Base = (): string => `${getBackendOrigin()}/api/v1`;

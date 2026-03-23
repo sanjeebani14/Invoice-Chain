@@ -13,24 +13,13 @@ export function VerificationAlert({
   isVerified = false,
   email,
 }: VerificationAlertProps) {
-  const { resendVerificationEmail, isLoading, error, clearError } =
+  const { resendVerificationEmail, isLoading, error } =
     useEmailVerification();
 
   const [isDismissed, setIsDismissed] = useState(false);
-  const [status, setStatus] = useState<
-    "idle" | "sending" | "sent" | "verified"
-  >("idle");
+  const [status, setStatus] = useState<"idle" | "sending" | "sent">("idle");
   const [countdown, setCountdown] = useState(0);
   const [localError, setLocalError] = useState<string | null>(null);
-
-  // Reset dismissed state when verification status changes
-  useEffect(() => {
-    if (isVerified) {
-      setStatus("verified");
-    } else {
-      setIsDismissed(false);
-    }
-  }, [isVerified]);
 
   // Countdown timer
   useEffect(() => {
@@ -71,7 +60,7 @@ export function VerificationAlert({
   };
 
   // Don't show anything if verified
-  if (isVerified || status === "verified") {
+  if (isVerified) {
     return null;
   }
 

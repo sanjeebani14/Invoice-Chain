@@ -2,16 +2,15 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@/hooks/useAuth";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { toast } from "sonner";
+import { getApiV1Base } from "@/lib/backendOrigin";
 
-const API_URL = "http://localhost:8000/auth";
+const API_URL = `${getApiV1Base()}/auth`;
 
 function VerifyEmailContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { currentUser } = useAuth();
 
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [message, setMessage] = useState("Verifying your email...");
@@ -60,7 +59,7 @@ function VerifyEmailContent() {
       setStatus("loading");
       setMessage("Verifying your email...");
 
-      const response = await axios.post(
+      await axios.post(
         `${API_URL}/verify-email`,
         { token },
         { withCredentials: true }
@@ -74,10 +73,12 @@ function VerifyEmailContent() {
       setTimeout(() => {
         router.push("/kyc");
       }, 2000);
-    } catch (error: any) {
+    } catch (error: unknown) {
       setStatus("error");
 
-      const errorDetail = error.response?.data?.detail || "Failed to verify email";
+      const errorDetail =
+        (error as AxiosError<{ detail?: string }>).response?.data?.detail ||
+        "Failed to verify email";
 
       if (errorDetail.includes("expired")) {
         setMessage("❌ Verification link expired");
@@ -115,8 +116,10 @@ function VerifyEmailContent() {
       toast.success(msg);
       setShowResend(false);
       setResendEmail("");
-    } catch (error: any) {
-      const errorMsg = error.response?.data?.detail || "Failed to resend email";
+    } catch (error: unknown) {
+      const errorMsg =
+        (error as AxiosError<{ detail?: string }>).response?.data?.detail ||
+        "Failed to resend email";
       toast.error(errorMsg);
     } finally {
       setIsResending(false);

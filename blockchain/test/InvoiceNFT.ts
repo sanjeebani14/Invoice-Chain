@@ -6,7 +6,7 @@ describe("InvoiceNFT", async function () {
 
   async function deployInvoiceNFT() {
     const { viem } = await network.connect();
-    const [admin, sme, investor, attacker] = await viem.getWalletClients();
+    const [admin, seller, investor, attacker] = await viem.getWalletClients();
     const publicClient = await viem.getPublicClient();
 
       const invoiceNFT = await viem.deployContract("InvoiceNFT", [
@@ -17,7 +17,7 @@ describe("InvoiceNFT", async function () {
       Math.floor(Date.now() / 1000) + 86400 * 30
     );
 
-    return { viem, invoiceNFT, admin, sme, investor, attacker, publicClient, thirtyDaysFromNow };
+    return { viem, invoiceNFT, admin, seller, investor, attacker, publicClient, thirtyDaysFromNow };
   }
 
   // deployment
@@ -30,39 +30,39 @@ describe("InvoiceNFT", async function () {
   });
 
   it("starts token ID counter at 1 (first minted token is ID 1)", async function () {
-    const { viem, invoiceNFT, admin, sme, thirtyDaysFromNow } = await deployInvoiceNFT();
+    const { viem, invoiceNFT, admin, seller, thirtyDaysFromNow } = await deployInvoiceNFT();
     const hash = keccak256(toBytes("first-invoice"));
 
     await invoiceNFT.write.mint(
-      [sme.account.address, hash, parseEther("1000"), thirtyDaysFromNow, 1n, "ipfs://QmFirst"],
+      [seller.account.address, hash, parseEther("1000"), thirtyDaysFromNow, 1n, "ipfs://QmFirst"],
       { account: admin.account }
     );
 
-    const balance = await invoiceNFT.read.balanceOf([sme.account.address, 1n]);
+    const balance = await invoiceNFT.read.balanceOf([seller.account.address, 1n]);
     assert.equal(balance, 1n);
   });
 
   // minting
-  it("mints a whole invoice (supply=1) to the SME wallet", async function () {
-    const { invoiceNFT, admin, sme, thirtyDaysFromNow } = await deployInvoiceNFT();
+  it("mints a whole invoice (supply=1) to the seller wallet", async function () {
+    const { invoiceNFT, admin, seller, thirtyDaysFromNow } = await deployInvoiceNFT();
     const hash = keccak256(toBytes("invoice-001"));
 
     await invoiceNFT.write.mint(
-      [sme.account.address, hash, parseEther("5000"), thirtyDaysFromNow, 1n, "ipfs://QmInvoice001"],
+      [seller.account.address, hash, parseEther("5000"), thirtyDaysFromNow, 1n, "ipfs://QmInvoice001"],
       { account: admin.account }
     );
 
-    const balance = await invoiceNFT.read.balanceOf([sme.account.address, 1n]);
+    const balance = await invoiceNFT.read.balanceOf([seller.account.address, 1n]);
     assert.equal(balance, 1n);
   });
 
   it("stores all invoice metadata correctly on-chain", async function () {
-    const { invoiceNFT, admin, sme, thirtyDaysFromNow } = await deployInvoiceNFT();
+    const { invoiceNFT, admin, seller, thirtyDaysFromNow } = await deployInvoiceNFT();
     const hash = keccak256(toBytes("invoice-metadata-test"));
     const faceValue = parseEther("2500");
 
     await invoiceNFT.write.mint(
-      [sme.account.address, hash, faceValue, thirtyDaysFromNow, 1n, "ipfs://QmMetadata"],
+      [seller.account.address, hash, faceValue, thirtyDaysFromNow, 1n, "ipfs://QmMetadata"],
       { account: admin.account }
     );
 
@@ -74,11 +74,11 @@ describe("InvoiceNFT", async function () {
   });
 
   it("returns the correct IPFS URI via uri()", async function () {
-    const { invoiceNFT, admin, sme, thirtyDaysFromNow } = await deployInvoiceNFT();
+    const { invoiceNFT, admin, seller, thirtyDaysFromNow } = await deployInvoiceNFT();
     const hash = keccak256(toBytes("invoice-uri-test"));
 
     await invoiceNFT.write.mint(
-      [sme.account.address, hash, parseEther("100"), thirtyDaysFromNow, 1n, "ipfs://QmTestCID123"],
+      [seller.account.address, hash, parseEther("100"), thirtyDaysFromNow, 1n, "ipfs://QmTestCID123"],
       { account: admin.account }
     );
 
@@ -86,32 +86,32 @@ describe("InvoiceNFT", async function () {
   });
 
   it("mints fractional shares (supply=100) correctly", async function () {
-    const { invoiceNFT, admin, sme, thirtyDaysFromNow } = await deployInvoiceNFT();
+    const { invoiceNFT, admin, seller, thirtyDaysFromNow } = await deployInvoiceNFT();
     const hash = keccak256(toBytes("fractional-invoice-001"));
 
     await invoiceNFT.write.mint(
-      [sme.account.address, hash, parseEther("100000"), thirtyDaysFromNow, 100n, "ipfs://QmFractional"],
+      [seller.account.address, hash, parseEther("100000"), thirtyDaysFromNow, 100n, "ipfs://QmFractional"],
       { account: admin.account }
     );
 
-    assert.equal(await invoiceNFT.read.balanceOf([sme.account.address, 1n]), 100n);
+    assert.equal(await invoiceNFT.read.balanceOf([seller.account.address, 1n]), 100n);
     assert.equal(await invoiceNFT.read.tokenSupply([1n]), 100n);
   });
 
   // duplicate detection
 
   it("rejects a second mint with the same invoice hash", async function () {
-    const { invoiceNFT, admin, sme, thirtyDaysFromNow } = await deployInvoiceNFT();
+    const { invoiceNFT, admin, seller, thirtyDaysFromNow } = await deployInvoiceNFT();
     const hash = keccak256(toBytes("duplicate-invoice"));
   
     await invoiceNFT.write.mint(
-      [sme.account.address, hash, parseEther("1000"), thirtyDaysFromNow, 1n, "ipfs://QmFirst"],
+      [seller.account.address, hash, parseEther("1000"), thirtyDaysFromNow, 1n, "ipfs://QmFirst"],
       { account: admin.account }
     );
   
     await assert.rejects(
       invoiceNFT.write.mint(
-        [sme.account.address, hash, parseEther("1000"), thirtyDaysFromNow, 1n, "ipfs://QmSecond"],
+        [seller.account.address, hash, parseEther("1000"), thirtyDaysFromNow, 1n, "ipfs://QmSecond"],
         { account: admin.account }
       ),
       /duplicate invoice hash/
@@ -125,11 +125,11 @@ describe("InvoiceNFT", async function () {
   });
 
   it("isHashRegistered() returns true after mint", async function () {
-    const { invoiceNFT, admin, sme, thirtyDaysFromNow } = await deployInvoiceNFT();
+    const { invoiceNFT, admin, seller, thirtyDaysFromNow } = await deployInvoiceNFT();
     const hash = keccak256(toBytes("already-minted"));
 
     await invoiceNFT.write.mint(
-      [sme.account.address, hash, parseEther("500"), thirtyDaysFromNow, 1n, "ipfs://Qm"],
+      [seller.account.address, hash, parseEther("500"), thirtyDaysFromNow, 1n, "ipfs://Qm"],
       { account: admin.account }
     );
 
@@ -139,12 +139,12 @@ describe("InvoiceNFT", async function () {
   // access control
 
   it("reverts if a non-minter tries to mint", async function () {
-    const { invoiceNFT, attacker, sme, thirtyDaysFromNow } = await deployInvoiceNFT();
+    const { invoiceNFT, attacker, seller, thirtyDaysFromNow } = await deployInvoiceNFT();
     const hash = keccak256(toBytes("attacker-attempt"));
   
     await assert.rejects(
       invoiceNFT.write.mint(
-        [sme.account.address, hash, parseEther("1000"), thirtyDaysFromNow, 1n, "ipfs://Qm"],
+        [seller.account.address, hash, parseEther("1000"), thirtyDaysFromNow, 1n, "ipfs://Qm"],
         { account: attacker.account }
       )
     );
@@ -167,31 +167,31 @@ describe("InvoiceNFT", async function () {
   // pause
 
   it("admin can pause and minting reverts while paused", async function () {
-    const { invoiceNFT, admin, sme, thirtyDaysFromNow } = await deployInvoiceNFT();
+    const { invoiceNFT, admin, seller, thirtyDaysFromNow } = await deployInvoiceNFT();
     const hash = keccak256(toBytes("pause-test"));
   
     await invoiceNFT.write.pause({ account: admin.account });
   
     await assert.rejects(
       invoiceNFT.write.mint(
-        [sme.account.address, hash, parseEther("1000"), thirtyDaysFromNow, 1n, "ipfs://Qm"],
+        [seller.account.address, hash, parseEther("1000"), thirtyDaysFromNow, 1n, "ipfs://Qm"],
         { account: admin.account }
       )
     );
   });
 
   it("minting works again after unpause", async function () {
-    const { invoiceNFT, admin, sme, thirtyDaysFromNow } = await deployInvoiceNFT();
+    const { invoiceNFT, admin, seller, thirtyDaysFromNow } = await deployInvoiceNFT();
     const hash = keccak256(toBytes("unpause-test"));
 
     await invoiceNFT.write.pause({ account: admin.account });
     await invoiceNFT.write.unpause({ account: admin.account });
 
     await invoiceNFT.write.mint(
-      [sme.account.address, hash, parseEther("1000"), thirtyDaysFromNow, 1n, "ipfs://Qm"],
+      [seller.account.address, hash, parseEther("1000"), thirtyDaysFromNow, 1n, "ipfs://Qm"],
       { account: admin.account }
     );
 
-    assert.equal(await invoiceNFT.read.balanceOf([sme.account.address, 1n]), 1n);
+    assert.equal(await invoiceNFT.read.balanceOf([seller.account.address, 1n]), 1n);
   });
 });

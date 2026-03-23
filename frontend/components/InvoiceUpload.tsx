@@ -1,9 +1,20 @@
 "use client";
 import React, { useState } from "react";
 import axios from "axios";
+import { API_BASE } from "@/lib/config";
+import type { AxiosError } from "axios";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (data: any) => void }) {
+type OcrField = { value: string | number | null; confidence: number };
+type InvoiceUploadResponse = {
+  invoice_id: number;
+  filename: string;
+  status: string;
+  ocr_fields: Record<string, OcrField>;
+  hash: string;
+  overall_ocr_confidence?: number;
+};
+
+export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (data: InvoiceUploadResponse) => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
@@ -29,17 +40,18 @@ export default function InvoiceUpload({ onUploadSuccess }: { onUploadSuccess: (d
 
     try {
       const response = await axios.post(
-        "http://localhost:8000/api/v1/invoice/invoices/upload",
+        `${API_BASE}/api/v1/invoice/upload`,
         formData,
         { withCredentials: true }
       );
-      const data = response.data;
+      const data = response.data as InvoiceUploadResponse;
 
       onUploadSuccess(data);
 
-    } catch (err: any) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const message = err?.response?.data?.detail ?? (err as any).message ?? "An error occurred";
+    } catch (err: unknown) {
+      const message =
+        (err as AxiosError<{ detail?: string }>).response?.data?.detail ??
+        (err instanceof Error ? err.message : "An error occurred");
       setError(message);
     } finally {
       setIsUploading(false);
