@@ -32,6 +32,7 @@ class LinkedWalletResponse(BaseModel):
     balance_eth: Optional[str] = None  # Populated by Service Layer
     network_name: str
     chain_id: int
+    is_primary: bool
     is_active: bool
     created_at: datetime
     

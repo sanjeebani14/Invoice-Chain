@@ -111,11 +111,11 @@ export default function FraudQueue() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-border bg-gradient-to-r from-slate-50 via-amber-50 to-rose-50 px-5 py-4">
-        <h1 className="text-2xl font-semibold tracking-tight">
+      <div className="px-1 py-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-white">
           Fraud Review Queue
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-sm text-slate-200">
           Explainable anomaly decisions for pending invoice flags.
         </p>
       </div>

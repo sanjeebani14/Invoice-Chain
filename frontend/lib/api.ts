@@ -66,7 +66,8 @@ const BACKEND_ORIGIN = getBackendOrigin();
 const API_BASE = `${BACKEND_ORIGIN}/api/v1`;
 
 const DEFAULT_TIMEOUT_MS = 10000;
-const INVESTOR_FLOW_TIMEOUT_MS = 30000;
+const INVESTOR_FLOW_TIMEOUT_MS = 60000;
+const INVESTOR_TIMEOUT_RETRY_DELAY_MS = 400;
 
 // Axios Instances
 export const api = axios.create({
@@ -74,6 +75,53 @@ export const api = axios.create({
   timeout: DEFAULT_TIMEOUT_MS,
   withCredentials: true,
 });
+
+// Keep auth refresh logic centralized for all callers using `api`.
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (!axios.isAxiosError(error)) {
+      return Promise.reject(error);
+    }
+
+    const originalRequest = error.config as
+      | (typeof error.config & { _retry?: boolean })
+      | undefined;
+
+    const status = error.response?.status;
+    const requestUrl = String(originalRequest?.url ?? "");
+    const isRefreshCall = requestUrl.includes("/auth/refresh");
+
+    if (
+      status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      !isRefreshCall
+    ) {
+      originalRequest._retry = true;
+      try {
+        await authApi.post("/refresh");
+        return api(originalRequest);
+      } catch (refreshError) {
+        if (typeof window !== "undefined") {
+          const authPages = new Set([
+            "/login",
+            "/register",
+            "/forgot-password",
+            "/reset-password",
+            "/verify-email",
+          ]);
+          if (!authPages.has(window.location.pathname)) {
+            window.location.href = "/login";
+          }
+        }
+        return Promise.reject(refreshError);
+      }
+    }
+
+    return Promise.reject(error);
+  },
+);
 
 const adminUsersApi = axios.create({
   baseURL: `${API_BASE}/admin/users`,
@@ -121,6 +169,30 @@ async function withAuthRefreshRetry<T>(request: () => Promise<T>): Promise<T> {
     } catch {
       throw error;
     }
+  }
+}
+
+function isTimeoutError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  if (error.code === "ECONNABORTED") return true;
+  const message = String(error.message || "").toLowerCase();
+  return message.includes("timeout");
+}
+
+async function withTimeoutRetry<T>(
+  request: () => Promise<T>,
+  retries: number = 1,
+): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    if (retries > 0 && isTimeoutError(error)) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, INVESTOR_TIMEOUT_RETRY_DELAY_MS),
+      );
+      return withTimeoutRetry(request, retries - 1);
+    }
+    throw error;
   }
 }
 
@@ -346,29 +418,60 @@ export const getPlatformTimeSeries = async (
   }
 };
 
-export const getPlatformHealthMetrics =
-  async (): Promise<PlatformHealthMetrics> => {
-    try {
-      const { data } =
-        await adminStatsApi.get<PlatformHealthMetrics>("/health-metrics");
-      return data;
-    } catch {
-      // Failed to fetch health metrics — return a safe default
-      return {
-        gmv: 0,
-        repayment_rate: 0,
-        default_rate: 0,
-        platform_revenue: 0,
-        active_sellers: 0,
-        active_investors: 0,
-        avg_risk_score: 0,
-        avg_invoice_yield: 0,
-        high_risk_invoices: 0,
-        top_sector: null,
-        sector_concentration: 0,
-      } as PlatformHealthMetrics;
-    }
+export const getPlatformHealthMetrics = async (
+  options?: { suppressErrors?: boolean },
+): Promise<PlatformHealthMetrics> => {
+  const suppressErrors = options?.suppressErrors ?? true;
+  
+  const fallback: PlatformHealthMetrics = {
+    gmv: 0,
+    repayment_rate: 0,
+    default_rate: 0,
+    platform_revenue: 0,
+    active_sellers: 0,
+    active_investors: 0,
+    avg_risk_score: 0,
+    avg_invoice_yield: 0,
+    high_risk_invoices: 0,
+    top_sector: null,
+    sector_concentration: 0,
   };
+
+  try {
+    const { data } = await withAuthRefreshRetry(() =>
+      adminStatsApi.get<
+        PlatformHealthMetrics & {
+          avg_score?: number;
+          high?: number;
+          risk_levels?: { high?: number };
+        }
+      >("/health-metrics"),
+    );
+
+    return {
+      gmv: Number(data.gmv ?? 0),
+      repayment_rate: Number(data.repayment_rate ?? 0),
+      default_rate: Number(data.default_rate ?? 0),
+      platform_revenue: Number(data.platform_revenue ?? 0),
+      active_sellers: Number(data.active_sellers ?? 0),
+      active_investors: Number(data.active_investors ?? 0),
+      // Accept both current and legacy backend keys.
+      avg_risk_score: Number(data.avg_risk_score ?? data.avg_score ?? 0),
+      avg_invoice_yield: Number(data.avg_invoice_yield ?? 0),
+      high_risk_invoices: Number(
+        data.high_risk_invoices ?? data.high ?? data.risk_levels?.high ?? 0,
+      ),
+      top_sector: data.top_sector ?? null,
+      sector_concentration: Number(data.sector_concentration ?? 0),
+    };
+  } catch (error) {
+    // Allow callers to opt out of silent fallback values.
+    if (!suppressErrors) {
+      throw error;
+    }
+    return fallback;
+  }
+};
 
 export const getRiskHeatmap = async (): Promise<RiskHeatmapData> => {
   try {
@@ -404,21 +507,23 @@ export const refreshPlatformStats = async (
 };
 
 export const getInvestorSummary = async (): Promise<InvestorSummary> => {
-  const { data } = await analyticsApi.get<InvestorSummary>("/investor/summary");
+  const { data } = await withTimeoutRetry(() =>
+    analyticsApi.get<InvestorSummary>("/investor/summary"),
+  );
   return data;
 };
 
 export const getInvestorCashFlow = async (): Promise<InvestorCashFlow> => {
-  const { data } = await analyticsApi.get<InvestorCashFlow>(
-    "/investor/cash-flow",
+  const { data } = await withTimeoutRetry(() =>
+    analyticsApi.get<InvestorCashFlow>("/investor/cash-flow"),
   );
   return data;
 };
 
 export const getInvestorInvestments =
   async (): Promise<InvestorInvestmentsResponse> => {
-    const { data } = await analyticsApi.get<InvestorInvestmentsResponse>(
-      "/investor/investments",
+    const { data } = await withTimeoutRetry(() =>
+      analyticsApi.get<InvestorInvestmentsResponse>("/investor/investments"),
     );
     return data;
   };
@@ -549,10 +654,12 @@ export const getMarketplaceInvoices = async (params?: {
   skip?: number;
   limit?: number;
 }): Promise<{ invoices: MarketplaceInvoiceItem[]; total: number }> => {
-  const { data } = await invoiceApi.get<{
-    invoices: MarketplaceInvoiceItem[];
-    total: number;
-  }>("/marketplace", { params });
+  const { data } = await withTimeoutRetry(() =>
+    invoiceApi.get<{
+      invoices: MarketplaceInvoiceItem[];
+      total: number;
+    }>("/marketplace", { params }),
+  );
   return data;
 };
 

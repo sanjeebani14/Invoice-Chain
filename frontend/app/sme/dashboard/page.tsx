@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import axios from "axios";
 import Link from "next/link";
 import {
   Activity,
@@ -12,7 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-import { getBackendOrigin } from "@/lib/backendOrigin";
+import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
 type ActivityItem = {
@@ -71,7 +70,6 @@ function asRelativeTime(iso?: string): string {
 
 export default function SmeDashboardPage() {
   const { currentUser } = useAuth();
-  const backendOrigin = getBackendOrigin();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,19 +86,10 @@ export default function SmeDashboardPage() {
     try {
       setError(null);
       const [summaryRes, activityRes] = await Promise.all([
-        axios.get<DashboardSummaryResponse>(
-          `${backendOrigin}/api/v1/sme/dashboard/summary`,
-          {
-            withCredentials: true,
-          },
-        ),
-        axios.get<DashboardActivityResponse>(
-          `${backendOrigin}/api/v1/sme/dashboard/activity`,
-          {
-            params: { limit: 24 },
-            withCredentials: true,
-          },
-        ),
+        api.get<DashboardSummaryResponse>("/sme/dashboard/summary"),
+        api.get<DashboardActivityResponse>("/sme/dashboard/activity", {
+          params: { limit: 24 },
+        }),
       ]);
 
       setMetrics(summaryRes.data.metrics);
@@ -118,7 +107,7 @@ export default function SmeDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [backendOrigin, currentUser?.id]);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     loadDashboard();
@@ -127,28 +116,28 @@ export default function SmeDashboardPage() {
   }, [loadDashboard]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-100 via-white to-cyan-50 px-4 py-8 sm:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-2xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+    <div className="page-shell">
+      <div className="page-container space-y-6">
+        <section className="surface-card p-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-700">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
                 SME Command Center
               </p>
-              <h1 className="mt-2 text-3xl font-bold text-slate-900">
+              <h1 className="mt-2 text-3xl font-bold text-foreground">
                 Liquidity Overview
               </h1>
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm text-muted-foreground">
                 Live refresh every 20 seconds for invoice and trust updates.
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <div className="rounded-full border border-cyan-200 bg-cyan-50 px-4 py-1 text-xs font-semibold text-cyan-700">
+              <div className="status-chip px-4 font-semibold text-primary">
                 Real-time activity feed enabled
               </div>
               <Link
                 href="/upload"
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Upload Invoice
               </Link>
@@ -157,58 +146,58 @@ export default function SmeDashboardPage() {
         </section>
 
         {error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
           </div>
         ) : null}
 
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+          <article className="surface-card p-5">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase text-emerald-700">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">
                 Total Capital Raised
               </p>
-              <BadgeIndianRupee className="h-5 w-5 text-emerald-700" />
+              <BadgeIndianRupee className="h-5 w-5 text-primary" />
             </div>
-            <p className="mt-4 text-3xl font-bold text-emerald-900">
+            <p className="mt-4 text-3xl font-bold text-foreground">
               {loading || !metrics
                 ? "..."
                 : INR.format(metrics.total_capital_raised)}
             </p>
           </article>
 
-          <article className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+          <article className="surface-card p-5">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase text-amber-700">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">
                 Pending Approvals
               </p>
-              <Clock3 className="h-5 w-5 text-amber-700" />
+              <Clock3 className="h-5 w-5 text-primary" />
             </div>
-            <p className="mt-4 text-3xl font-bold text-amber-900">
+            <p className="mt-4 text-3xl font-bold text-foreground">
               {loading || !metrics ? "..." : metrics.pending_approvals}
             </p>
           </article>
 
-          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+          <article className="surface-card p-5">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase text-slate-600">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">
                 Outstanding Invoices
               </p>
-              <ChartNoAxesColumn className="h-5 w-5 text-slate-700" />
+              <ChartNoAxesColumn className="h-5 w-5 text-primary" />
             </div>
-            <p className="mt-4 text-3xl font-bold text-slate-900">
+            <p className="mt-4 text-3xl font-bold text-foreground">
               {loading || !metrics ? "..." : metrics.outstanding_invoices}
             </p>
           </article>
 
-          <article className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+          <article className="surface-card p-5">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase text-blue-700">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">
                 Available Credit Limit
               </p>
-              <CircleGauge className="h-5 w-5 text-blue-700" />
+              <CircleGauge className="h-5 w-5 text-primary" />
             </div>
-            <p className="mt-4 text-3xl font-bold text-blue-900">
+            <p className="mt-4 text-3xl font-bold text-foreground">
               {loading || !metrics
                 ? "..."
                 : INR.format(metrics.available_credit_limit)}
@@ -217,67 +206,67 @@ export default function SmeDashboardPage() {
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[1.15fr_1fr]">
-          <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <article className="surface-card p-6">
             <div className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-cyan-700" />
-              <h2 className="text-lg font-semibold text-slate-900">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              <h2 className="text-lg font-semibold text-foreground">
                 Platform Trust Score
               </h2>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4">
-                <p className="text-xs font-semibold uppercase text-cyan-700">
+              <div className="surface-subtle p-4">
+                <p className="text-xs font-semibold uppercase text-primary">
                   Risk Tier
                 </p>
-                <p className="mt-2 text-2xl font-bold text-cyan-900">
+                <p className="mt-2 text-2xl font-bold text-foreground">
                   {loading || !trust ? "-" : trust.risk_tier}
                 </p>
-                <p className="mt-1 text-xs text-cyan-700">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Derived from XGBoost seller risk score
                 </p>
               </div>
-              <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
-                <p className="text-xs font-semibold uppercase text-violet-700">
+              <div className="surface-subtle p-4">
+                <p className="text-xs font-semibold uppercase text-primary">
                   Baseline Discount Rate
                 </p>
-                <p className="mt-2 text-2xl font-bold text-violet-900">
+                <p className="mt-2 text-2xl font-bold text-foreground">
                   {loading || !trust
                     ? "-"
                     : `${trust.baseline_discount_rate.toFixed(1)}%`}
                 </p>
-                <p className="mt-1 text-xs text-violet-700">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Auto-adjusted against latest risk tier
                 </p>
               </div>
             </div>
 
             {trust ? (
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              <div className="surface-subtle mt-4 p-4 text-sm text-muted-foreground">
                 Composite score:{" "}
-                <span className="font-semibold text-slate-900">
+                <span className="font-semibold text-foreground">
                   {trust.composite_score}
                 </span>
               </div>
             ) : null}
           </article>
 
-          <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <article className="surface-card p-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Activity className="h-5 w-5 text-rose-700" />
-                <h2 className="text-lg font-semibold text-slate-900">
+                <Activity className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-semibold text-foreground">
                   Activity Feed
                 </h2>
               </div>
-              <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">
+              <span className="status-chip font-semibold text-primary">
                 Live
               </span>
             </div>
 
             <div className="mt-4 max-h-[380px] space-y-3 overflow-auto pr-1">
               {feed.length === 0 ? (
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-muted-foreground">
                   No activity yet. Upload an invoice to get started.
                 </p>
               ) : (
@@ -286,14 +275,14 @@ export default function SmeDashboardPage() {
                     key={item.id}
                     className={`rounded-xl border px-3 py-2 ${
                       item.tone === "success"
-                        ? "border-emerald-200 bg-emerald-50"
+                        ? "border-primary/20 bg-primary/10"
                         : item.tone === "warning"
-                          ? "border-amber-200 bg-amber-50"
-                          : "border-slate-200 bg-slate-50"
+                          ? "border-secondary bg-secondary/70"
+                          : "border-border bg-muted/40"
                     }`}
                   >
-                    <p className="text-sm text-slate-800">{item.message}</p>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="text-sm text-foreground">{item.message}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {asRelativeTime(item.at || undefined)}
                     </p>
                   </div>

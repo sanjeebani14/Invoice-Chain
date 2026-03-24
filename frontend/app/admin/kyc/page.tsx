@@ -117,7 +117,7 @@ export default function AdminKycPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">KYC Verification</h1>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             Verify PAN uploads from non-admin users.
           </p>
         </div>
@@ -127,32 +127,20 @@ export default function AdminKycPage() {
             value={filter}
             onValueChange={(value) => setFilter(value as FilterValue)}
           >
-            <SelectTrigger className="border-gray-300 bg-white text-gray-900">
+            <SelectTrigger className="border-border bg-card text-foreground">
               <SelectValue placeholder="Filter status" />
             </SelectTrigger>
-            <SelectContent className="border-gray-200 bg-white text-gray-900">
-              <SelectItem
-                value="all"
-                className="text-gray-900 focus:bg-gray-100"
-              >
+            <SelectContent className="border-border bg-card text-foreground">
+              <SelectItem value="all" className="text-foreground focus:bg-accent">
                 All
               </SelectItem>
-              <SelectItem
-                value="pending"
-                className="text-gray-900 focus:bg-gray-100"
-              >
+              <SelectItem value="pending" className="text-foreground focus:bg-accent">
                 Pending
               </SelectItem>
-              <SelectItem
-                value="approved"
-                className="text-gray-900 focus:bg-gray-100"
-              >
+              <SelectItem value="approved" className="text-foreground focus:bg-accent">
                 Approved
               </SelectItem>
-              <SelectItem
-                value="rejected"
-                className="text-gray-900 focus:bg-gray-100"
-              >
+              <SelectItem value="rejected" className="text-foreground focus:bg-accent">
                 Rejected
               </SelectItem>
             </SelectContent>
@@ -161,24 +149,24 @@ export default function AdminKycPage() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded border border-gray-200 bg-white p-3">
-          <p className="text-xs uppercase tracking-wide text-gray-500">
+        <div className="rounded border border-border bg-card p-3">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
             Showing
           </p>
-          <p className="mt-1 text-xl font-semibold text-gray-900">
+          <p className="mt-1 text-xl font-semibold text-foreground">
             {rows.length}
           </p>
         </div>
-        <div className="rounded border border-gray-200 bg-white p-3">
-          <p className="text-xs uppercase tracking-wide text-gray-500">
+        <div className="rounded border border-border bg-card p-3">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
             Verified
           </p>
           <p className="mt-1 text-xl font-semibold text-green-700">
             {totalApproved}
           </p>
         </div>
-        <div className="rounded border border-gray-200 bg-white p-3">
-          <p className="text-xs uppercase tracking-wide text-gray-500">
+        <div className="rounded border border-border bg-card p-3">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
             Needs review
           </p>
           <p className="mt-1 text-xl font-semibold text-amber-700">
@@ -193,29 +181,29 @@ export default function AdminKycPage() {
         </div>
       ) : null}
 
-      <div className="rounded border border-gray-200 bg-white">
+      <div className="rounded border border-border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Submission</TableHead>
-              <TableHead>User</TableHead>
-              <TableHead>Document</TableHead>
-              <TableHead>Submitted</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Reviewed</TableHead>
-              <TableHead className="text-right">Action</TableHead>
+              <TableHead className="text-muted-foreground">Submission</TableHead>
+              <TableHead className="text-muted-foreground">User</TableHead>
+              <TableHead className="text-muted-foreground">Document</TableHead>
+              <TableHead className="text-muted-foreground">Submitted</TableHead>
+              <TableHead className="text-muted-foreground">Status</TableHead>
+              <TableHead className="text-muted-foreground">Reviewed</TableHead>
+              <TableHead className="text-right text-muted-foreground">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-gray-500">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   Loading...
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-gray-500">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   No KYC submissions found.
                 </TableCell>
               </TableRow>

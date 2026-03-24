@@ -20,7 +20,7 @@ from ..models import (
     CreditHistory,
     BlockchainSyncState,
 )
-from ..auth.dependencies import get_current_admin
+from ..auth.dependencies import get_current_admin, get_current_admin_or_investor
 from ..services.platform_stats import PlatformStatsService
 
 router = APIRouter()
@@ -235,7 +235,7 @@ def refresh_platform_stats(
 @router.get("/health-metrics")
 def get_health_metrics(
     db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_admin),
+    current_user: User = Depends(get_current_admin_or_investor),
 ):
     """
     Get real-time platform health metrics for dashboard display.
@@ -248,6 +248,7 @@ def get_health_metrics(
     - Avg Risk Score: Average seller credit rating
     """
     try:
+        _ = current_user
         stats = PlatformStatsService.aggregate_stats(db, use_cache=False)
         
         # Curate for dashboard display
@@ -313,7 +314,7 @@ def get_risk_heatmap(
     - Risk distribution across portfolio
     """
     try:
-        stats = PlatformStatsService.aggregate_stats(db, use_cache=True)
+        stats = PlatformStatsService.aggregate_stats(db, use_cache=False)
         sector_exp = stats["sector_exposure"]
         risk_dist = stats["risk_distribution"]
         

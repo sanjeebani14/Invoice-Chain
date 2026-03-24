@@ -14,8 +14,6 @@ const NAV_GROUPS: Array<{
       { label: "Pending Invoices", href: "/admin/pending-invoices" },
       { label: "KYC Verifications", href: "/admin/kyc" },
       { label: "Settlement Tracker", href: "/admin/settlement-tracker" },
-      { label: "Auctions", href: "/admin/auctions" },
-      { label: "Marketplace Listings", href: "/admin/listings" },
     ],
   },
   {
@@ -48,13 +46,15 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex bg-white text-black">
-      <aside className="w-64 border-r border-gray-200 bg-white p-4">
-        <h2 className="mb-4 text-sm font-semibold text-gray-500">Admin</h2>
+    <div className="page-shell flex">
+      <aside className="w-64 border-r border-border bg-card p-4">
+        <h2 className="mb-4 text-sm font-semibold text-muted-foreground">
+          Admin
+        </h2>
         <nav className="space-y-4">
           {NAV_GROUPS.map((group) => (
             <div key={group.title}>
-              <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {group.title}
               </p>
               <div className="space-y-1">
@@ -62,7 +62,7 @@ export default function AdminLayout({
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="block rounded px-3 py-2 text-sm hover:bg-gray-100"
+                    className="block rounded-md px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                   >
                     {item.label}
                   </Link>
@@ -73,7 +73,7 @@ export default function AdminLayout({
         </nav>
       </aside>
 
-      <main className="flex-1 p-6 bg-white">{children}</main>
+      <main className="flex-1 bg-background p-6">{children}</main>
     </div>
   );
 }

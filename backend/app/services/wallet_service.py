@@ -90,6 +90,14 @@ class WalletService:
             existing_link.wallet_label = label or existing_link.wallet_label
             existing_link.network_name = self.network_name
             existing_link.chain_id = self.chain_id
+            has_active_primary = self.db.query(LinkedWallet).filter(
+                LinkedWallet.user_id == user_id,
+                LinkedWallet.id != existing_link.id,
+                LinkedWallet.is_active == True,
+                LinkedWallet.is_primary == True,
+            ).first()
+            if not has_active_primary:
+                existing_link.is_primary = True
             existing_link.updated_at = datetime.now(timezone.utc)
             
             self.db.commit()
@@ -97,12 +105,17 @@ class WalletService:
             return existing_link
 
         # 3. Create new link only if no record exists for this user
+        has_active_wallet = self.db.query(LinkedWallet).filter(
+            LinkedWallet.user_id == user_id,
+            LinkedWallet.is_active == True,
+        ).first()
         lw = LinkedWallet(
             user_id=user_id,
             wallet_address=checksum,
             wallet_label=label,
             network_name=self.network_name,
             chain_id=self.chain_id,
+            is_primary=not bool(has_active_wallet),
             is_verified=True,
             is_active=True
         )
@@ -151,7 +164,18 @@ class WalletService:
             return False
         
         # Soft delete: mark inactive
+        was_primary = bool(lw.is_primary)
         lw.is_active = False
+        lw.is_primary = False
+
+        if was_primary:
+            replacement = self.db.query(LinkedWallet).filter(
+                LinkedWallet.user_id == user_id,
+                LinkedWallet.id != lw.id,
+                LinkedWallet.is_active == True,
+            ).order_by(LinkedWallet.id.asc()).first()
+            if replacement:
+                replacement.is_primary = True
         self.db.commit()
         return True
 

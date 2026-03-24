@@ -8,11 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 import { getMyKyc, submitPan } from "@/lib/kyc";
+import { api } from "@/lib/api";
 import type { KycSubmissionOut } from "@/lib/api/types";
-import { getBackendOrigin } from "@/lib/backendOrigin";
 import axios from "axios";
-
-const BACKEND_ORIGIN = getBackendOrigin();
 
 function getRoleHomePath(rawRole: unknown): string {
   const role = String(rawRole ?? "").toLowerCase();
@@ -77,9 +75,7 @@ export default function KycPage() {
       toast.success("KYC submitted. Awaiting review.");
 
       // After KYC submission, route user to their primary destination.
-      const me = await axios.get(`${BACKEND_ORIGIN}/auth/me`, {
-        withCredentials: true,
-      });
+      const me = await api.get("/auth/me");
       window.location.href = getRoleHomePath(me.data?.role);
     } catch (err: unknown) {
       const message =

@@ -147,12 +147,30 @@ def _canonical_credit_history_by_seller(
         query = query.filter(models.CreditHistory.seller_id.in_(seller_ids))
 
     records = query.all()
+
+    def _safe_int(value: object, default: int = 0) -> int:
+        try:
+            return int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return default
+
+    def _record_rank(rec: models.CreditHistory) -> tuple[int, int, int, int, int]:
+        # Prefer rows that actually contain underwriting features used by analytics,
+        # then break ties by newer ids.
+        return (
+            1 if rec.payment_history_score is not None else 0,
+            1 if rec.debt_to_income is not None else 0,
+            1 if rec.employment_years is not None else 0,
+            1 if (rec.composite_score or 0) > 0 else 0,
+            _safe_int(rec.id, 0),
+        )
+
     canonical: dict[int, models.CreditHistory] = {}
     for rec in records:
         if rec.seller_id is None:
             continue
         sid = int(rec.seller_id)
-        if sid not in canonical:
+        if sid not in canonical or _record_rank(rec) > _record_rank(canonical[sid]):
             canonical[sid] = rec
     return canonical
 
@@ -165,19 +183,60 @@ def _get_suppressed_seller_ids(db: Session) -> set[int]:
 def _to_iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt else None
 
+
+def _is_seller_like_role(role: object) -> bool:
+    if role is None:
+        return False
+    if isinstance(role, str):
+        return role.strip().lower() in {"seller", "sme"}
+    raw = getattr(role, "value", None)
+    if isinstance(raw, str):
+        return raw.strip().lower() in {"seller", "sme"}
+    return str(role).strip().lower() in {"seller", "sme"}
+
+
+def _resolve_valid_seller_ids(db: Session) -> set[int]:
+    """
+    Build seller IDs defensively so legacy/imported datasets still render correctly.
+    """
+    credit_history_ids = {
+        int(row[0])
+        for row in db.query(models.CreditHistory.seller_id)
+        .filter(models.CreditHistory.seller_id.isnot(None))
+        .all()
+        if row[0] is not None
+    }
+    if not credit_history_ids:
+        return set()
+
+    user_rows = (
+        db.query(models.User.id, models.User.role)
+        .filter(models.User.id.in_(credit_history_ids))
+        .all()
+    )
+    user_role_by_id = {int(uid): role for uid, role in user_rows}
+
+    invoice_seller_ids = {
+        int(row[0])
+        for row in db.query(models.Invoice.seller_id)
+        .filter(models.Invoice.seller_id.isnot(None))
+        .all()
+        if row[0] is not None
+    }
+
+    valid_ids: set[int] = set()
+    for sid in credit_history_ids:
+        role = user_role_by_id.get(sid)
+        if _is_seller_like_role(role) or sid in invoice_seller_ids:
+            valid_ids.add(sid)
+
+    # Keep seller explorer aligned with credit_history even when users table
+    # does not contain matching rows for imported/legacy seller IDs.
+    return credit_history_ids | valid_ids
+
+
 @router.get("/score/{seller_id}")
 def get_score(seller_id: int, db: Session = Depends(get_db)):
-    seller_user = (
-        db.query(models.User)
-        .filter(
-            models.User.id == seller_id,
-            models.User.role.in_([models.UserRole.SELLER, models.UserRole.SME]),
-        )
-        .first()
-    )
-    if not seller_user:
-        raise HTTPException(status_code=404, detail="Seller user not found.")
-
     # 1. Get deterministic canonical seller record (old datasets may have duplicates).
     seller = _canonical_credit_history_by_seller(db, {seller_id}).get(seller_id)
 
@@ -218,12 +277,7 @@ def get_score(seller_id: int, db: Session = Depends(get_db)):
 
 @router.get("/sellers")
 def get_sellers(db: Session = Depends(get_db)):
-    valid_seller_ids = {
-        row[0]
-        for row in db.query(models.User.id)
-        .filter(models.User.role.in_([models.UserRole.SELLER, models.UserRole.SME]))
-        .all()
-    }
+    valid_seller_ids = _resolve_valid_seller_ids(db)
 
     # Canonicalized list keeps one stable row per seller_id.
     sellers = [
@@ -231,6 +285,16 @@ def get_sellers(db: Session = Depends(get_db)):
         for s in _canonical_credit_history_by_seller(db).values()
         if s.seller_id in valid_seller_ids
     ]
+
+    seller_user_rows = (
+        db.query(models.User.id, models.User.email, models.User.full_name)
+        .filter(models.User.id.in_([int(s.seller_id) for s in sellers if s.seller_id is not None]))
+        .all()
+    )
+    seller_users = {
+        int(uid): {"email": email, "full_name": full_name}
+        for uid, email, full_name in seller_user_rows
+    }
 
     # Backfill only records whose scoring inputs changed or were never scored.
     stale_sellers = [s for s in sellers if risk_engine.should_recompute(s)]
@@ -245,16 +309,8 @@ def get_sellers(db: Session = Depends(get_db)):
     return [
         {
             "seller_id": s.seller_id,
-            "seller_email": (
-                db.query(models.User.email)
-                .filter(models.User.id == s.seller_id)
-                .scalar()
-            ),
-            "seller_name": (
-                db.query(models.User.full_name)
-                .filter(models.User.id == s.seller_id)
-                .scalar()
-            ),
+            "seller_email": seller_users.get(int(s.seller_id or 0), {}).get("email"),
+            "seller_name": seller_users.get(int(s.seller_id or 0), {}).get("full_name"),
             "composite_score": s.composite_score or 0,
             "risk_level": _to_risk_level(s.composite_score or 0),
             "credit_score": s.payment_history_score,
@@ -270,12 +326,7 @@ def get_sellers(db: Session = Depends(get_db)):
 
 @router.get("/admin/risk-metrics")
 def get_risk_metrics(db: Session = Depends(get_db)):
-    valid_seller_ids = {
-        row[0]
-        for row in db.query(models.User.id)
-        .filter(models.User.role.in_([models.UserRole.SELLER, models.UserRole.SME]))
-        .all()
-    }
+    valid_seller_ids = _resolve_valid_seller_ids(db)
 
     # Use one record per seller_id to keep counts consistent with /sellers
     records = (

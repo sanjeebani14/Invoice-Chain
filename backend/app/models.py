@@ -71,6 +71,7 @@ class LinkedWallet(Base):
     network_name = Column(String, nullable=False, default="base_sepolia")
 
     # Status Flags
+    is_primary = Column(Boolean, default=False, server_default="false", nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
 

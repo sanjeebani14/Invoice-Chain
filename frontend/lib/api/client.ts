@@ -17,14 +17,29 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
-        await axios.post(`${BACKEND_ORIGIN}/api/v1/auth/refresh`, {}, { withCredentials: true });
+        await axios.post(
+          `${BACKEND_ORIGIN}/api/v1/auth/refresh`,
+          {},
+          { withCredentials: true },
+        );
         return api(originalRequest);
       } catch (refreshError) {
         // Force logout if refresh fails
-        window.location.href = "/login";
+        if (typeof window !== "undefined") {
+          const authPages = new Set([
+            "/login",
+            "/register",
+            "/forgot-password",
+            "/reset-password",
+            "/verify-email",
+          ]);
+          if (!authPages.has(window.location.pathname)) {
+            window.location.href = "/login";
+          }
+        }
         return Promise.reject(refreshError);
       }
     }
     return Promise.reject(error);
-  }
+  },
 );

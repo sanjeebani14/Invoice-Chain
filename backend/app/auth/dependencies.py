@@ -184,6 +184,16 @@ def get_current_admin(current_user: User = Depends(get_current_active_user)):
     return current_user
 
 
+def get_current_admin_or_investor(current_user: User = Depends(get_current_active_user)):
+    """Require the authenticated active user to be an admin or investor."""
+    if current_user.role not in {UserRole.ADMIN, UserRole.INVESTOR}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin or investor access required"
+        )
+    return current_user
+
+
 def require_kyc_approved(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

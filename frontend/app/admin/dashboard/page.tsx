@@ -59,10 +59,7 @@ export default function Dashboard() {
         <h1 className="text-2xl font-semibold">Admin Overview</h1>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-24 animate-pulse rounded-lg border bg-gray-50"
-            />
+            <div key={i} className="h-24 animate-pulse rounded-lg border border-border bg-muted/50" />
           ))}
         </div>
       </div>
@@ -70,12 +67,12 @@ export default function Dashboard() {
   }
 
   if (error && !overview) {
-    return <div className="text-sm text-red-600">{error}</div>;
+    return <div className="text-sm text-destructive">{error}</div>;
   }
 
   if (!overview || !risk) {
     return (
-      <div className="text-sm text-gray-500">No overview data available.</div>
+      <div className="text-sm text-muted-foreground">No overview data available.</div>
     );
   }
 
@@ -144,15 +141,15 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Admin Overview</h1>
-          <p className="mt-1 text-sm text-gray-600">
+          <h1 className="text-3xl font-bold text-foreground">Admin Overview</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Real-time operations, risk posture, and action queue for platform
             admins.
           </p>
         </div>
         <button
           onClick={load}
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <RefreshCw className="h-4 w-4" />
           Refresh
@@ -169,7 +166,7 @@ export default function Dashboard() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <p className="text-xs uppercase tracking-wide text-gray-600 font-medium">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     {card.label}
                   </p>
                   <p className={`mt-3 text-3xl font-bold ${card.textColor}`}>
@@ -184,16 +181,16 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-lg border-2 border-gray-200 bg-white p-6">
-          <h2 className="text-lg font-bold text-gray-900">
+        <div className="surface-card p-6">
+          <h2 className="text-lg font-bold text-foreground">
             Actionable Insights
           </h2>
-          <p className="mt-1 text-sm text-gray-600">
+          <p className="mt-1 text-sm text-muted-foreground">
             Prioritized operational tasks generated from live queues.
           </p>
           <div className="mt-5 space-y-3">
             {overview.actionable_insights.length === 0 ? (
-              <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 font-medium">
+              <div className="rounded-lg border border-primary/30 bg-primary/10 p-4 text-sm font-medium text-foreground">
                 ✓ No urgent actions right now.
               </div>
             ) : (
@@ -210,10 +207,10 @@ export default function Dashboard() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
-                      <p className="font-semibold text-gray-900">
+                      <p className="font-semibold text-foreground">
                         {insight.title}
                       </p>
-                      <p className="mt-1 text-sm text-gray-700">
+                      <p className="mt-1 text-sm text-muted-foreground">
                         {insight.description}
                       </p>
                     </div>
@@ -231,7 +228,7 @@ export default function Dashboard() {
                   </div>
                   <Link
                     href={insight.cta_path}
-                    className="mt-3 inline-flex items-center text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                    className="mt-3 inline-flex items-center text-sm font-semibold text-primary transition-colors hover:text-primary/80"
                   >
                     Open queue →
                   </Link>
@@ -241,16 +238,16 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="rounded-lg border-2 border-gray-200 bg-white p-6">
-          <h2 className="text-lg font-bold text-gray-900">Risk Snapshot</h2>
-          <p className="mt-1 text-sm text-gray-600">
+        <div className="surface-card p-6">
+          <h2 className="text-lg font-bold text-foreground">Risk Snapshot</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             Current seller-risk distribution for quick triage.
           </p>
           <div className="mt-5 space-y-3">
             <div className="flex items-center justify-between rounded-lg bg-red-50 p-4">
               <div className="flex items-center gap-3">
                 <AlertTriangle className="h-5 w-5 text-red-600" />
-                <span className="font-medium text-gray-900">
+                <span className="font-medium text-foreground">
                   High risk sellers
                 </span>
               </div>
@@ -261,7 +258,7 @@ export default function Dashboard() {
             <div className="flex items-center justify-between rounded-lg bg-amber-50 p-4">
               <div className="flex items-center gap-3">
                 <Clock3 className="h-5 w-5 text-amber-600" />
-                <span className="font-medium text-gray-900">
+                <span className="font-medium text-foreground">
                   Medium risk sellers
                 </span>
               </div>
@@ -272,7 +269,7 @@ export default function Dashboard() {
             <div className="flex items-center justify-between rounded-lg bg-emerald-50 p-4">
               <div className="flex items-center gap-3">
                 <CircleCheck className="h-5 w-5 text-emerald-600" />
-                <span className="font-medium text-gray-900">
+                <span className="font-medium text-foreground">
                   Low risk sellers
                 </span>
               </div>
@@ -281,26 +278,26 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="rounded-lg border-2 border-blue-300 bg-gradient-to-r from-blue-50 to-indigo-50 p-4">
-              <p className="text-xs uppercase tracking-wide text-gray-700 font-semibold">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Platform Average
               </p>
               <p className="mt-2 text-2xl font-bold text-blue-700">
                 {risk.avg_composite_score.toFixed(2)}
               </p>
-              <p className="text-xs text-gray-600">Composite score</p>
+              <p className="text-xs text-muted-foreground">Composite score</p>
             </div>
           </div>
           <Link
             href="/admin/risk-metrics"
-            className="mt-5 inline-flex items-center font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+            className="mt-5 inline-flex items-center font-semibold text-primary transition-colors hover:text-primary/80"
           >
             View full risk metrics →
           </Link>
         </div>
 
-        <div className="rounded-lg border-2 border-gray-200 bg-white p-6">
-          <h2 className="text-lg font-bold text-gray-900">Blockchain Sync</h2>
-          <p className="mt-1 text-sm text-gray-600">
+        <div className="surface-card p-6">
+          <h2 className="text-lg font-bold text-foreground">Blockchain Sync</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             Event ingestion worker cursor and latest processing state.
           </p>
 
@@ -310,20 +307,20 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="mt-5 space-y-3">
-              <div className="flex items-center justify-between rounded-lg bg-slate-50 p-4">
+              <div className="flex items-center justify-between rounded-lg bg-muted/50 p-4">
                 <div className="flex items-center gap-3">
-                  <Database className="h-5 w-5 text-slate-600" />
-                  <span className="font-medium text-gray-900">Last synced block</span>
+                  <Database className="h-5 w-5 text-muted-foreground" />
+                  <span className="font-medium text-foreground">Last synced block</span>
                 </div>
-                <span className="text-xl font-bold text-slate-700">
+                <span className="text-xl font-bold text-foreground">
                   {latestSync.last_synced_block.toLocaleString()}
                 </span>
               </div>
 
-              <div className="rounded-lg border border-gray-200 p-4 text-sm text-gray-700">
-                <p className="font-semibold text-gray-900">Contract</p>
+              <div className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+                <p className="font-semibold text-foreground">Contract</p>
                 <p className="mt-1 break-all font-mono text-xs">{latestSync.contract_address}</p>
-                <p className="mt-3 text-xs text-gray-500">
+                <p className="mt-3 text-xs text-muted-foreground">
                   Last sync time: {latestSync.last_synced_at ? new Date(latestSync.last_synced_at).toLocaleString() : "-"}
                 </p>
               </div>

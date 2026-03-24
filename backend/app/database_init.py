@@ -65,6 +65,7 @@ def run_database_maintenance():
         ("chain_id", "INTEGER DEFAULT 84532"),
         ("network_name", "VARCHAR DEFAULT 'base_sepolia'"),
         # Older DBs may be missing these wallet state flags.
+        ("is_primary", "BOOLEAN NOT NULL DEFAULT FALSE"),
         ("is_active", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ("is_verified", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ])
@@ -119,10 +120,13 @@ def _run_postgres_specific_maintenance():
             conn.execute(text("""
                 UPDATE linked_wallets
                 SET chain_id = COALESCE(chain_id, 84532),
-                    network_name = COALESCE(network_name, 'base_sepolia')
+                    network_name = COALESCE(network_name, 'base_sepolia'),
+                    is_primary = COALESCE(is_primary, FALSE)
             """))
             conn.execute(text("ALTER TABLE linked_wallets ALTER COLUMN chain_id SET DEFAULT 84532"))
             conn.execute(text("ALTER TABLE linked_wallets ALTER COLUMN network_name SET DEFAULT 'base_sepolia'"))
+            conn.execute(text("ALTER TABLE linked_wallets ALTER COLUMN is_primary SET DEFAULT FALSE"))
+            conn.execute(text("ALTER TABLE linked_wallets ALTER COLUMN is_primary SET NOT NULL"))
         except Exception as e:
             logger.warning(f"Linked wallet backfill/default migration skipped: {e}")
 

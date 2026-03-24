@@ -78,6 +78,11 @@ type MonthlyRiskPoint = {
   high: number;
 };
 
+const toFiniteNumber = (value: unknown): number | null => {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
 export default function Analytics() {
   // Risk Analytics state
   const [loading, setLoading] = useState(true);
@@ -98,51 +103,130 @@ export default function Analytics() {
     useState<ConcentrationAnalysis | null>(null);
 
   useEffect(() => {
-    Promise.all([getRiskMetrics(), getAllSellers()]).then(
-      ([metrics, sellers]) => {
-        setDistribution(metrics.risk_distribution);
-        setFraudTrend(metrics.fraud_alerts_over_time);
-        setMonthlyTrend(metrics.seller_risk_trends);
+    let isMounted = true;
+
+    const loadRiskAnalytics = async () => {
+      setLoading(true);
+      try {
+        const [metricsResult, sellersResult] = await Promise.allSettled([
+          getRiskMetrics(),
+          getAllSellers(),
+        ]);
+
+        const metrics =
+          metricsResult.status === "fulfilled" ? metricsResult.value : null;
+        const sellers =
+          sellersResult.status === "fulfilled" ? sellersResult.value : [];
+
+        if (!isMounted) return;
+
+        setDistribution(metrics?.risk_distribution ?? []);
+        setFraudTrend(metrics?.fraud_alerts_over_time ?? []);
+        setMonthlyTrend(metrics?.seller_risk_trends ?? []);
 
         const filtered =
           riskFilter === "all"
             ? sellers
             : sellers.filter((s) => s.risk_level === riskFilter);
-        setScatter(
-          filtered
-            .filter((s) => s.credit_score !== undefined)
-            .map((s) => ({
-              credit_score: s.credit_score as number,
-              risk_score: s.composite_score,
-            })),
-        );
-        setDtiScatter(
-          filtered
-            .filter((s) => s.debt_to_income !== undefined)
-            .map((s) => ({
-              dti: s.debt_to_income as number,
-              risk_score: s.composite_score,
-            })),
-        );
-        setLoading(false);
-      },
-    );
+
+        const creditScatterData: CreditRiskPoint[] = filtered
+          .map((s) => {
+            const creditScore = toFiniteNumber(s.credit_score);
+            const riskScore = toFiniteNumber(s.composite_score);
+            if (creditScore === null || riskScore === null) return null;
+            return {
+              credit_score: creditScore,
+              risk_score: riskScore,
+            };
+          })
+          .filter((point): point is CreditRiskPoint => point !== null);
+
+        const dtiScatterData: DtiRiskPoint[] = filtered
+          .map((s) => {
+            const dti = toFiniteNumber(s.debt_to_income);
+            const riskScore = toFiniteNumber(s.composite_score);
+            if (dti === null || riskScore === null) return null;
+            return {
+              dti,
+              risk_score: riskScore,
+            };
+          })
+          .filter((point): point is DtiRiskPoint => point !== null);
+
+        setScatter(creditScatterData);
+        setDtiScatter(dtiScatterData);
+      } catch {
+        if (!isMounted) return;
+        setDistribution([]);
+        setFraudTrend([]);
+        setMonthlyTrend([]);
+        setScatter([]);
+        setDtiScatter([]);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadRiskAnalytics();
+
+    return () => {
+      isMounted = false;
+    };
   }, [riskFilter]);
 
   // Load platform statistics
   useEffect(() => {
-    Promise.all([
-      getPlatformHealthMetrics(),
-      getPlatformTimeSeries(12),
-      getRiskHeatmap(),
-      getPlatformConcentration(20),
-    ]).then(([health, timeseries, heatmap, concentration]) => {
-      setHealthMetrics(health);
-      setTimeSeriesData(timeseries.data);
-      setRiskHeatmap(heatmap);
-      setPlatformConcentration(concentration);
-      setPlatformLoading(false);
-    });
+    let isMounted = true;
+
+    const loadPlatformStatistics = async () => {
+      setPlatformLoading(true);
+      try {
+        const [healthResult, timeseriesResult, heatmapResult, concentrationResult] =
+          await Promise.allSettled([
+            getPlatformHealthMetrics(),
+            getPlatformTimeSeries(12, false),
+            getRiskHeatmap(),
+            getPlatformConcentration(20),
+          ]);
+
+        if (!isMounted) return;
+
+        setHealthMetrics(
+          healthResult.status === "fulfilled" ? healthResult.value : null,
+        );
+        setTimeSeriesData(
+          timeseriesResult.status === "fulfilled"
+            ? timeseriesResult.value.data
+            : [],
+        );
+        setRiskHeatmap(
+          heatmapResult.status === "fulfilled" ? heatmapResult.value : null,
+        );
+        setPlatformConcentration(
+          concentrationResult.status === "fulfilled"
+            ? concentrationResult.value
+            : null,
+        );
+      } catch {
+        if (!isMounted) return;
+        setHealthMetrics(null);
+        setTimeSeriesData([]);
+        setRiskHeatmap(null);
+        setPlatformConcentration(null);
+      } finally {
+        if (isMounted) {
+          setPlatformLoading(false);
+        }
+      }
+    };
+
+    loadPlatformStatistics();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   if (loading && platformLoading)
@@ -342,47 +426,67 @@ export default function Analytics() {
                 </ChartPanel>
 
                 <ChartPanel title="Credit Score vs Risk Score">
-                  <ResponsiveContainer width="100%" height={240}>
-                    <ScatterChart>
-                      <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
-                      <XAxis
-                        dataKey="credit_score"
-                        name="Credit Score"
-                        tick={TICK}
-                        axisLine={{ stroke: GRID }}
-                      />
-                      <YAxis
-                        dataKey="risk_score"
-                        name="Risk Score"
-                        tick={TICK}
-                        axisLine={{ stroke: GRID }}
-                      />
-                      <Tooltip contentStyle={TT} />
-                      <Scatter data={scatter} fill="hsl(25, 90%, 55%)" />
-                    </ScatterChart>
-                  </ResponsiveContainer>
+                  {scatter.length === 0 ? (
+                    <div className="flex h-[240px] items-center justify-center text-sm text-gray-600">
+                      No valid credit score data available for this filter.
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={240}>
+                      <ScatterChart>
+                        <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+                        <XAxis
+                          dataKey="credit_score"
+                          name="Credit Score"
+                          tick={TICK}
+                          axisLine={{ stroke: GRID }}
+                        />
+                        <YAxis
+                          dataKey="risk_score"
+                          name="Risk Score"
+                          tick={TICK}
+                          axisLine={{ stroke: GRID }}
+                        />
+                        <Tooltip contentStyle={TT} />
+                        <Scatter
+                          data={scatter}
+                          fill="hsl(25, 90%, 55%)"
+                          isAnimationActive={false}
+                        />
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  )}
                 </ChartPanel>
 
                 <ChartPanel title="Debt-to-Income vs Risk Score">
-                  <ResponsiveContainer width="100%" height={240}>
-                    <ScatterChart>
-                      <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
-                      <XAxis
-                        dataKey="dti"
-                        name="DTI"
-                        tick={TICK}
-                        axisLine={{ stroke: GRID }}
-                      />
-                      <YAxis
-                        dataKey="risk_score"
-                        name="Risk Score"
-                        tick={TICK}
-                        axisLine={{ stroke: GRID }}
-                      />
-                      <Tooltip contentStyle={TT} />
-                      <Scatter data={dtiScatter} fill="hsl(270, 50%, 55%)" />
-                    </ScatterChart>
-                  </ResponsiveContainer>
+                  {dtiScatter.length === 0 ? (
+                    <div className="flex h-[240px] items-center justify-center text-sm text-gray-600">
+                      No valid debt-to-income data available for this filter.
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={240}>
+                      <ScatterChart>
+                        <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+                        <XAxis
+                          dataKey="dti"
+                          name="DTI"
+                          tick={TICK}
+                          axisLine={{ stroke: GRID }}
+                        />
+                        <YAxis
+                          dataKey="risk_score"
+                          name="Risk Score"
+                          tick={TICK}
+                          axisLine={{ stroke: GRID }}
+                        />
+                        <Tooltip contentStyle={TT} />
+                        <Scatter
+                          data={dtiScatter}
+                          fill="hsl(270, 50%, 55%)"
+                          isAnimationActive={false}
+                        />
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  )}
                 </ChartPanel>
 
                 <ChartPanel title="Fraud Probability Trends">

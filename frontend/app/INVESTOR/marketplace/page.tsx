@@ -31,6 +31,10 @@ import {
 } from "lucide-react";
 
 import { MarketplaceStats } from "@/components/dashboard/MarketplaceStats";
+import {
+  CheckoutSidebar,
+  type CheckoutInvoice,
+} from "@/components/marketplace/CheckoutSidebar";
 import { openNotificationSocket } from "@/lib/realtime";
 import type { NotificationSocketHandle } from "@/lib/realtime";
 import {
@@ -154,11 +158,8 @@ export default function FullMarketplace() {
     "idle" | "processing" | "success"
   >("idle");
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
-  const [quickBuyLoadingId, setQuickBuyLoadingId] = useState<string | null>(
-    null,
-  );
-  const [quickBuyError, setQuickBuyError] = useState<string | null>(null);
-  const [quickBuySuccess, setQuickBuySuccess] = useState<string | null>(null);
+  const [checkoutInvoice, setCheckoutInvoice] = useState<Invoice | null>(null);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [fractionalShares, setFractionalShares] = useState<number>(1);
   const [bidAmount, setBidAmount] = useState<number>(0);
   const [bids, setBids] = useState<Bid[]>([]);
@@ -456,27 +457,30 @@ export default function FullMarketplace() {
     }
   };
 
-  const handleQuickBuy = async (inv: Invoice) => {
-    setQuickBuyError(null);
-    setQuickBuySuccess(null);
-    setQuickBuyLoadingId(inv.id);
+  const openCheckoutForInvoice = (inv: Invoice) => {
+    setCheckoutInvoice(inv);
+    setIsCheckoutOpen(true);
+  };
 
-    try {
-      await fundInvoice(Number(inv.id), {
-        investment_amount: inv.price,
-        notes: "Simulated quick-buy checkout",
-      });
+  const handleSingleCheckoutConfirm = async (inv: CheckoutInvoice) => {
+    const response = await fundInvoice(Number(inv.id), {
+      investment_amount: inv.price,
+      notes: "Single-item checkout purchase",
+    });
+    await fetchMarketplaceInvoices();
 
-      setQuickBuySuccess(`Invoice ${inv.id} funded successfully.`);
-      await fetchMarketplaceInvoices();
-    } catch (error) {
-      const detail = axios.isAxiosError(error)
-        ? (error.response?.data as { detail?: string } | undefined)?.detail
-        : null;
-      setQuickBuyError(detail || "Quick buy failed. Please try again.");
-    } finally {
-      setQuickBuyLoadingId(null);
-    }
+    const txHash =
+      (response as { tx_hash?: string; transaction_hash?: string }).tx_hash ||
+      (response as { tx_hash?: string; transaction_hash?: string })
+        .transaction_hash;
+    const base =
+      process.env.NEXT_PUBLIC_BLOCK_EXPLORER_BASE_URL ||
+      "https://polygonscan.com/tx/";
+
+    return {
+      txHash: txHash || undefined,
+      explorerUrl: txHash ? `${base}${txHash}` : undefined,
+    };
   };
 
   const placeBid = async () => {
@@ -705,18 +709,6 @@ export default function FullMarketplace() {
           </div>
         )}
 
-        {quickBuyError && (
-          <div className="mb-8 bg-red-50 p-5 rounded-2xl border border-red-200 text-red-700 text-sm font-semibold">
-            {quickBuyError}
-          </div>
-        )}
-
-        {quickBuySuccess && (
-          <div className="mb-8 bg-emerald-50 p-5 rounded-2xl border border-emerald-200 text-emerald-700 text-sm font-semibold">
-            {quickBuySuccess}
-          </div>
-        )}
-
         {/* STATS BAR */}
         <MarketplaceStats />
 
@@ -812,14 +804,11 @@ export default function FullMarketplace() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        void handleQuickBuy(inv);
+                        openCheckoutForInvoice(inv);
                       }}
-                      disabled={quickBuyLoadingId === inv.id}
                       className="mt-4 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
                     >
-                      {quickBuyLoadingId === inv.id
-                        ? "Processing..."
-                        : "Buy Now"}
+                      Review & Buy
                     </button>
                   )}
                 </div>
@@ -999,7 +988,7 @@ export default function FullMarketplace() {
               <button
                 onClick={async () => {
                   if (viewingDetails.type === "fixed") {
-                    await handleQuickBuy(viewingDetails);
+                    openCheckoutForInvoice(viewingDetails);
                     setViewingDetails(null);
                     return;
                   }
@@ -1008,19 +997,13 @@ export default function FullMarketplace() {
                   setViewingDetails(null);
                   setFractionalShares(1);
                 }}
-                disabled={
-                  viewingDetails.type === "fixed" &&
-                  quickBuyLoadingId === viewingDetails.id
-                }
                 className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-bold text-lg hover:shadow-xl transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {viewingDetails.type === "auction"
                   ? "Join Auction"
                   : viewingDetails.type === "fractional"
                     ? "Purchase Shares"
-                    : quickBuyLoadingId === viewingDetails.id
-                      ? "Processing..."
-                      : "Buy Now"}
+                    : "Review & Buy"}
               </button>
             </div>
           </div>
@@ -1445,6 +1428,16 @@ export default function FullMarketplace() {
           </div>
         </div>
       )}
+
+      <CheckoutSidebar
+        open={isCheckoutOpen}
+        invoice={checkoutInvoice}
+        onOpenChange={(open) => {
+          setIsCheckoutOpen(open);
+          if (!open) setCheckoutInvoice(null);
+        }}
+        onConfirmPurchase={handleSingleCheckoutConfirm}
+      />
     </div>
   );
 }

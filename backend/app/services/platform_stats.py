@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from ..models import Invoice, PlatformStats, User, UserRole, CreditHistory, FraudFlag
 
+FINANCED_STATUSES = ["funded", "active", "settled", "defaulted", "repaid"]
+
 # Redis configuration
 REDIS_HOST = "localhost"
 REDIS_PORT = 6379
@@ -79,25 +81,48 @@ class PlatformStatsService:
         return "all-time"
 
     @staticmethod
-    def calculate_total_funded_volume(db: Session) -> float:
-        """Calculate the sum of ask_price for all funded invoices (GMV)."""
-        result = db.query(func.sum(Invoice.ask_price)).filter(
-            Invoice.status.in_(["funded", "active"])
-        ).scalar()
-        return float(result or 0.0)
+    def calculate_total_funded_volume(
+        db: Session,
+        period_start: Optional[datetime] = None,
+        period_end: Optional[datetime] = None,
+    ) -> float:
+        """
+        Calculate funded volume (GMV) for financed invoices.
+        Uses ask_price primarily, then share_price, then amount as fallback.
+        """
+        query = db.query(Invoice).filter(Invoice.status.in_(FINANCED_STATUSES))
+        if period_start:
+            query = query.filter(Invoice.created_at >= period_start)
+        if period_end:
+            query = query.filter(Invoice.created_at < period_end)
+
+        invoices = query.all()
+        total = 0.0
+        for inv in invoices:
+            if inv.ask_price and inv.ask_price > 0:
+                total += float(inv.ask_price)
+            elif inv.share_price and inv.share_price > 0:
+                total += float(inv.share_price)
+            else:
+                total += float(inv.amount or 0.0)
+        return round(total, 2)
 
     @staticmethod
     def calculate_repayment_metrics(
-        db: Session, period_start: Optional[datetime] = None
+        db: Session,
+        period_start: Optional[datetime] = None,
+        period_end: Optional[datetime] = None,
     ) -> Dict[str, float]:
         """
         Calculate repayment and default rates.
         Returns dict with repayment_rate, default_rate, and counts.
         """
-        query = db.query(Invoice).filter(Invoice.status.in_(["funded", "active", "settled", "defaulted"]))
+        query = db.query(Invoice).filter(Invoice.status.in_(FINANCED_STATUSES))
         
         if period_start:
             query = query.filter(Invoice.created_at >= period_start)
+        if period_end:
+            query = query.filter(Invoice.created_at < period_end)
         
         invoices = query.all()
         
@@ -111,8 +136,8 @@ class PlatformStatsService:
             }
         
         # Count invoices by status
-        funded_count = sum(1 for inv in invoices if inv.status in ["funded", "active"])
-        repaid_count = sum(1 for inv in invoices if inv.status == "settled")
+        funded_count = len(invoices)
+        repaid_count = sum(1 for inv in invoices if inv.status in ["settled", "repaid"])
         defaulted_count = sum(1 for inv in invoices if inv.status == "defaulted")
         
         # Calculate rates
@@ -129,26 +154,39 @@ class PlatformStatsService:
 
     @staticmethod
     def calculate_platform_revenue(
-        db: Session, fee_rate: float = 0.02, period_start: Optional[datetime] = None
+        db: Session,
+        fee_rate: float = 0.02,
+        period_start: Optional[datetime] = None,
+        period_end: Optional[datetime] = None,
     ) -> float:
         """
         Calculate total platform revenue from fees.
         Default: 2% of share_price for all transactions.
         """
-        query = db.query(func.sum(Invoice.share_price)).filter(
-            Invoice.status.in_(["funded", "active", "settled"])
-        )
-        
+        query = db.query(Invoice).filter(Invoice.status.in_(FINANCED_STATUSES))
         if period_start:
             query = query.filter(Invoice.created_at >= period_start)
-        
-        total_share_price = query.scalar() or 0.0
-        revenue = float(total_share_price) * fee_rate
+        if period_end:
+            query = query.filter(Invoice.created_at < period_end)
+
+        invoices = query.all()
+        total_base = 0.0
+        for inv in invoices:
+            if inv.share_price and inv.share_price > 0:
+                total_base += float(inv.share_price)
+            elif inv.ask_price and inv.ask_price > 0:
+                total_base += float(inv.ask_price)
+            else:
+                total_base += float(inv.amount or 0.0)
+
+        revenue = total_base * fee_rate
         return round(revenue, 2)
 
     @staticmethod
     def calculate_average_yield(
-        db: Session, period_start: Optional[datetime] = None
+        db: Session,
+        period_start: Optional[datetime] = None,
+        period_end: Optional[datetime] = None,
     ) -> float:
         """
         Calculate average invoice yield based on ask_price vs repayment amount.
@@ -158,6 +196,8 @@ class PlatformStatsService:
         
         if period_start:
             query = query.filter(Invoice.created_at >= period_start)
+        if period_end:
+            query = query.filter(Invoice.created_at < period_end)
         
         settled_invoices = query.all()
         
@@ -174,26 +214,27 @@ class PlatformStatsService:
         return round(avg_yield, 2)
 
     @staticmethod
-    def calculate_risk_distribution(db: Session, period_start: Optional[datetime] = None) -> Dict:
-        """Calculate risk score distribution for invoices in the period."""
-        query = db.query(Invoice).filter(Invoice.seller_id.isnot(None))
-        
-        if period_start:
-            query = query.filter(Invoice.created_at >= period_start)
-        
-        invoices = query.all()
-        seller_ids = [inv.seller_id for inv in invoices if inv.seller_id]
-        
-        if not seller_ids:
-            return {"high": 0, "medium": 0, "low": 0, "avg_score": 0.0}
-        
-        # Get credit history for these sellers
-        credit_histories = db.query(CreditHistory).filter(
-            CreditHistory.seller_id.in_(seller_ids)
-        ).all()
-        
-        scores = [ch.composite_score for ch in credit_histories]
-        
+    def calculate_risk_distribution(db: Session) -> Dict:
+        """
+        Calculate seller risk distribution using canonical credit-history rows.
+        This mirrors the Risk Analytics seller universe and avoids undercounting
+        when imported/legacy seller IDs do not have matching users rows.
+        """
+        records = (
+            db.query(CreditHistory)
+            .order_by(CreditHistory.seller_id.asc(), CreditHistory.id.asc())
+            .all()
+        )
+        canonical: dict[int, CreditHistory] = {}
+        for rec in records:
+            if rec.seller_id is None:
+                continue
+            sid = int(rec.seller_id)
+            if sid not in canonical:
+                canonical[sid] = rec
+
+        scores = [int(ch.composite_score or 0) for ch in canonical.values()]
+
         if not scores:
             return {"high": 0, "medium": 0, "low": 0, "avg_score": 0.0}
         
@@ -210,28 +251,40 @@ class PlatformStatsService:
         }
 
     @staticmethod
-    def calculate_sector_exposure(db: Session, period_start: Optional[datetime] = None) -> Dict:
+    def calculate_sector_exposure(
+        db: Session,
+        period_start: Optional[datetime] = None,
+        period_end: Optional[datetime] = None,
+    ) -> Dict:
         """Calculate sector exposure and concentration."""
         query = db.query(Invoice).filter(
             Invoice.sector.isnot(None),
-            Invoice.ask_price.isnot(None),
-            Invoice.status.in_(["funded", "active"])
+            Invoice.status.in_(FINANCED_STATUSES),
         )
         
         if period_start:
             query = query.filter(Invoice.created_at >= period_start)
+        if period_end:
+            query = query.filter(Invoice.created_at < period_end)
         
         invoices = query.all()
         
         if not invoices:
             return {"sectors": {}, "top_sector": None, "concentration_ratio": 0.0}
         
-        total_volume = sum(inv.ask_price for inv in invoices)
+        def _invoice_volume(inv: Invoice) -> float:
+            if inv.ask_price and inv.ask_price > 0:
+                return float(inv.ask_price)
+            if inv.share_price and inv.share_price > 0:
+                return float(inv.share_price)
+            return float(inv.amount or 0.0)
+
+        total_volume = sum(_invoice_volume(inv) for inv in invoices)
         sector_volumes = {}
         
         for inv in invoices:
             sector = inv.sector or "Unknown"
-            sector_volumes[sector] = sector_volumes.get(sector, 0) + inv.ask_price
+            sector_volumes[sector] = sector_volumes.get(sector, 0) + _invoice_volume(inv)
         
         # Calculate percentages
         sector_percentages = {
@@ -240,7 +293,8 @@ class PlatformStatsService:
         }
         
         # Calculate concentration (top 3 sectors)
-        top_3_volume = sum(list(sector_volumes.values())[:3])
+        sorted_sector_volumes = sorted(sector_volumes.values(), reverse=True)
+        top_3_volume = sum(sorted_sector_volumes[:3])
         concentration_ratio = round((top_3_volume / total_volume) * 100, 2)
         
         top_sector = max(sector_volumes, key=sector_volumes.get) if sector_volumes else None
@@ -299,22 +353,41 @@ class PlatformStatsService:
         
         # Determine period start for time-series
         period_start = None
+        period_end = None
         if period and period_type == "monthly":
             period_start = datetime.strptime(period, "%Y-%m").replace(day=1)
+            period_end = (period_start + timedelta(days=32)).replace(day=1)
         elif period and period_type == "quarterly":
             year, q = period.split("-Q")
             month = (int(q) - 1) * 3 + 1
             period_start = datetime(int(year), month, 1)
+            end_month = month + 3
+            end_year = int(year)
+            if end_month > 12:
+                end_month -= 12
+                end_year += 1
+            period_end = datetime(end_year, end_month, 1)
         elif period and period_type == "yearly":
             period_start = datetime(int(period), 1, 1)
+            period_end = datetime(int(period) + 1, 1, 1)
         
         # Calculate all metrics
-        funded_volume = PlatformStatsService.calculate_total_funded_volume(db)
-        repayment = PlatformStatsService.calculate_repayment_metrics(db, period_start)
-        revenue = PlatformStatsService.calculate_platform_revenue(db, period_start=period_start)
-        avg_yield = PlatformStatsService.calculate_average_yield(db, period_start=period_start)
-        risk_dist = PlatformStatsService.calculate_risk_distribution(db, period_start=period_start)
-        sector_exp = PlatformStatsService.calculate_sector_exposure(db, period_start=period_start)
+        funded_volume = PlatformStatsService.calculate_total_funded_volume(
+            db, period_start=period_start, period_end=period_end
+        )
+        repayment = PlatformStatsService.calculate_repayment_metrics(
+            db, period_start=period_start, period_end=period_end
+        )
+        revenue = PlatformStatsService.calculate_platform_revenue(
+            db, period_start=period_start, period_end=period_end
+        )
+        avg_yield = PlatformStatsService.calculate_average_yield(
+            db, period_start=period_start, period_end=period_end
+        )
+        risk_dist = PlatformStatsService.calculate_risk_distribution(db)
+        sector_exp = PlatformStatsService.calculate_sector_exposure(
+            db, period_start=period_start, period_end=period_end
+        )
         user_metrics = PlatformStatsService.calculate_user_metrics(db)
         
         # Compile response
@@ -323,7 +396,10 @@ class PlatformStatsService:
             "period_type": period_type,
             "total_funded_volume": funded_volume,
             "total_invoices_created": db.query(func.count(Invoice.id)).filter(
-                Invoice.created_at >= period_start if period_start else True
+                and_(
+                    Invoice.created_at >= period_start if period_start else True,
+                    Invoice.created_at < period_end if period_end else True,
+                )
             ).scalar() or 0,
             "total_invoices_funded": repayment["total_funded"],
             "repayment_metrics": {
