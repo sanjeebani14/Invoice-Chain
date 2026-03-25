@@ -1,14 +1,9 @@
-"""
-duplicate.py  —  Kavya: Invoice Processing Pipeline
-Duplicate invoice detection using exact hash matching + fuzzy matching.
-"""
-
 from sqlalchemy.orm import Session
 from rapidfuzz import fuzz
 from ..models import Invoice, FraudFlag
 
 
-# ── Check 1: Exact hash match ─────────────────────────────────────
+# Exact hash match 
 
 def check_exact_duplicate(db: Session, canonical_hash: str) -> Invoice | None:
     """
@@ -18,7 +13,7 @@ def check_exact_duplicate(db: Session, canonical_hash: str) -> Invoice | None:
     return db.query(Invoice).filter(Invoice.canonical_hash == canonical_hash).first()
 
 
-# ── Check 2: Fuzzy match ──────────────────────────────────────────
+# Fuzzy match 
 
 def check_fuzzy_duplicate(
     db: Session,
@@ -26,16 +21,9 @@ def check_fuzzy_duplicate(
     seller_name: str,
     client_name: str,
     amount: float,
-    threshold: int = 90,        # 90% similarity = suspicious
+    threshold: int = 90,# 90% similarity = suspicious
 ) -> Invoice | None:
-    """
-    Check if there's a "near duplicate" — same invoice with tiny changes
-    (e.g., amount changed from 50000 to 50001 to fool hash detection).
-
-    Uses fuzzy string matching on invoice_number + seller + client.
-    Amount must also be within 1% to trigger.
-    """
-    # Only check recent invoices — don't scan entire DB for performance
+    # Only check recent invoices
     recent_invoices = (
         db.query(Invoice)
         .filter(Invoice.is_duplicate == False)
@@ -56,31 +44,25 @@ def check_fuzzy_duplicate(
             f"{existing.seller_name or ''} {existing.client_name or ''}".upper(),
         )
 
-        # Amount within 1%?
         amount_similar = False
         if existing.amount and amount:
             diff_pct = abs(existing.amount - amount) / max(existing.amount, amount)
-            amount_similar = diff_pct < 0.01   # less than 1% difference
+            amount_similar = diff_pct < 0.01 
 
-        # If invoice number AND names are very similar AND amounts match → suspicious
         if inv_score >= threshold and name_score >= threshold and amount_similar:
             return existing
 
     return None
 
 
-# ── Log fraud flag ────────────────────────────────────────────────
-
+# Log fraud flag 
 def create_fraud_flag(
     db: Session,
     invoice_id: int,
     reason: str,
     severity: str = "HIGH",
 ) -> FraudFlag:
-    """
-    Create a fraud flag record for admin review.
-    Severity: "HIGH" | "MEDIUM" | "LOW"
-    """
+
     flag = FraudFlag(
         invoice_id=invoice_id,
         reason=reason,
@@ -93,20 +75,8 @@ def create_fraud_flag(
     return flag
 
 
-# ── Main entry point ──────────────────────────────────────────────
-
-def run_duplicate_detection(
-    db: Session,
-    canonical_hash: str,
-    invoice_number: str,
-    seller_name: str,
-    client_name: str,
-    amount: float,
-    new_invoice_id: int,
-) -> dict:
-    """
-    Run all duplicate checks on a newly uploaded invoice.
-
+"""
+    Main Function to run duplicate detection on a new invoice submission.
     Returns:
       {
         "is_duplicate": True/False,
@@ -116,8 +86,18 @@ def run_duplicate_detection(
         "message": "Human readable explanation"
       }
     """
+def run_duplicate_detection(
+    db: Session,
+    canonical_hash: str,
+    invoice_number: str,
+    seller_name: str,
+    client_name: str,
+    amount: float,
+    new_invoice_id: int,
+) -> dict:
+    
 
-    # Check 1: Exact hash match
+    # Exact hash match
     exact_match = check_exact_duplicate(db, canonical_hash)
     if exact_match:
         flag = create_fraud_flag(
@@ -139,7 +119,7 @@ def run_duplicate_detection(
             ),
         }
 
-    # Check 2: Fuzzy match
+    # Fuzzy match
     fuzzy_match = check_fuzzy_duplicate(
         db=db,
         invoice_number=invoice_number,
@@ -167,7 +147,6 @@ def run_duplicate_detection(
             ),
         }
 
-    # All clear
     return {
         "is_duplicate": False,
         "duplicate_type": None,

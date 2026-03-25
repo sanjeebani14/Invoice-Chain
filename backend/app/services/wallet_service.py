@@ -68,7 +68,7 @@ class WalletService:
     def link_wallet_to_user(self, user_id: int, wallet_address: str, label: Optional[str] = None) -> LinkedWallet:
         checksum = self.w3.to_checksum_address(wallet_address)
 
-        # 1. Check if this wallet is CURRENTLY active for ANY other user
+        # Check if this wallet is CURRENTLY active for ANY other user
         active_other = self.db.query(LinkedWallet).filter(
             LinkedWallet.wallet_address == checksum,
             LinkedWallet.user_id != user_id,
@@ -78,7 +78,7 @@ class WalletService:
         if active_other:
             raise ValueError("Wallet is already linked to another active account")
 
-        # 2. Check if THIS user already has a record for this wallet (active or inactive)
+        # Check if this user already has a record for this wallet (active or inactive)
         existing_link = self.db.query(LinkedWallet).filter_by(
             user_id=user_id, 
             wallet_address=checksum
@@ -104,7 +104,7 @@ class WalletService:
             self.update_wallet_balance(checksum)
             return existing_link
 
-        # 3. Create new link only if no record exists for this user
+        # Create new link only if no record exists for this user
         has_active_wallet = self.db.query(LinkedWallet).filter(
             LinkedWallet.user_id == user_id,
             LinkedWallet.is_active == True,
@@ -132,7 +132,6 @@ class WalletService:
         try:
             checksum = self.w3.to_checksum_address(wallet_address)
             balance_wei = self.w3.eth.get_balance(checksum)
-            # Web3 v6+ uses snake_case
             balance_eth = str(self.w3.from_wei(balance_wei, "ether"))
             return {
                 "wallet_address": checksum,
@@ -185,7 +184,6 @@ class WalletService:
         return lw.user if lw else None
     
     def cleanup_expired_nonces(self):
-        """Deletes all nonces that have passed their expiration time."""
         self.db.query(WalletNonce).filter(
             WalletNonce.expires_at < datetime.now(timezone.utc)
         ).delete()

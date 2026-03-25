@@ -49,15 +49,8 @@ class InvoiceAnomalyResult:
             "reasons": self.reasons,
         }
 
-
+# Anomaly detector using Isolation Forest + LOF.
 class InvoiceAnomalyService:
-    """
-    Seller-context anomaly detector using Isolation Forest + LOF.
-
-    The service is intentionally stateless and trains on the seller's recent
-    invoice history each time it is called. This keeps behavior adaptive as new
-    billing patterns emerge.
-    """
 
     def __init__(
         self,
@@ -160,9 +153,6 @@ class InvoiceAnomalyService:
         feature_df = self._build_feature_matrix(history, invoice)
         train_df = feature_df.iloc[:-1]
         target_df = feature_df.iloc[[-1]]
-        # Use array inputs consistently for seller-level unsupervised models.
-        # This avoids sklearn warnings when fitting with feature names and
-        # scoring with unnamed arrays internally.
         train_x = train_df.to_numpy(dtype=float)
         target_x = target_df.to_numpy(dtype=float)
 
@@ -175,7 +165,6 @@ class InvoiceAnomalyService:
         iso_label = int(iso_forest.predict(target_x)[0])
         iso_score = float(iso_forest.decision_function(target_x)[0])
 
-        # LOF with novelty=True allows scoring a new invoice against seller history.
         neighbors = min(20, max(5, len(train_df) - 1))
         lof = LocalOutlierFactor(
             n_neighbors=neighbors,
@@ -186,7 +175,6 @@ class InvoiceAnomalyService:
         lof_label = int(lof.predict(target_x)[0])
         lof_score = float(lof.decision_function(target_x)[0])
 
-        # Lower decision_function means more anomalous for both models.
         seller_anomaly_score = min(iso_score, lof_score)
         model_label = -1 if (iso_label == -1 or lof_label == -1) else 1
         self._load_models_if_needed()
@@ -341,7 +329,6 @@ class InvoiceAnomalyService:
         }
 
     def _extract_meta_numeric(self, invoice: Invoice, key: str) -> float:
-        # Backward compatible path: OCR payload may contain structured invoice attributes.
         payload = invoice.ocr_confidence if isinstance(invoice.ocr_confidence, dict) else {}
         raw = payload.get(key)
         if isinstance(raw, dict):

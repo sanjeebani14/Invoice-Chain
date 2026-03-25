@@ -21,12 +21,7 @@ MAX_RETRIES = 3
 
 
 def _get_smtp_connection():
-    """
-    Create SMTP connection with retry logic.
-    
-    Returns:
-        SMTP connection object or None if failed after retries
-    """
+
     for attempt in range(MAX_RETRIES):
         try:
             server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
@@ -43,17 +38,7 @@ def _get_smtp_connection():
 
 
 def _send_email(to_email: str, subject: str, html_body: str) -> bool:
-    """
-    Generic email sending function.
-    
-    Args:
-        to_email: Recipient email address
-        subject: Email subject
-        html_body: HTML email body
-        
-    Returns:
-        True if email sent successfully, False otherwise
-    """
+
     if not SMTP_USERNAME or not SMTP_PASSWORD:
         logger.error("SMTP credentials not configured")
         return False
@@ -80,7 +65,7 @@ def _send_email(to_email: str, subject: str, html_body: str) -> bool:
 
 
 def _get_email_header() -> str:
-    """Get email header with logo and styling"""
+
     return """
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-bottom: 2px solid #007bff;">
@@ -92,7 +77,7 @@ def _get_email_header() -> str:
 
 
 def _get_email_footer() -> str:
-    """Get email footer with company info"""
+    
     return """
         </div>
         <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #ddd; font-size: 12px; color: #666;">
@@ -108,16 +93,7 @@ def _get_email_footer() -> str:
 
 
 def send_verification_email(user_email: str, verification_token: str) -> bool:
-    """
-    Send email verification link to user.
     
-    Args:
-        user_email: User's email address
-        verification_token: One-time verification token
-        
-    Returns:
-        True if email sent successfully, False otherwise
-    """
     try:
         # Build verification link pointing to backend so cookies can be set server-side
         verification_link = f"{BACKEND_URL}/api/v1/auth/verify-email?token={verification_token}"
@@ -169,16 +145,7 @@ def send_verification_email(user_email: str, verification_token: str) -> bool:
 
 
 def send_password_reset_email(user_email: str, reset_token: str) -> bool:
-    """
-    Send password reset link to user.
-    
-    Args:
-        user_email: User's email address
-        reset_token: One-time password reset token
-        
-    Returns:
-        True if email sent successfully, False otherwise
-    """
+   
     try:
         # Build reset link
         reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"

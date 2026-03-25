@@ -1,15 +1,8 @@
-"""
-hashing.py  —  Kavya: Invoice Processing Pipeline
-Canonicalization algorithm + Keccak256 fingerprinting.
-Uses pycryptodome instead of pysha3 (works on Python 3.13 Windows).
-"""
-
 import re
 from Crypto.Hash import keccak
 
 
-# ── Step 1: Normalize individual fields ──────────────────────────
-
+# Normalization functions
 def normalize_text(value: str) -> str:
     if not value:
         return ""
@@ -41,7 +34,7 @@ def normalize_date(date_str: str) -> str:
     return normalize_text(date_str)
 
 
-# ── Step 2: Build canonical string ───────────────────────────────
+# Build canonical string 
 
 def build_canonical_string(
     invoice_number: str,
@@ -66,7 +59,7 @@ def build_canonical_string(
     return "|".join(parts)
 
 
-# ── Step 3: Hash with keccak256 (pycryptodome) ───────────────────
+# Hash with keccak256 (pycryptodome) 
 
 def compute_keccak256(canonical_string: str) -> str:
     """
@@ -78,7 +71,7 @@ def compute_keccak256(canonical_string: str) -> str:
     return "0x" + k.hexdigest()
 
 
-# ── Main entry point ──────────────────────────────────────────────
+# Main function
 
 def generate_invoice_hash(
     invoice_number: str,

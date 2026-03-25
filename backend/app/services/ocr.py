@@ -1,9 +1,3 @@
-"""
-ocr.py  —  Kavya: Invoice Processing Pipeline
-Handles PDF preprocessing and field extraction using Tesseract OCR.
-Uses pdfplumber instead of PyMuPDF (works on Python 3.13 Windows without compilation).
-"""
-
 import re
 import io
 import cv2
@@ -13,7 +7,7 @@ import pdfplumber
 from PIL import Image
 
 
-# ── Step 1: PDF → clean image ────────────────────────────────────
+# PDF → clean image 
 
 def pdf_to_image(file_bytes: bytes, page_number: int = 0) -> np.ndarray:
     """Convert a PDF page to a numpy image array using pdfplumber."""
@@ -25,12 +19,7 @@ def pdf_to_image(file_bytes: bytes, page_number: int = 0) -> np.ndarray:
 
 
 def preprocess_image(img: np.ndarray) -> np.ndarray:
-    """
-    Clean the image for better OCR results:
-    - Convert to grayscale
-    - Apply threshold to make text sharp
-    - Denoise
-    """
+
     # Handle RGBA images (PDFs sometimes have alpha channel)
     if len(img.shape) == 3 and img.shape[2] == 4:
         img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
@@ -47,7 +36,7 @@ def preprocess_image(img: np.ndarray) -> np.ndarray:
     return denoised
 
 
-# ── Step 2: Run Tesseract OCR ─────────────────────────────────────
+# Run Tesseract OCR 
 
 def run_ocr(img: np.ndarray) -> dict:
     """
@@ -71,7 +60,7 @@ def run_ocr(img: np.ndarray) -> dict:
     }
 
 
-# ── Step 2b: Also extract text directly from PDF (faster, more accurate) ──
+# Also extract text directly from PDF 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """
@@ -90,7 +79,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
         return ""
 
 
-# ── Step 3: Extract specific fields using regex ───────────────────
+#  specific fields using regex 
 
 def extract_fields(text: str) -> dict:
     """
@@ -99,7 +88,7 @@ def extract_fields(text: str) -> dict:
     """
     fields = {}
 
-    # ── Invoice Number ───────────────────────────────────────────
+    # Invoice Number 
     inv_pattern = re.search(
         r"(?:invoice\s*(?:no|number|#)[:\s#]*|INV[-/]?)(\w[\w\-/]*\d+)",
         text,
@@ -113,7 +102,7 @@ def extract_fields(text: str) -> dict:
     else:
         fields["invoice_number"] = {"value": None, "confidence": 0.0}
 
-    # ── Amount ───────────────────────────────────────────────────
+    # Amount 
     amount_pattern = re.search(
         r"(?:total|amount due|grand total|balance due)[^\d]*"
         r"([\$₹€£]?\s?[\d,]+(?:\.\d{1,2})?)",
@@ -130,7 +119,7 @@ def extract_fields(text: str) -> dict:
     else:
         fields["amount"] = {"value": None, "confidence": 0.0}
 
-    # ── Currency ─────────────────────────────────────────────────
+    # Currency
     currency = "INR"
     currency_map = {"₹": "INR", "$": "USD", "€": "EUR", "£": "GBP"}
     for symbol, code in currency_map.items():
@@ -143,7 +132,7 @@ def extract_fields(text: str) -> dict:
         currency = "USD"
     fields["currency"] = {"value": currency, "confidence": 0.85}
 
-    # ── Dates ────────────────────────────────────────────────────
+    # Dates
     date_pattern = re.compile(
         r"\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{2}[/-]\d{2}|"
         r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{1,2},?\s+\d{4})\b",
@@ -161,7 +150,7 @@ def extract_fields(text: str) -> dict:
         fields["issue_date"] = {"value": None, "confidence": 0.0}
         fields["due_date"] = {"value": None, "confidence": 0.0}
 
-    # ── Company Names ────────────────────────────────────────────
+    # Company Names 
     seller_match = re.search(
         r"(?:from|vendor|billed?\s*by|seller)[:\s]+([A-Z][A-Za-z\s&.,]+?)(?:\n|Ltd|LLC|Inc|Pvt)",
         text,
@@ -185,14 +174,10 @@ def extract_fields(text: str) -> dict:
     return fields
 
 
-# ── Main entry point ──────────────────────────────────────────────
+# Main function
 
 def process_invoice_file(file_bytes: bytes, filename: str) -> dict:
-    """
-    Full OCR pipeline for an uploaded invoice file.
-    For digital PDFs: extract text directly (faster, more accurate).
-    For scanned PDFs / images: use Tesseract OCR.
-    """
+    
     try:
         extracted_text = ""
         overall_confidence = 0.0

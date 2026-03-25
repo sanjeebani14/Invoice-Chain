@@ -5,18 +5,17 @@ from sklearn.model_selection import train_test_split
 
 
 def main() -> None:
-    # 1. Load the dataset
+   
     df = pd.read_csv("data/Loan_approval_data_2025.csv")
 
-    # 2. Preprocessing
-    # Remove unique ID and target column
+  
     x = df.drop(columns=["customer_id", "loan_status"])
     y = df["loan_status"]
 
-    # Convert categorical text into numerical format (One-Hot Encoding)
+    
     x = pd.get_dummies(x)
 
-    # 3. Train-Test Split (90% Train, 10% Test)
+  
     x_train, x_test, y_train, y_test = train_test_split(
         x,
         y,
@@ -24,8 +23,7 @@ def main() -> None:
         random_state=42,
     )
 
-    # 4. Initialize and Train XGBoost
-    # Objective is binary:logistic for 0/1 classification
+   
     model = xgb.XGBClassifier(
         n_estimators=100,
         max_depth=6,
@@ -36,13 +34,12 @@ def main() -> None:
 
     model.fit(x_train, y_train)
 
-    # 5. Evaluate results
     y_pred = model.predict(x_test)
     print(f"Test Set Accuracy: {accuracy_score(y_test, y_pred):.4f}")
     print("\nClassification Report:")
     print(classification_report(y_test, y_pred))
 
-    # 6. Generate model.json
+  
     model.save_model("model.json")
     print("\nSuccess: 'model.json' has been generated.")
 

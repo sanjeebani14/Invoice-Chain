@@ -6,16 +6,16 @@ from .database import Base
 from web3 import Web3
 
 
-# ── Enums ─────────────────────────────────────────────────────────
+# Enums 
 
 class UserRole(str, enum.Enum): 
     ADMIN = "admin"
     INVESTOR = "investor"
     SELLER = "seller"
-    SME = "seller"  # Backward-compatible alias for legacy role checks.
+    SME = "seller"  
 
 
-# ── User & Authentication ──────────────────────────────
+# User & Authentication
 class User(Base):
     __tablename__ = "users"
 
@@ -53,7 +53,7 @@ class User(Base):
     invoices = relationship("Invoice", back_populates="seller", foreign_keys="Invoice.seller_id")
     credit_history = relationship("CreditHistory", back_populates="seller", foreign_keys="CreditHistory.seller_id", uselist=False)
 
-# ────WALLET MODELS (Metamask / Web3 integration)────────────────────────
+# Wallet Models (Metamask integration)
 class LinkedWallet(Base):
     __tablename__ = "linked_wallets"
 
@@ -66,7 +66,7 @@ class LinkedWallet(Base):
     balance_wei = Column(String, nullable=True)
     balance_checked_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Network Metadata (Default: Base Sepolia)
+    # Network Metadata(Default:Base Sepolia)
     chain_id = Column(Integer, nullable=False, default=84532)
     network_name = Column(String, nullable=False, default="base_sepolia")
 
@@ -97,7 +97,7 @@ class WalletNonce(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
-# ───────Invoice Processing Pipeline ──────────────────────────────
+# Invoice Processing 
 
 class Invoice(Base):
     __tablename__ = "invoices"
@@ -106,20 +106,20 @@ class Invoice(Base):
 
     # File info
     original_filename = Column(String, nullable=False)
-    file_path = Column(String, nullable=False)          # local path / S3 / IPFS URL
+    file_path = Column(String, nullable=False)         
 
-    # Extracted fields (from OCR)
+    # Extracted fields from OCR
     invoice_number = Column(String, index=True)
     seller_name = Column(String)
     client_name = Column(String)
     amount = Column(Float)
     currency = Column(String, default="INR")
-    issue_date = Column(String)                         # stored as string for flexibility
+    issue_date = Column(String)                        
     due_date = Column(String)
 
     # Marketplace Selling Strategy
     sector = Column(String, nullable=True)
-    financing_type = Column(String, default="fixed") # "fixed", "auction", "fractional"
+    financing_type = Column(String, default="fixed") 
     ask_price = Column(Float, nullable=True)
     share_price = Column(Float, nullable=True)
     min_bid_increment = Column(Float, nullable=True)
@@ -129,23 +129,22 @@ class Invoice(Base):
     token_id = Column(String, nullable=True, index=True)  # ERC1155 token ID from smart contract
 
     # OCR confidence scores (0.0 - 1.0 per field)
-    ocr_confidence = Column(JSON)                       # e.g. {"amount": 0.95, "due_date": 0.71}
+    ocr_confidence = Column(JSON)                       
 
     # Fraud / duplicate detection
     canonical_hash = Column(String, unique=True, index=True)   # keccak256 hash
     is_duplicate = Column(Boolean, default=False)
 
-    # Lifecycle status
-    # pending_review → approved → minted → listed → sold
+    # Lifecycle status: pending_review → approved → minted → listed → sold
     status = Column(String, default="pending_review", index=True)
 
-    # Escrow tracking for simulated settlement lifecycle.
+    # Escrow tracking
     escrow_status = Column(String, nullable=False, default="not_applicable", index=True)
     escrow_reference = Column(String, nullable=True)
     escrow_held_at = Column(DateTime(timezone=True), nullable=True)
     escrow_released_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Seller (links to Users table when Gaurisha builds auth)
+    # Seller 
     seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
 
     # Timestamps
@@ -155,29 +154,29 @@ class Invoice(Base):
     seller = relationship("User", foreign_keys=[seller_id], back_populates="invoices")
 
 
-# ────RISK AND ANALYTICS──────────────────────────────
+# Risk and Credit Models
 class CreditHistory(Base):
     __tablename__ = "credit_history"
 
     id = Column(Integer, primary_key=True, index=True)
     seller_id = Column(Integer, ForeignKey("users.id"), unique=True, index=True)
-    payment_history_score = Column(Integer)  # Normalized 0-100 (from CSV credit_score)
-    client_reputation_score = Column(Integer)  # Normalized 0-100
-    seller_track_record = Column(Integer)  # Normalized 0-100
+    payment_history_score = Column(Integer)  
+    client_reputation_score = Column(Integer)  
+    seller_track_record = Column(Integer)  
 
-    # Multi-entity indicators (Three-Entity system: seller, core enterprise, relationship)
-    employment_years = Column(Float, nullable=True)  # Years employed from underwriting dataset
-    debt_to_income = Column(Float, nullable=True)  # Debt-to-income ratio from underwriting dataset
-    core_enterprise_rating = Column(Integer, nullable=True)  # Credit of the buyer (0-100)
-    transaction_stability = Column(Float, nullable=True)  # Years or normalized stability metric
-    logistics_consistency = Column(Float, nullable=True)  # Delivery success rate (0-1 or 0-100)
-    esg_score = Column(Float, nullable=True)  # ESG rating (riskier when < ~4.73 or mapped to 0-100)
+    # Multi-entity indicators
+    employment_years = Column(Float, nullable=True) 
+    debt_to_income = Column(Float, nullable=True)  
+    core_enterprise_rating = Column(Integer, nullable=True)  
+    transaction_stability = Column(Float, nullable=True)  
+    logistics_consistency = Column(Float, nullable=True)  
+    esg_score = Column(Float, nullable=True)  
 
-    # Interpretable ML outputs
-    risk_contributors = Column(JSON, nullable=True)  # Stores SHAP-style attributions per feature
-    risk_input_signature = Column(String, nullable=True)  # Hash of features used for latest score
+    # Outputs
+    risk_contributors = Column(JSON, nullable=True)  
+    risk_input_signature = Column(String, nullable=True)  
 
-    composite_score = Column(Integer, default=0)  # Final Risk Score (0-100)
+    composite_score = Column(Integer, default=0)  #Final Risk Score
     last_updated = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
     seller = relationship("User", foreign_keys=[seller_id], back_populates="credit_history")
@@ -187,23 +186,23 @@ class FraudFlag(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     invoice_id = Column(Integer, index=True)
-    seller_id = Column(Integer, index=True) # Added to link flags to sellers easily
+    seller_id = Column(Integer, index=True) 
     reason = Column(Text)
-    severity = Column(String) # "HIGH", "MEDIUM", "LOW"
+    severity = Column(String) # "HIGH","MEDIUM","LOW"
     anomaly_metadata = Column(JSON, nullable=True)
     is_resolved = Column(Boolean, default=False)
-    resolution_action = Column(String, nullable=True)  # clear | confirm_fraud
-    resolved_by = Column(Integer, nullable=True)        # admin user_id
+    resolution_action = Column(String, nullable=True)  # Clear or Confirm_fraud
+    resolved_by = Column(Integer, nullable=True)       
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-# ────TOKEN MANAGEMENT──────────────────────────────
+# Token and Session Management for Authentication
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", name="fk_refresh_tokens_user_id"), index=True, nullable=False)
-    token_hash = Column(String, nullable=False)  # Hashed version of actual token
-    fingerprint = Column(String, nullable=True)  # Browser/device fingerprint for extra security
+    token_hash = Column(String, nullable=False)  
+    fingerprint = Column(String, nullable=True) 
     is_revoked = Column(Boolean, default=False, index=True)
     issued_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
@@ -211,16 +210,16 @@ class RefreshToken(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
-# ────EMAIL VERIFICATION──────────────────────────────
+# Email verification
 class EmailVerificationToken(Base):
     __tablename__ = "email_verification_tokens"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    token_hash = Column(String, unique=True, index=True, nullable=False)  # Hashed version of token
-    is_used = Column(Boolean, default=False, index=True)  # Mark as used after verification
-    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)  # Typically 24 hours
-    used_at = Column(DateTime(timezone=True), nullable=True)  # When token was used for verification
+    token_hash = Column(String, unique=True, index=True, nullable=False)  
+    is_used = Column(Boolean, default=False, index=True)  
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)  
+    used_at = Column(DateTime(timezone=True), nullable=True) 
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
@@ -236,7 +235,7 @@ class PasswordResetToken(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
-# ────KYC──────────────────────────────────────────────────────────
+# KYC Models
 class KycDocType(str, enum.Enum):
     pan = "pan"
 
@@ -271,45 +270,42 @@ class KycSubmission(Base):
     reviewer = relationship("User", foreign_keys=[reviewed_by])
 
 
-# ────PLATFORM STATISTICS & AGGREGATION──────────────────────────────
+# Platform Analytics and Marketplace Models
 class PlatformStats(Base):
-    """
-    Materialized view / aggregated statistics table for platform-level analytics.
-    Updated by trigger events when invoice status changes or periodically via batch jobs.
-    """
+
     __tablename__ = "platform_stats"
 
     id = Column(Integer, primary_key=True, index=True)
     
     # Time-series aggregation
-    period = Column(String, nullable=False, index=True)  # e.g., "2025-03", "2025-Q1", "2025-Y"
-    period_type = Column(String, nullable=False, default="monthly")  # "monthly", "quarterly", "yearly"
-    
-    # Core GMV metrics
-    total_funded_volume = Column(Float, default=0.0)  # Sum of ask_price for funded invoices
-    total_invoices_created = Column(Integer, default=0)  # Total invoice count for period
-    total_invoices_funded = Column(Integer, default=0)  # Count of funded invoices
+    period = Column(String, nullable=False, index=True)  
+    period_type = Column(String, nullable=False, default="monthly")  
+
+    # Core metrics
+    total_funded_volume = Column(Float, default=0.0) 
+    total_invoices_created = Column(Integer, default=0) 
+    total_invoices_funded = Column(Integer, default=0)  
     
     # Repayment metrics
-    total_invoices_repaid = Column(Integer, default=0)  # Successfully repaid
-    total_invoices_defaulted = Column(Integer, default=0)  # Marked as defaulted
-    repayment_rate = Column(Float, default=0.0)  # Percentage: repaid / funded
-    default_rate = Column(Float, default=0.0)  # Percentage: defaulted / funded
+    total_invoices_repaid = Column(Integer, default=0)  
+    total_invoices_defaulted = Column(Integer, default=0)  
+    repayment_rate = Column(Float, default=0.0)  
+    default_rate = Column(Float, default=0.0)  
     
-    # Revenue & yield
-    platform_revenue = Column(Float, default=0.0)  # Total fees collected
-    average_invoice_yield = Column(Float, default=0.0)  # Avg return on funded invoices
-    
+    # Revenue
+    platform_revenue = Column(Float, default=0.0)  
+    average_invoice_yield = Column(Float, default=0.0)  
+
     # Risk exposure
     average_composite_score = Column(Float, default=0.0)  # Avg seller risk score
-    high_risk_invoices = Column(Integer, default=0)  # Count where score >= 70
-    medium_risk_invoices = Column(Integer, default=0)  # Count where 40 <= score < 70
-    low_risk_invoices = Column(Integer, default=0)  # Count where score < 40
+    high_risk_invoices = Column(Integer, default=0)  # Score >= 70
+    medium_risk_invoices = Column(Integer, default=0)  # 40 <= Score < 70
+    low_risk_invoices = Column(Integer, default=0)  # Score < 40
     
-    # Sector concentration (stored as JSON map)
-    sector_exposure = Column(JSON, nullable=True)  # e.g., {"manufacturing": 45.2, "retail": 30.1}
-    top_sector = Column(String, nullable=True)  # Sector with highest volume
-    concentration_ratio = Column(Float, default=0.0)  # % volume from top 3 sectors
+    # Sector concentration 
+    sector_exposure = Column(JSON, nullable=True)  
+    top_sector = Column(String, nullable=True)  
+    concentration_ratio = Column(Float, default=0.0)  
     
     # User/seller metrics
     total_active_sellers = Column(Integer, default=0)
@@ -321,11 +317,6 @@ class PlatformStats(Base):
 
 
 class RepaymentSnapshot(Base):
-    """
-    Point-in-time investor repayment and behavior metrics for an invoice.
-    Used by portfolio analytics for P&L, XIRR, delay-adjusted cash flows,
-    and concentration analysis.
-    """
 
     __tablename__ = "repayment_snapshots"
 
@@ -340,11 +331,11 @@ class RepaymentSnapshot(Base):
     funded_at = Column(DateTime(timezone=True), nullable=True)
     repaid_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Dynamic seller signal, expected range 0-100.
+    # Seller signals for risk analytics.
     impact_score = Column(Float, nullable=True)
     weighted_average_days_late = Column(Float, nullable=True)
 
-    # Snapshot dimensions for concentration analytics.
+    # For concentration analytics.
     industry_sector = Column(String, nullable=True)
     geography = Column(String, nullable=True)
 
@@ -353,7 +344,6 @@ class RepaymentSnapshot(Base):
 
 
 class CreditEvent(Base):
-    """Settlement event log used for repayment behavior analytics."""
 
     __tablename__ = "credit_events"
 
@@ -362,7 +352,7 @@ class CreditEvent(Base):
     seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
     investor_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
 
-    event_type = Column(String, nullable=False, index=True)  # ON_TIME_PAYMENT, LATE_30, LATE_60, LATE_90
+    event_type = Column(String, nullable=False, index=True)  #ON_TIME_PAYMENT,LATE_30,LATE_60,LATE_90
     days_late = Column(Integer, nullable=False, default=0)
     amount = Column(Float, nullable=False, default=0.0)
     notes = Column(Text, nullable=True)
@@ -378,7 +368,7 @@ class AuctionBid(Base):
     invoice_id = Column(Integer, ForeignKey("invoices.id"), index=True, nullable=False)
     bidder_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
     amount = Column(Float, nullable=False)
-    status = Column(String, nullable=False, default="active", index=True)  # active | canceled | winning | outbid
+    status = Column(String, nullable=False, default="active", index=True)  # active,canceled,winning,outbid
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
     canceled_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -389,8 +379,8 @@ class MarketplaceListing(Base):
     id = Column(Integer, primary_key=True, index=True)
     invoice_id = Column(Integer, ForeignKey("invoices.id"), index=True, nullable=False)
     seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    listing_type = Column(String, nullable=False, default="fixed", index=True)  # fixed | auction | fractional
-    status = Column(String, nullable=False, default="active", index=True)  # active | paused | sold | canceled
+    listing_type = Column(String, nullable=False, default="fixed", index=True)  # fixed,auction,fractional
+    status = Column(String, nullable=False, default="active", index=True)  # active,paused,sold,canceled
     ask_price = Column(Float, nullable=True)
     share_price = Column(Float, nullable=True)
     total_shares = Column(Integer, nullable=True)
@@ -406,7 +396,7 @@ class MarketplaceAuction(Base):
     invoice_id = Column(Integer, ForeignKey("invoices.id"), index=True, nullable=False)
     listing_id = Column(Integer, ForeignKey("marketplace_listings.id"), index=True, nullable=True)
     seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    status = Column(String, nullable=False, default="open", index=True)  # open | closed | canceled
+    status = Column(String, nullable=False, default="open", index=True)  # open,closed,canceled
     start_price = Column(Float, nullable=False, default=0.0)
     min_increment = Column(Float, nullable=False, default=100.0)
     winning_bid_id = Column(Integer, ForeignKey("auction_bids.id"), nullable=True)
@@ -422,9 +412,9 @@ class MarketplaceTransaction(Base):
     listing_id = Column(Integer, ForeignKey("marketplace_listings.id"), index=True, nullable=True)
     buyer_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
     seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
-    tx_type = Column(String, nullable=False, index=True)  # fund | bid | buy | settle | refund
+    tx_type = Column(String, nullable=False, index=True)  # fund,bid,buy,settle,refund
     amount = Column(Float, nullable=False, default=0.0)
-    status = Column(String, nullable=False, default="completed", index=True)  # pending | completed | failed
+    status = Column(String, nullable=False, default="completed", index=True)  # pending,completed,failed
     reference = Column(String, nullable=True, index=True)
     tx_metadata = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
@@ -438,7 +428,7 @@ class SettlementRecord(Base):
     investor_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
     seller_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
     amount = Column(Float, nullable=False, default=0.0)
-    status = Column(String, nullable=False, default="pending", index=True)  # pending | confirmed | failed
+    status = Column(String, nullable=False, default="pending", index=True)  # pending,confirmed,failed
     escrow_reference = Column(String, nullable=True, index=True)
     confirmed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     confirmed_at = Column(DateTime(timezone=True), nullable=True)

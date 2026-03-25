@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-# Import all your individual functional routers
+# Import individual functional routers
 from app.api.risk import router as risk_router
 from app.api.analytics import router as analytics_router
 from app.api.sme_dashboard import router as sme_dashboard_router

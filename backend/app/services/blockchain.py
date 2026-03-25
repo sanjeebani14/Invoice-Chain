@@ -1,8 +1,3 @@
-"""
-Blockchain service for InvoiceNFT smart contract interactions.
-Handles minting, hash verification, and web3 connectivity.
-"""
-
 import os
 import json
 from typing import Optional, Dict, Any
@@ -12,18 +7,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
+#Manages Web3 interactions with InvoiceNFT contract.
 class BlockchainService:
-    """Manages Web3 interactions with InvoiceNFT contract."""
-
+    
     def __init__(self):
-        """Initialize Web3 connection and load contract details."""
+        #Initialize Web3 connection and load contract details.
         self.rpc_url = os.getenv("BLOCKCHAIN_RPC_URL", "http://127.0.0.1:8545")
         self.contract_address = os.getenv("INVOICE_NFT_CONTRACT_ADDRESS")
         self.minter_private_key = os.getenv("MINTER_PRIVATE_KEY")
         self.contract_abi = self._load_contract_abi()
-
-        # Initialize Web3
         self.w3 = Web3(Web3.HTTPProvider(self.rpc_url))
 
         if not self.w3.is_connected():
@@ -31,7 +23,7 @@ class BlockchainService:
         else:
             logger.info(f"Connected to blockchain: {self.rpc_url}")
 
-        # Validate required config
+        # Validation checks
         if not self.contract_address:
             raise ValueError(
                 "INVOICE_NFT_CONTRACT_ADDRESS environment variable not set"
@@ -107,7 +99,19 @@ class BlockchainService:
         except Exception as e:
             logger.error(f"Error checking hash registration: {e}")
             return False
-
+    
+    """
+        Mint an InvoiceNFT with fractional share support.
+        Args:
+            recipient_address: seller wallet receiving the NFT
+            invoice_hash: keccak256 hash of invoice (hex string with or without 0x)
+            face_value_wei: Invoice amount in wei
+            due_date_unix: Unix timestamp of due date
+            supply: 1 for whole invoice, N for N fractional shares
+            token_uri: IPFS URI of invoice document
+        Returns:
+            Dict with transaction hash, token_id, and status
+        """
     def mint_invoice_nft(
         self,
         recipient_address: str,
@@ -117,20 +121,7 @@ class BlockchainService:
         supply: int = 1,
         token_uri: str = "",
     ) -> Dict[str, Any]:
-        """
-        Mint an InvoiceNFT with fractional share support.
         
-        Args:
-            recipient_address: seller wallet receiving the NFT
-            invoice_hash: keccak256 hash of invoice (hex string with or without 0x)
-            face_value_wei: Invoice amount in wei
-            due_date_unix: Unix timestamp of due date
-            supply: 1 for whole invoice, N for N fractional shares
-            token_uri: IPFS URI of invoice document
-        
-        Returns:
-            Dict with transaction hash, token_id, and status
-        """
         try:
             # Validate inputs
             if not self.w3.is_address(recipient_address):
@@ -225,8 +216,7 @@ class BlockchainService:
                 "receipt": None,
             }
 
-    def get_invoice_details(self, token_id: int) -> Dict[str, any]:
-        """
+    """
         Retrieve invoice details from smart contract.
         
         Args:
@@ -235,6 +225,8 @@ class BlockchainService:
         Returns:
             Dict with invoice metadata or None if not found
         """
+    def get_invoice_details(self, token_id: int) -> Dict[str, any]:
+        
         try:
             # Note: You may need to add view functions to your contract
             # to retrieve these details. For now, this is a placeholder.
@@ -257,7 +249,6 @@ _blockchain_service: Optional[BlockchainService] = None
 
 
 def get_blockchain_service() -> BlockchainService:
-    """Get or initialize the blockchain service."""
     global _blockchain_service
     if _blockchain_service is None:
         try:

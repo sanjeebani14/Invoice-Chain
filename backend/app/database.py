@@ -10,8 +10,10 @@ from sqlalchemy.orm import sessionmaker
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+#Use the DATABASE_URL env variable (Online Neon DB)
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
+#Otherwise,Use Local Postgres Config 
 if not SQLALCHEMY_DATABASE_URL:
     postgres_user = os.getenv("POSTGRES_USER", "postgres")
     postgres_password = quote_plus(os.getenv("POSTGRES_PASSWORD", ""))

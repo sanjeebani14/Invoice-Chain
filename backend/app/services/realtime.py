@@ -103,7 +103,6 @@ class NotificationHub:
                 invoice_id,
             )
         except Exception:
-            # Notifications should never block invoice workflows.
             return
 
 

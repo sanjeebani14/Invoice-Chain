@@ -195,14 +195,14 @@ class CloseAuctionPayload(BaseModel):
 
 class ListingCreatePayload(BaseModel):
     invoice_id: int
-    listing_type: str = "fixed"  # fixed | auction | fractional
+    listing_type: str = "fixed"  # fixed,auction,fractional
     ask_price: Optional[float] = None
     share_price: Optional[float] = None
     total_shares: Optional[int] = None
 
 
 class ListingUpdatePayload(BaseModel):
-    status: Optional[str] = None  # active | paused | sold | canceled
+    status: Optional[str] = None  # active,paused,sold,canceled
     ask_price: Optional[float] = None
     share_price: Optional[float] = None
     available_shares: Optional[int] = None
@@ -212,7 +212,6 @@ class SettlementConfirmPayload(BaseModel):
     notes: Optional[str] = None
 
 
-# ── POST /invoices/upload ── seller only ────────────────────────────────────────
 
 @router.post("/upload")
 async def upload_invoice(
@@ -228,7 +227,7 @@ async def upload_invoice(
         window_seconds=int(os.getenv("RL_UPLOAD_WINDOW_SECONDS", "300")),
     )
 
-    # ── Validate file type ────────────────────────────────────────────────────
+    # Validate file type 
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -236,7 +235,7 @@ async def upload_invoice(
             detail=f"Invalid file type '{file_ext}'. Allowed: PDF, PNG, JPG",
         )
 
-    # ── Read & validate file size ─────────────────────────────────────────────
+    # Read & validate file size 
     file_bytes = await file.read()
     size_mb = len(file_bytes) / (1024 * 1024)
     if size_mb > MAX_FILE_SIZE_MB:
@@ -263,7 +262,7 @@ async def upload_invoice(
             detail=f"Upload blocked by malware scanner: {scan_result.get('threat')}",
         )
 
-    # ── Persist file to configured storage (S3 or local) ─────────────────────
+    # Persist file to configured storage 
     storage_mode = os.getenv("INVOICE_STORAGE_MODE", "local").strip().lower()
     file_path: str
     if storage_mode == "s3":
@@ -283,7 +282,7 @@ async def upload_invoice(
         with open(file_path, "wb") as f:
             f.write(file_bytes)
 
-    # ── Run OCR ───────────────────────────────────────────────────────────────
+    # Run OCR 
     ocr_result = process_invoice_file(file_bytes, file.filename)
     if not ocr_result["success"]:
         raise HTTPException(
@@ -299,7 +298,7 @@ async def upload_invoice(
     def get_conf(field_name):
         return fields.get(field_name, {}).get("confidence", 0.0)
 
-    # ── Generate hash ─────────────────────────────────────────────────────────
+    # Generate hash 
     hash_result = generate_invoice_hash(
         invoice_number=get_val("invoice_number") or "",
         seller_name=get_val("seller_name") or "",
@@ -309,7 +308,7 @@ async def upload_invoice(
         currency=get_val("currency") or "INR",
     )
 
-    # ── Save to DB ───────────────────────────────────────────────────────────
+    # Save to DB 
     invoice = Invoice(
         original_filename=file.filename,
         file_path=file_path,
@@ -345,7 +344,7 @@ async def upload_invoice(
             detail="This invoice has already been submitted.",
         )
 
-    # ── Duplicate detection ───────────────────────────────────────────────────
+    # Duplicate detection
     duplicate_result = run_duplicate_detection(
         db=db,
         canonical_hash=hash_result["hash"],
@@ -359,7 +358,6 @@ async def upload_invoice(
     if duplicate_result["is_duplicate"]:
         invoice.is_duplicate = True
         invoice.status = "flagged"
-        # Keep fraud queue aligned with flagged lifecycle for duplicate hits.
         db.add(
             FraudFlag(
                 invoice_id=invoice.id,
@@ -407,7 +405,6 @@ async def upload_invoice(
     })
 
 
-# ── GET /invoices/ ── any logged-in user ─────────────────────────────────────
 
 @router.get("/")
 def list_invoices(
@@ -415,7 +412,7 @@ def list_invoices(
     skip: int = 0,
     limit: int = 20,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),   # must be logged in
+    current_user: User = Depends(get_current_user),   
 ):
     """
     SMEs see only their own invoices.
@@ -423,7 +420,6 @@ def list_invoices(
     """
     query = db.query(Invoice)
 
-    # Admins see everything, SMEs only see their own
     if current_user.role != UserRole.ADMIN:
         query = query.filter(Invoice.seller_id == current_user.id)
 
@@ -441,9 +437,7 @@ def list_marketplace_invoices(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Investor marketplace feed. Investors and admins can see listed inventory.
-    """
+    
     if current_user.role not in {UserRole.INVESTOR, UserRole.ADMIN}:
         raise HTTPException(status_code=403, detail="Only investors can access marketplace invoices")
 
@@ -674,7 +668,7 @@ def confirm_settlement(
     return {"message": "Settlement confirmed", "settlement_id": record.id, "status": record.status}
 
 
-# ── GET /invoices/{invoice_id} ── owner or admin ──────────────────────────────
+
 
 @router.get("/{invoice_id:int}")
 def get_invoice(
@@ -686,14 +680,12 @@ def get_invoice(
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # Only owner or admin can view
     if invoice.seller_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Not authorised to view this invoice")
 
     return _invoice_to_dict(invoice, db)
 
 
-# ── PUT /invoices/{invoice_id} ── owner only ──────────────────────────────────
 
 @router.put("/{invoice_id:int}")
 def update_invoice_fields(
@@ -706,7 +698,7 @@ def update_invoice_fields(
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # Only the owner can edit their invoice
+   
     if invoice.seller_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorised to edit this invoice")
 
@@ -756,7 +748,7 @@ def update_invoice_fields(
     }
 
 
-# ── PUT /invoices/{invoice_id}/review ── admin only ──────────────────────────
+
 
 @router.put("/{invoice_id:int}/review")
 def review_invoice(
@@ -765,7 +757,7 @@ def review_invoice(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """Admin approves or rejects an invoice."""
+    
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -881,7 +873,7 @@ def list_pending_invoices_for_admin(
     )
     try:
         _ = current_user
-        # Avoid pathological large limits that can freeze the UI.
+        
         limit = min(max(int(limit), 1), 100)
         query = (
             db.query(Invoice)
@@ -893,7 +885,7 @@ def list_pending_invoices_for_admin(
         invoice_numbers = {inv.invoice_number for inv in invoices if inv.invoice_number}
         duplicate_count_by_number: dict[str, int] = {}
         if invoice_numbers:
-            # One grouped query instead of per-invoice `.count()` (removes N+1).
+            
             counts = (
                 db.query(Invoice.invoice_number, func.count(Invoice.id))
                 .filter(Invoice.invoice_number.in_(invoice_numbers))
@@ -910,7 +902,7 @@ def list_pending_invoices_for_admin(
                 if inv.invoice_number
                 else 0
             )
-            # Match legacy behavior: exclude the current invoice row.
+            
             duplicate_count = max(0, total_same_number - 1)
 
             conf = inv.ocr_confidence if isinstance(inv.ocr_confidence, dict) else {}
@@ -1186,7 +1178,7 @@ def settle_invoice(
     }
 
 
-# ── POST /invoices/{invoice_id}/mint ── admin or seller ───────────────────────
+
 
 @router.post("/{invoice_id:int}/mint")
 def mint_invoice_nft(
@@ -1195,12 +1187,7 @@ def mint_invoice_nft(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Mint an invoice as an ERC1155 NFT with optional fractional shares.
     
-    Admins can mint any approved invoice.
-    Sellers can mint their own approved invoices.
-    """
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -1253,10 +1240,7 @@ def fund_invoice(
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_kyc_approved),
 ):
-    """
-    Simulated investor funding flow.
-    Creates RepaymentSnapshot rows used by analytics and settlement tracking.
-    """
+   
     if current_user.role not in {UserRole.INVESTOR, UserRole.ADMIN}:
         raise HTTPException(status_code=403, detail="Only investors can fund invoices")
 
@@ -1327,7 +1311,7 @@ def fund_invoice(
         if funded_amount <= 0:
             raise HTTPException(status_code=400, detail="investment_amount must be greater than 0")
 
-        # Non-fractional invoices require full funding in one transaction.
+       
         if abs(funded_amount - remaining_amount) > 0.01:
             raise HTTPException(
                 status_code=400,
@@ -1628,7 +1612,7 @@ def cancel_my_active_bid(
     my_active_bid.status = "canceled"
     my_active_bid.canceled_at = datetime.now(timezone.utc)
 
-    # Promote the next best non-canceled bid so auction can continue from prior leader.
+    
     candidate_bids = (
         db.query(models.AuctionBid)
         .filter(
@@ -1800,7 +1784,6 @@ def close_invoice_auction(
     }
 
 
-# ── POST /invoices/mint/validate-fractional ──────────────────────────────────
 
 @router.post("/mint/validate-fractional")
 def validate_fractional_config(
@@ -1829,7 +1812,7 @@ def validate_fractional_config(
     }
 
 
-# ── GET /invoices/admin/flagged ── admin only ─────────────────────────────────
+
 
 @router.get("/admin/flagged")
 def get_flagged_invoices(
@@ -1845,7 +1828,7 @@ def get_flagged_invoices(
     return {"flagged_invoices": [_invoice_to_dict(inv, db) for inv in flagged]}
 
 
-# ── Helper ────────────────────────────────────────────────────────────────────
+
 
 def _invoice_to_dict(invoice: Invoice, db: Session | None = None) -> dict:
     latest_flag: FraudFlag | None = None

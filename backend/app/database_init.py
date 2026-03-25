@@ -7,7 +7,6 @@ from app import models
 logger = logging.getLogger(__name__)
 
 def _add_columns_if_missing(table_name: str, columns: list[tuple[str, str]]):
-    """Helper to add multiple columns to a table if they don't exist."""
     inspector = inspect(engine)
     if table_name not in inspector.get_table_names():
         return
@@ -27,14 +26,14 @@ def _add_columns_if_missing(table_name: str, columns: list[tuple[str, str]]):
                 except Exception as e:
                     logger.warning(f"Could not add column to {table_name}: {e}")
 
+#Database maintenance
 def run_database_maintenance():
-    """Main entry point for database setup and schema compatibility checks."""
     logger.info("Initializing database bootstrap...")
     
-    # 1. Create any missing tables defined in models.Base
+    # Create any missing tables defined in models.Base
     models.Base.metadata.create_all(bind=engine)
 
-    # 2. Fix Invoices Table
+    # Fix Invoices Table
     _add_columns_if_missing("invoices", [
         ("sector", "VARCHAR"),
         ("financing_type", "VARCHAR DEFAULT 'fixed'"),
@@ -49,7 +48,7 @@ def run_database_maintenance():
         ("escrow_released_at", "TIMESTAMPTZ")
     ])
 
-    # 3. Fix Users Table (wallet_address removed in favor of linked_wallets)
+    # Fix Users Table 
     _add_columns_if_missing("users", [
         ("email_verified", "BOOLEAN NOT NULL DEFAULT FALSE"),
         ("verified_at", "TIMESTAMPTZ"),
@@ -60,17 +59,16 @@ def run_database_maintenance():
         ("two_factor_secret", "VARCHAR")
     ])
 
-    # 4. Fix Linked Wallets Table (network metadata added after initial release)
+    # Fix Linked Wallets Table 
     _add_columns_if_missing("linked_wallets", [
         ("chain_id", "INTEGER DEFAULT 84532"),
         ("network_name", "VARCHAR DEFAULT 'base_sepolia'"),
-        # Older DBs may be missing these wallet state flags.
         ("is_primary", "BOOLEAN NOT NULL DEFAULT FALSE"),
         ("is_active", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ("is_verified", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ])
 
-    # 5. Fix Repayment Snapshots Table
+    # Fix Repayment Snapshots Table
     _add_columns_if_missing("repayment_snapshots", [
         ("invoice_id", "INTEGER"),
         ("investor_id", "INTEGER"),
@@ -87,16 +85,16 @@ def run_database_maintenance():
         ("updated_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()")
     ])
 
-    # 6. Postgres-Specific Logic (Enums, backfills, and performance indexes)
     if engine.dialect.name == "postgresql":
         _run_postgres_specific_maintenance()
 
     logger.info("Database maintenance complete.")
 
+#Handles migrations using separate transactions to prevent block abortion.
 def _run_postgres_specific_maintenance():
-    """Handles migrations using separate transactions to prevent block abortion."""
     
-    # Task 1: Update Enum (Independent Transaction)
+    
+    # Update Enum 
     with engine.begin() as conn:
         conn.execute(text("""
             DO $$ BEGIN
@@ -106,15 +104,14 @@ def _run_postgres_specific_maintenance():
             END $$;
         """))
 
-    # Task 2: Data Migration (Independent Transaction)
-    # We wrap this separately so if it fails, the indexes still get created.
+    # Data Migration 
     with engine.begin() as conn:
         try:
             conn.execute(text("UPDATE users SET role = 'seller' WHERE role = 'seller'"))
         except Exception as e:
             logger.warning(f"Role migration skipped: {e}")
 
-    # Task 3: Backfill linked wallet defaults for older rows.
+    # Backfill linked wallet defaults for older rows.
     with engine.begin() as conn:
         try:
             conn.execute(text("""
@@ -130,7 +127,7 @@ def _run_postgres_specific_maintenance():
         except Exception as e:
             logger.warning(f"Linked wallet backfill/default migration skipped: {e}")
 
-    # Task 4: Performance Indexes (Independent Transaction)
+    # Performance Indexes 
     with engine.begin() as conn:
         conn.execute(text("""
             CREATE INDEX IF NOT EXISTS ix_linked_wallets_user_active 

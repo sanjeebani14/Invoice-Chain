@@ -14,11 +14,11 @@ class RateLimiter:
         cutoff = now - window_seconds
 
         with self._lock:
-            # 1. Periodic cleanup of stale keys to prevent memory leak
+            # Periodic cleanup of stale keys to prevent memory leak
             if now - self._last_cleanup > 60:  # Every 60 seconds
                 self._cleanup_all_buckets(now)
 
-            # 2. Process current bucket
+            # Process current bucket
             bucket = self._buckets.setdefault(key, deque())
             while bucket and bucket[0] < cutoff:
                 bucket.popleft()
@@ -36,7 +36,6 @@ class RateLimiter:
             bucket.append(now)
 
     def _cleanup_all_buckets(self, now: float):
-        """Remove keys that have had no activity for over an hour."""
         stale_cutoff = now - 3600 
         to_remove = [k for k, b in self._buckets.items() if not b or b[-1] < stale_cutoff]
         for k in to_remove:

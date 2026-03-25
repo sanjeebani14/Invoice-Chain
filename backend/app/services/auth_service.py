@@ -14,7 +14,7 @@ class AuthService:
     def __init__(self, db: Session):
         self.db = db
 
-    # ── Identity & Roles ──────────────────────────────────────────
+    # User Roles
     def normalize_registration_role(self, raw_role: Optional[str]) -> UserRole:
         role = (raw_role or "seller").strip().lower()
         mapping = {
@@ -25,15 +25,15 @@ class AuthService:
         }
         return mapping.get(role, UserRole.SELLER)
     
+    # Verification & Authentication
     def authenticate_user(self, email: str, password: str) -> Optional[User]:
-        """Verify credentials and return the user if valid."""
         user = self.db.query(User).filter(User.email == email).first()
         if user and verify_password(password, user.password_hash):
             return user
         return None
-
+    
+    # Registration
     def register_user(self, email: str, password: str, role: Optional[str]) -> User:
-        """Create a new inactive user record."""
         user = User(
             email=email,
             password_hash=hash_password(password),
@@ -44,9 +44,9 @@ class AuthService:
         self.db.commit()
         self.db.refresh(user)
         return user
-
+    
+    # Email Verification
     def create_verification_token(self, user_id: int) -> str:
-        """Generate and store a hashed email verification token."""
         plain_token = secrets.token_hex(32)
         token_hash = hash_password(plain_token)
         expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
@@ -61,17 +61,17 @@ class AuthService:
         self.db.commit()
         return plain_token
 
-    # ── Session Maintenance ───────────────────────────────────────
+    # Session Maintenance 
     def refresh_session(self, refresh_token: str) -> Optional[str]:
-        """Validates a refresh token and returns a fresh access token."""
+        
         try:
-            # We decode to get the user_id for the DB lookup
+           
             payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
             user_id = payload.get("user_id")
             if not user_id:
                 return None
             
-            # Use the hash to find the specific token in the DB
+            
             token_hash = hash_password(refresh_token)
             db_token = self.db.query(RefreshToken).filter(
                 RefreshToken.user_id == user_id,
@@ -83,7 +83,6 @@ class AuthService:
             if not db_token:
                 return None
 
-            # Update usage metadata
             db_token.last_used_at = datetime.now(timezone.utc)
             self.db.commit()
 
@@ -92,7 +91,6 @@ class AuthService:
             return None
 
     def logout_user(self, refresh_token: str):
-        """Revokes a specific refresh token to end a session."""
         token_hash = hash_password(refresh_token)
         self.db.query(RefreshToken).filter(
             RefreshToken.token_hash == token_hash
@@ -114,7 +112,6 @@ class AuthService:
         return refresh_token
     
     def validate_verification_token(self, plain_token: str) -> Optional[User]:
-        """Finds a user associated with a valid, unexpired email token."""
         candidates = self.db.query(EmailVerificationToken).filter(
             EmailVerificationToken.is_used == False,
             EmailVerificationToken.expires_at >= datetime.now(timezone.utc)
@@ -129,7 +126,6 @@ class AuthService:
                 if user and not user.email_verified:
                     user.email_verified = True
                     user.verified_at = datetime.now(timezone.utc)
-                    # Optionally activate legacy accounts
                     user.is_active = True
                 self.db.commit()
                 return user
@@ -137,7 +133,6 @@ class AuthService:
         return None
 
     def create_login_session(self, user: User) -> Tuple[str, str]:
-        """Helper to update user metadata and return access/refresh token pair."""
         now = datetime.now(timezone.utc)
         user.last_login = now
         user.last_refresh_token_issued_at = now
@@ -149,12 +144,12 @@ class AuthService:
         return access_token, refresh_token
     
     
-    # ── Security & 2FA ────────────────────────────────────────────
+    # Security & 2FA 
     def verify_totp_code(self, user: User, code: str) -> bool:
         if not user.two_factor_secret:
             return False
         
-        # Internal helper for base32 padding
+        # Helper for base32 padding
         stripped = (user.two_factor_secret).strip().replace(" ", "")
         padding = (-len(stripped)) % 8
         normalized = stripped + ("=" * padding)
@@ -179,20 +174,20 @@ class AuthService:
         secret = base64.b32encode(raw).decode("ascii").rstrip("=")
         
         user.two_factor_secret = secret
-        user.two_factor_enabled = False # Must verify a code before enabling
+        user.two_factor_enabled = False 
         self.db.commit()
         
         return secret
     
 
-    # ── Recovery & Resets ─────────────────────────────────────────
+    # Recovery & Resets
     def reset_password(self, user_id: int, new_password: str):
         """Updates the user password and invalidates all existing sessions."""
         user = self.db.query(User).get(user_id)
         if user:
             user.password_hash = hash_password(new_password)
             
-            # Security measure: Revoke all refresh tokens on password change
+            # Revoke all refresh tokens on password change
             self.db.query(RefreshToken).filter(
                 RefreshToken.user_id == user_id
             ).update({"is_revoked": True}, synchronize_session=False)
@@ -234,7 +229,7 @@ class AuthService:
                 return token_row
         return None
     
-    # ── Verification Maintenance ──────────────────────────────────
+    # Verification Maintenance
 
     def invalidate_verification_tokens(self, user_id: int):
         """Invalidates all outstanding email verification tokens for a user."""
@@ -263,7 +258,7 @@ class AuthService:
             user.is_active = True
             self.db.commit()
 
-# ── Verification & Status ─────────────────────────────────────
+# Verification & Status 
 
     def get_verification_status(self, email: str) -> dict:
         user = self.db.query(User).filter(User.email == email).first()
@@ -293,7 +288,7 @@ class AuthService:
         self.db.commit()
         return user, plain_token
 
-    # ── Advanced 2FA Logic ────────────────────────────────────────
+    # Advanced 2FA Logic 
 
     def verify_2fa_challenge(self, challenge_token: str, code: str) -> Optional[User]:
         try:

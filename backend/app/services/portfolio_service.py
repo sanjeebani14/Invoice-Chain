@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from .. import models
 
 try:
-    from scipy.optimize import brentq  # type: ignore
-except Exception:  # pragma: no cover - fallback path
+    from scipy.optimize import brentq  
+except Exception:  
     brentq = None
 
 

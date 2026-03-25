@@ -3,7 +3,7 @@ from passlib.context import CryptContext
 # Configure bcrypt hashing context
 pwd_context = CryptContext(
     schemes=["bcrypt"],
-    deprecated="auto"  # Automatically upgrading hash algorithms if needed
+    deprecated="auto"  
 )
 
 def hash_password(plain: str) -> str:

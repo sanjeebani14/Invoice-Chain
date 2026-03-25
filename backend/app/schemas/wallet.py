@@ -29,7 +29,7 @@ class LinkedWalletResponse(BaseModel):
     wallet_address: str
     wallet_label: Optional[str] = None
     balance_wei: Optional[str] = None
-    balance_eth: Optional[str] = None  # Populated by Service Layer
+    balance_eth: Optional[str] = None  
     network_name: str
     chain_id: int
     is_primary: bool

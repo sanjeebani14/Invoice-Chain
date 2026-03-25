@@ -174,7 +174,7 @@ def upsert_risk_onboarding(
     record.logistics_consistency = payload.logistics_consistency
     record.esg_score = payload.esg_score
 
-    # Force recomputation on next score call now that inputs changed.
+    
     record.risk_input_signature = None
     db.add(record)
     db.commit()

@@ -1,9 +1,3 @@
-"""
-Admin Statistics Router
-
-Provides platform-level analytics and statistics endpoints.
-"""
-
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from datetime import datetime, date
 from sqlalchemy import func
@@ -63,7 +57,7 @@ def get_admin_overview(
 
     investors_count = db.query(func.count(User.id)).filter(User.role == "investor").scalar() or 0
 
-    # Keep this aligned with Seller Explorer and ensure rows map to real seller users.
+   
     sellers_count = (
         db.query(func.count(func.distinct(CreditHistory.seller_id)))
         .join(User, User.id == CreditHistory.seller_id)
@@ -152,18 +146,7 @@ def get_platform_summary(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    """
-    Get aggregated platform statistics for a specific period.
     
-    Returns:
-    - total_funded_volume: Sum of ask_price for funded invoices (GMV)
-    - repayment_metrics: Repayment rate, default rate, counts
-    - platform_revenue: Total fees collected
-    - average_invoice_yield: Average return on invested amount
-    - risk_distribution: High/medium/low risk invoice counts
-    - sector_exposure: Volume breakdown by sector
-    - user_metrics: Active sellers and investors count
-    """
     try:
         stats = PlatformStatsService.aggregate_stats(
             db, period=period, period_type=period_type, use_cache=use_cache
@@ -185,15 +168,7 @@ def get_platform_timeseries(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    """
-    Get time-series statistics for the last N months.
-    
-    Returns a list of monthly aggregations showing:
-    - Growth trends in funded volume
-    - Repayment rate trends
-    - Revenue trends
-    - Risk distribution changes
-    """
+   
     try:
         timeseries = PlatformStatsService.get_time_series(
             db, months=months, use_cache=use_cache
@@ -212,12 +187,6 @@ def refresh_platform_stats(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    """
-    Manually refresh platform statistics.
-    Recalculates and persists stats to the database.
-    
-    Useful after bulk data imports or for forcing recalculation.
-    """
     try:
         PlatformStatsService.persist_stats_to_db(db, period=period)
         return {
@@ -237,16 +206,7 @@ def get_health_metrics(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_or_investor),
 ):
-    """
-    Get real-time platform health metrics for dashboard display.
     
-    Key metrics:
-    - GMV: Total funded volume
-    - Repayment Rate: % of invoices successfully repaid
-    - Default Rate: % of invoices defaulted
-    - Active Users: Sellers and investors
-    - Avg Risk Score: Average seller credit rating
-    """
     try:
         _ = current_user
         stats = PlatformStatsService.aggregate_stats(db, use_cache=False)
@@ -305,14 +265,7 @@ def get_risk_heatmap(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    """
-    Get portfolio risk heatmap data.
     
-    Shows:
-    - Exposure by sector and default rate per sector
-    - Concentration risk (top sectors)
-    - Risk distribution across portfolio
-    """
     try:
         stats = PlatformStatsService.aggregate_stats(db, use_cache=False)
         sector_exp = stats["sector_exposure"]

@@ -1,8 +1,3 @@
-"""
-Invoice minting service that integrates blockchain operations with database updates.
-Handles the complete flow: validation -> blockchain minting -> database updates.
-"""
-
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Tuple, Any
@@ -16,12 +11,11 @@ from .hashing import generate_invoice_hash
 
 logger = logging.getLogger(__name__)
 
-
+#Service for minting invoices as NFTs with fractional share support.
 class InvoiceMintingService:
-    """Service for minting invoices as NFTs with fractional share support."""
-
+    
     def __init__(self):
-        """Initialize with blockchain service."""
+        
         self.blockchain_service = get_blockchain_service()
 
     def prepare_invoice_for_minting(
@@ -29,16 +23,7 @@ class InvoiceMintingService:
         db: Session,
         invoice_id: int,
     ) -> Tuple[bool, Optional[str], Optional[Dict]]:
-        """
-        Validate and prepare an invoice for minting.
         
-        Args:
-            db: Database session
-            invoice_id: Invoice ID to prepare
-        
-        Returns:
-            Tuple of (success: bool, error_msg: Optional[str], prepared_data: Optional[Dict])
-        """
         try:
             invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
 
@@ -66,7 +51,7 @@ class InvoiceMintingService:
             if not invoice.seller_id:
                 return False, "Invoice missing seller_id", None
 
-            # Parse due date (stored as string)
+            # Parse due date 
             try:
                 due_date_obj = datetime.fromisoformat(invoice.due_date.replace("Z", "+00:00"))
                 due_date_unix = int(due_date_obj.timestamp())
@@ -103,6 +88,8 @@ class InvoiceMintingService:
             logger.error(f"Error preparing invoice {invoice_id} for minting: {e}", exc_info=True)
             return False, f"Preparation error: {str(e)}", None
 
+    # Mint an invoice as an NFT with optional fractional shares.
+    
     def mint_invoice(
         self,
         db: Session,
@@ -111,19 +98,7 @@ class InvoiceMintingService:
         ipfs_uri: str = "",
         supply: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """
-        Mint an invoice as an NFT with optional fractional shares.
         
-        Args:
-            db: Database session
-            invoice_id: Invoice ID to mint
-            recipient_address: Wallet address to receive the NFT
-            ipfs_uri: IPFS URI of invoice document (optional)
-            supply: Override supply value (if None, use invoice.supply)
-        
-        Returns:
-            Dict with minting result including token_id, tx_hash, and status
-        """
         try:
             # Validate recipient address
             if not Web3.is_address(recipient_address):
@@ -210,24 +185,14 @@ class InvoiceMintingService:
                 "error": f"Minting error: {str(e)}",
                 "token_id": None,
             }
-
+    
+    # Validate fractional invoice configuration.
     def validate_fractional_config(
         self,
         amount: float,
         share_price: float,
         num_shares: int,
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Validate fractional invoice configuration.
-        
-        Args:
-            amount: Total invoice amount
-            share_price: Price per share
-            num_shares: Number of shares
-        
-        Returns:
-            Tuple of (valid: bool, error_msg: Optional[str])
-        """
         try:
             if num_shares < 1:
                 return False, "num_shares must be >= 1"
@@ -238,7 +203,7 @@ class InvoiceMintingService:
             if share_price <= 0:
                 return False, "share_price must be positive for fractional invoices"
 
-            # Check that total matches
+
             calculated_total = share_price * num_shares
             if not math.isclose(calculated_total, amount, rel_tol=0.01):
                 return (

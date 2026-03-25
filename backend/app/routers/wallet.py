@@ -45,12 +45,12 @@ def verify_signature(payload: VerifySignatureRequest, response: Response, db: Se
     # Normalize address
     addr = Web3.to_checksum_address(payload.wallet_address)
     
-    # 1. Verify Signature
+    # Verify Signature
     result = ws.verify_signature(addr, ws.build_sign_message(payload.nonce), payload.signature, payload.nonce)
     if not result.get("success"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=result.get("message"))
 
-    # 2. Login Logic
+    # Login Logic
     user = ws.find_user_by_wallet(addr)
     if not user:
         raise HTTPException(
@@ -58,9 +58,9 @@ def verify_signature(payload: VerifySignatureRequest, response: Response, db: Se
             detail="Wallet not linked to any user.",
         )
 
-    # 3. Handle Tokens (Updated to use the Service)
+    # Handle Tokens 
     access = create_access_token(user.id)
-    refresh = auth_service.create_and_store_refresh_token(user.id) # Call the service method
+    refresh = auth_service.create_and_store_refresh_token(user.id) 
     set_auth_cookies(response, access, refresh)
 
     return VerifySignatureResponse(
@@ -75,7 +75,6 @@ def get_wallets(current_user: User = Depends(get_current_user), db: Session = De
     ws = WalletService(db, WEB3_PROVIDER)
     wallets = ws.get_user_wallets(current_user.id)
 
-    # Manually calculate balance_eth for the schema
     for w in wallets:
         if w.balance_wei:
             w.balance_eth = str(Web3.from_wei(int(w.balance_wei), 'ether'))
@@ -92,7 +91,7 @@ def link_wallet(payload: VerifySignatureRequest, current_user: User = Depends(ge
         
     try:
         lw = ws.link_wallet_to_user(current_user.id, addr)
-        # Calculate for response
+        
         if lw.balance_wei:
             lw.balance_eth = str(Web3.from_wei(int(lw.balance_wei), 'ether'))
     except ValueError as e:
@@ -116,7 +115,7 @@ def refresh_balance(
     
     db.refresh(wallet)
     
-    # Calculate balance_eth manually here
+    
     eth_val = "0"
     if wallet.balance_wei:
         eth_val = str(Web3.from_wei(int(wallet.balance_wei), 'ether'))
@@ -136,7 +135,7 @@ def disconnect_wallet(
 ):
     ws = WalletService(db, WEB3_PROVIDER)
     
-    # Safety: Check active wallets for lockout prevention
+    
     active_wallets = db.query(LinkedWallet).filter_by(user_id=current_user.id, is_active=True).all()
     
     if len(active_wallets) == 1 and not current_user.password_hash:

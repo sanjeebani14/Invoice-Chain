@@ -50,7 +50,7 @@ class TokenResponse(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    """Request body for refresh token endpoint (can be empty)"""
+   
     pass
     
     class Config:
@@ -93,7 +93,7 @@ class UserOut(BaseModel):
             "verified_at": "2026-03-14T10:30:00+00:00",
         }
 
-# ── Email Verification Schemas ─────────────────────────────────
+# Email Verification Schemas 
 
 class EmailVerificationRequest(BaseModel):
     token: str = Field(..., description="One-time verification token from email link")
@@ -142,7 +142,7 @@ class ResendVerificationEmailResponse(BaseModel):
 class VerificationStatusResponse(BaseModel):
     email_verified: bool
     email: str
-    verified_at: Optional[str] = None  # ISO 8601 datetime string
+    verified_at: Optional[str] = None 
     
     class Config:
         from_attributes = True

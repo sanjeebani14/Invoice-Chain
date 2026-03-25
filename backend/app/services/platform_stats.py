@@ -1,10 +1,3 @@
-"""
-Platform Statistics Aggregation Service
-
-Handles calculation of platform-level metrics with Redis caching.
-Provides time-series aggregation for financial analytics.
-"""
-
 import json
 import redis
 from datetime import datetime, timedelta
@@ -20,7 +13,7 @@ FINANCED_STATUSES = ["funded", "active", "settled", "defaulted", "repaid"]
 REDIS_HOST = "localhost"
 REDIS_PORT = 6379
 REDIS_DB = 0
-CACHE_TTL = 3600  # 1 hour cache
+CACHE_TTL = 3600  
 
 try:
     redis_client = redis.Redis(
@@ -35,20 +28,20 @@ except (redis.ConnectionError, Exception) as e:
     print(f"Warning: Redis connection failed: {e}. Caching will be disabled.")
     redis_client = None
 
-
+#Service for aggregating platform-level statistics.
 class PlatformStatsService:
-    """Service for aggregating platform-level statistics."""
+    
 
     @staticmethod
     def _get_cache_key(cache_type: str, period: Optional[str] = None) -> str:
-        """Generate Redis cache key."""
+        
         if period:
             return f"platform_stats:{cache_type}:{period}"
         return f"platform_stats:{cache_type}"
 
     @staticmethod
     def _cache_set(key: str, value: Dict, ttl: int = CACHE_TTL) -> None:
-        """Store data in Redis cache."""
+        
         if not redis_client:
             return
         try:
@@ -58,7 +51,7 @@ class PlatformStatsService:
 
     @staticmethod
     def _cache_get(key: str) -> Optional[Dict]:
-        """Retrieve data from Redis cache."""
+       
         if not redis_client:
             return None
         try:
@@ -70,7 +63,7 @@ class PlatformStatsService:
 
     @staticmethod
     def _get_period_string(date_obj: datetime, period_type: str = "monthly") -> str:
-        """Generate period string for aggregation."""
+        
         if period_type == "monthly":
             return date_obj.strftime("%Y-%m")
         elif period_type == "quarterly":
@@ -86,10 +79,7 @@ class PlatformStatsService:
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None,
     ) -> float:
-        """
-        Calculate funded volume (GMV) for financed invoices.
-        Uses ask_price primarily, then share_price, then amount as fallback.
-        """
+        
         query = db.query(Invoice).filter(Invoice.status.in_(FINANCED_STATUSES))
         if period_start:
             query = query.filter(Invoice.created_at >= period_start)
@@ -113,10 +103,7 @@ class PlatformStatsService:
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None,
     ) -> Dict[str, float]:
-        """
-        Calculate repayment and default rates.
-        Returns dict with repayment_rate, default_rate, and counts.
-        """
+        
         query = db.query(Invoice).filter(Invoice.status.in_(FINANCED_STATUSES))
         
         if period_start:
@@ -159,10 +146,7 @@ class PlatformStatsService:
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None,
     ) -> float:
-        """
-        Calculate total platform revenue from fees.
-        Default: 2% of share_price for all transactions.
-        """
+        
         query = db.query(Invoice).filter(Invoice.status.in_(FINANCED_STATUSES))
         if period_start:
             query = query.filter(Invoice.created_at >= period_start)
@@ -188,10 +172,9 @@ class PlatformStatsService:
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None,
     ) -> float:
-        """
-        Calculate average invoice yield based on ask_price vs repayment amount.
-        For settled invoices, yield = (amount - ask_price) / ask_price.
-        """
+        
+        #For settled invoices, yield = (amount - ask_price) / ask_price.
+        
         query = db.query(Invoice).filter(Invoice.status == "settled")
         
         if period_start:
@@ -215,11 +198,7 @@ class PlatformStatsService:
 
     @staticmethod
     def calculate_risk_distribution(db: Session) -> Dict:
-        """
-        Calculate seller risk distribution using canonical credit-history rows.
-        This mirrors the Risk Analytics seller universe and avoids undercounting
-        when imported/legacy seller IDs do not have matching users rows.
-        """
+       
         records = (
             db.query(CreditHistory)
             .order_by(CreditHistory.seller_id.asc(), CreditHistory.id.asc())
@@ -256,7 +235,7 @@ class PlatformStatsService:
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None,
     ) -> Dict:
-        """Calculate sector exposure and concentration."""
+        
         query = db.query(Invoice).filter(
             Invoice.sector.isnot(None),
             Invoice.status.in_(FINANCED_STATUSES),
@@ -286,13 +265,13 @@ class PlatformStatsService:
             sector = inv.sector or "Unknown"
             sector_volumes[sector] = sector_volumes.get(sector, 0) + _invoice_volume(inv)
         
-        # Calculate percentages
+        
         sector_percentages = {
             sector: round((volume / total_volume) * 100, 2)
             for sector, volume in sorted(sector_volumes.items(), key=lambda x: x[1], reverse=True)
         }
         
-        # Calculate concentration (top 3 sectors)
+        # Top 3 sectors
         sorted_sector_volumes = sorted(sector_volumes.values(), reverse=True)
         top_3_volume = sum(sorted_sector_volumes[:3])
         concentration_ratio = round((top_3_volume / total_volume) * 100, 2)
@@ -309,15 +288,12 @@ class PlatformStatsService:
     def calculate_user_metrics(db: Session) -> Dict[str, int]:
         """Calculate active user counts with seller coverage from risk records."""
         active_seller_users = db.query(func.count(User.id)).filter(
-            # SME role is stored as the enum value "seller" (see UserRole.SME),
-            # so use the enum member directly.
             User.role.in_([UserRole.SELLER, UserRole.SME]),
             User.is_active == True,
             User.email_verified == True
         ).scalar() or 0
 
-        # CreditHistory is the canonical seller population for risk analytics.
-        # Use distinct seller_ids so dashboard seller count matches risk data volume.
+        
         sellers_in_credit_history = db.query(
             func.count(func.distinct(CreditHistory.seller_id))
         ).filter(CreditHistory.seller_id.isnot(None)).scalar() or 0
@@ -339,19 +315,15 @@ class PlatformStatsService:
         period_type: str = "monthly",
         use_cache: bool = True
     ) -> Dict:
-        """
-        Aggregate all platform statistics for a given period.
-        If period is None, returns all-time stats.
-        """
+        
         cache_key = PlatformStatsService._get_cache_key("summary", period)
         
-        # Check cache first
+        
         if use_cache:
             cached_data = PlatformStatsService._cache_get(cache_key)
             if cached_data:
                 return cached_data
         
-        # Determine period start for time-series
         period_start = None
         period_end = None
         if period and period_type == "monthly":
@@ -371,7 +343,7 @@ class PlatformStatsService:
             period_start = datetime(int(period), 1, 1)
             period_end = datetime(int(period) + 1, 1, 1)
         
-        # Calculate all metrics
+
         funded_volume = PlatformStatsService.calculate_total_funded_volume(
             db, period_start=period_start, period_end=period_end
         )
@@ -390,7 +362,7 @@ class PlatformStatsService:
         )
         user_metrics = PlatformStatsService.calculate_user_metrics(db)
         
-        # Compile response
+      
         result = {
             "period": period or "all-time",
             "period_type": period_type,
@@ -418,7 +390,7 @@ class PlatformStatsService:
             },
         }
         
-        # Cache result
+        
         PlatformStatsService._cache_set(cache_key, result)
         
         return result
@@ -429,10 +401,7 @@ class PlatformStatsService:
         months: int = 12,
         use_cache: bool = True
     ) -> List[Dict]:
-        """
-        Get time-series stats for the last N months.
-        Returns list of monthly aggregations.
-        """
+        
         cache_key = PlatformStatsService._get_cache_key("timeseries", f"last_{months}m")
         
         if use_cache:
@@ -450,23 +419,20 @@ class PlatformStatsService:
             stats = PlatformStatsService.aggregate_stats(
                 db, period=period_str, period_type="monthly", use_cache=False
             )
-            result.insert(0, stats)  # Insert at beginning to maintain chronological order
+            result.insert(0, stats)  
         
         PlatformStatsService._cache_set(cache_key, result)
         return result
 
     @staticmethod
     def persist_stats_to_db(db: Session, period: Optional[str] = None) -> None:
-        """
-        Persist aggregated stats to the PlatformStats table.
-        Called periodically or after significant events.
-        """
+        
         stats = PlatformStatsService.aggregate_stats(db, period=period, use_cache=False)
         
         period_str = stats["period"]
         period_type = stats["period_type"]
         
-        # Check if record already exists
+       
         existing = db.query(PlatformStats).filter(
             and_(
                 PlatformStats.period == period_str,
@@ -475,7 +441,6 @@ class PlatformStatsService:
         ).first()
         
         if existing:
-            # Update existing record
             existing.total_funded_volume = stats["total_funded_volume"]
             existing.total_invoices_created = stats["total_invoices_created"]
             existing.total_invoices_funded = stats["total_invoices_funded"]
@@ -495,7 +460,6 @@ class PlatformStatsService:
             existing.total_active_sellers = stats["user_metrics"]["active_sellers"]
             existing.total_active_investors = stats["user_metrics"]["active_investors"]
         else:
-            # Create new record
             new_record = PlatformStats(
                 period=period_str,
                 period_type=period_type,

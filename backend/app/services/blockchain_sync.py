@@ -183,7 +183,7 @@ def _sync_invoice_burned_events(db: Session, from_block: int, to_block: int, chu
 
 
 def sync_blockchain_events_once() -> None:
-    """Sync blockchain invoice lifecycle events into local invoice and ledger tables."""
+    #Sync blockchain invoice lifecycle events into local invoice and ledger tables.
     service = get_blockchain_service()
     latest_block = int(service.w3.eth.block_number)
     contract_address = str(service.contract.address)

@@ -28,7 +28,7 @@ def _quote_ident(identifier: str) -> str:
 
 
 def _cleanup_user_foreign_keys(db: Session, user_id: int) -> None:
-    """Best-effort cleanup for schema drift where tables reference users.id."""
+    
     inspector = inspect(db.bind)
     nullify_column_names = {
         "reviewed_by",
@@ -184,7 +184,7 @@ def delete_user(
         synchronize_session=False,
     )
 
-    # Handle legacy/schema-drift foreign-key dependencies in local environments.
+    
     _cleanup_user_foreign_keys(db, user_id)
 
     db.delete(user)

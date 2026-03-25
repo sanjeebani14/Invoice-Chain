@@ -7,10 +7,7 @@ from .tokens import decode_token
 from ..database import get_db
 
 async def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
-    """
-    Extract and validate ACCESS TOKEN from access_token cookie.
-    Returns the current authenticated user.
-    """
+
     # Get access token from cookie
     access_token = request.cookies.get("access_token")
     if not access_token:
@@ -69,7 +66,7 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> U
 
 
 async def get_current_active_user(request: Request, db: Session = Depends(get_db)) -> User:
-    """Compatibility wrapper for callers expecting active-user dependency."""
+    
     return await get_current_user(request, db)
 
 
@@ -77,11 +74,7 @@ async def get_current_user_from_refresh_token(
     request: Request, 
     db: Session = Depends(get_db)
 ) -> User:
-    """
-    Extract and validate REFRESH TOKEN from refresh_token cookie.
-    Checks if token is revoked or expired in the RefreshToken table.
-    Returns the current authenticated user.
-    """
+    
     # Get refresh token from cookie
     refresh_token = request.cookies.get("refresh_token")
     if not refresh_token:
@@ -140,7 +133,7 @@ async def get_current_user_from_refresh_token(
 
 
 def require_seller(current_user: User = Depends(get_current_user)):
-    """Require user to have seller role"""
+   
     if current_user.role != UserRole.SELLER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -150,12 +143,12 @@ def require_seller(current_user: User = Depends(get_current_user)):
 
 
 def require_sme(current_user: User = Depends(get_current_user)):
-    """Backward-compatible alias for seller-only endpoints."""
+    
     return require_seller(current_user)
 
 
 def require_investor(current_user: User = Depends(get_current_user)):
-    """Require user to have investor role"""
+    
     if current_user.role != UserRole.INVESTOR:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -165,7 +158,7 @@ def require_investor(current_user: User = Depends(get_current_user)):
 
 
 def require_admin(current_user: User = Depends(get_current_user)):
-    """Require user to have admin role"""
+    
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -175,7 +168,7 @@ def require_admin(current_user: User = Depends(get_current_user)):
 
 
 def get_current_admin(current_user: User = Depends(get_current_active_user)):
-    """Require the authenticated active user to be an admin."""
+    
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -185,7 +178,7 @@ def get_current_admin(current_user: User = Depends(get_current_active_user)):
 
 
 def get_current_admin_or_investor(current_user: User = Depends(get_current_active_user)):
-    """Require the authenticated active user to be an admin or investor."""
+    
     if current_user.role not in {UserRole.ADMIN, UserRole.INVESTOR}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -211,16 +204,13 @@ def require_kyc_approved(
         )
     return current_user
 
-
+# Verifies that the specific wallet_address in the path belongs to the current user and returns the LinkedWallet object for use in the endpoint.
 async def verify_wallet_ownership(
     wallet_address: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> LinkedWallet:
-    """
-    Verifies that the specific wallet_address in the path belongs to the current user.
-    Returns the LinkedWallet object for use in the endpoint.
-    """
+    
     from web3 import Web3
     addr = Web3.to_checksum_address(wallet_address)
     

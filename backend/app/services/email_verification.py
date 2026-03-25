@@ -10,48 +10,19 @@ from ..auth.hashing import hash_password, verify_password
 logger = logging.getLogger(__name__)
 
 # Configuration
-TOKEN_LENGTH = 32  # 32 characters for token
-TOKEN_EXPIRY_HOURS = 24  # Tokens valid for 24 hours
+TOKEN_LENGTH = 32  
+TOKEN_EXPIRY_HOURS = 24 
 
 
 def generate_verification_token() -> str:
-    """
-    Generate a cryptographically secure random token for email verification.
-    
-    Returns:
-        A 32-character hexadecimal token string
-        Example: "a7f3k9m2q1x8b5c6d9e2f4g7h0j3k6l9"
-    """
     return secrets.token_hex(TOKEN_LENGTH // 2)
 
 
 def hash_verification_token(token: str) -> str:
-    """
-    Hash a verification token using the same method as passwords (bcrypt).
-    
-    Args:
-        token: Plain verification token
-        
-    Returns:
-        Hashed token string
-    """
     return hash_password(token)
 
 
 def create_verification_token_for_user(db: Session, user_id: int) -> str:
-    """
-    Generate and store a new verification token for a user.
-    
-    Args:
-        db: Database session
-        user_id: User ID to create token for
-        
-    Returns:
-        Plain token string (send this in email)
-        
-    Raises:
-        ValueError: If user not found
-    """
     # Verify user exists
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -119,7 +90,6 @@ def validate_verification_token(db: Session, token: str) -> User | None:
         if user:
             user.email_verified = True
             user.verified_at = datetime.now(timezone.utc)
-            # Keep auth invariants consistent: verified users are active.
             user.is_active = True
             db.commit()
             logger.info(f"Email verified for user {user.id} ({user.email})")
@@ -135,18 +105,6 @@ def validate_verification_token(db: Session, token: str) -> User | None:
 
 
 def invalidate_previous_tokens(db: Session, user_id: int) -> int:
-    """
-    Mark all unused verification tokens for a user as used.
-    
-    Used when resending verification email to invalidate old tokens.
-    
-    Args:
-        db: Database session
-        user_id: User ID
-        
-    Returns:
-        Number of tokens invalidated
-    """
     try:
         tokens = db.query(EmailVerificationToken).filter(
             EmailVerificationToken.user_id == user_id,
@@ -168,17 +126,6 @@ def invalidate_previous_tokens(db: Session, user_id: int) -> int:
 
 
 def cleanup_expired_tokens(db: Session) -> int:
-    """
-    Delete all expired verification tokens from database.
-    
-    Called periodically as maintenance task (e.g., via cron job or background task).
-    
-    Args:
-        db: Database session
-        
-    Returns:
-        Number of tokens deleted
-    """
     try:
         # Delete tokens that have expired
         result = db.query(EmailVerificationToken).filter(
@@ -195,16 +142,7 @@ def cleanup_expired_tokens(db: Session) -> int:
 
 
 def get_user_verification_status(db: Session, user_id: int) -> dict:
-    """
-    Get the verification status of a user.
     
-    Args:
-        db: Database session
-        user_id: User ID
-        
-    Returns:
-        Dictionary with verification status
-    """
     user = db.query(User).filter(User.id == user_id).first()
     
     if not user:

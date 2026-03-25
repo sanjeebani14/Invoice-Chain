@@ -28,7 +28,6 @@ from ..auth.tokens import decode_token
 
 router = APIRouter(tags=["Authentication"])
 
-# ── Helper ────────────────────────────────────────────────────────
 
 def _get_user_from_cookie(access_token: str | None, db: Session) -> User:
     """Helper to extract user from the access token cookie."""
@@ -46,7 +45,7 @@ def _get_user_from_cookie(access_token: str | None, db: Session) -> User:
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
-# ── Registration & Verification ───────────────────────────────────
+# Registration & Verification 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate, request: Request, db: Session = Depends(get_db)):
@@ -92,7 +91,6 @@ def verify_email_link(token: str, db: Session = Depends(get_db)):
         return response
 
     except Exception as e:
-        # This will print the exact error in your terminal so you can see why it's 500
         print(f"CRITICAL ERROR in verify_email_link: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal Server Error during verification")
 @router.post("/resend-verification-email", response_model=ResendVerificationEmailResponse)
@@ -118,7 +116,7 @@ def get_verification_status(email: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "User not found")
     return status_data
 
-# ── Login & Session ───────────────────────────────────────────────
+# Login & Session 
 
 @router.post("/login", response_model=LoginResponse)
 async def login(credentials: UserLogin, response: Response, request: Request, db: Session = Depends(get_db)):
@@ -184,7 +182,7 @@ def me(access_token: str | None = Cookie(default=None), db: Session = Depends(ge
     user = _get_user_from_cookie(access_token, db)
     return UserOut.from_orm(user)
 
-# ── Password Recovery ─────────────────────────────────────────────
+# Password Recovery 
 
 @router.post("/forgot-password")
 async def forgot_password(req: ForgotPasswordRequest, db: Session = Depends(get_db)):
@@ -205,7 +203,7 @@ async def reset_password(req: ResetPasswordRequest, db: Session = Depends(get_db
     service.reset_password(token_row.user_id, req.new_password)
     return {"message": "Password reset successful"}
 
-# ── 2FA Management ────────────────────────────────────────────────
+# 2FA Management 
 
 @router.post("/2fa/setup", response_model=TwoFactorSetupResponse)
 def setup_2fa(access_token: str | None = Cookie(default=None), db: Session = Depends(get_db)):

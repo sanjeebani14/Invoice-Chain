@@ -14,14 +14,12 @@ from app.auth.dependencies import require_admin
 from pydantic import BaseModel
 
 router = APIRouter()
-# Initialize the engine once
 risk_engine = RiskScoringEngine()
 anomaly_explainer = InvoiceAnomalyService()
 logger = logging.getLogger(__name__)
 
 
 def _ensure_credit_history_schema_compatibility() -> None:
-    """Add newly introduced credit_history columns to existing DBs without migrations."""
     inspector = inspect(engine)
     if "credit_history" not in inspector.get_table_names():
         return
@@ -64,7 +62,6 @@ except SQLAlchemyError as exc:
 
 
 def _ensure_fraud_flags_schema_compatibility() -> None:
-    """Add newly introduced columns to existing DBs without migrations."""
     inspector = inspect(engine)
     if "fraud_flags" not in inspector.get_table_names():
         return
@@ -99,7 +96,7 @@ except SQLAlchemyError as exc:
 
 
 def _ensure_fraud_queue_suppressions_schema() -> None:
-    """Create a table that remembers sellers removed from auto-queue."""
+
     create_stmt = """
     CREATE TABLE IF NOT EXISTS fraud_queue_suppressions (
         seller_id INTEGER PRIMARY KEY,
@@ -150,13 +147,12 @@ def _canonical_credit_history_by_seller(
 
     def _safe_int(value: object, default: int = 0) -> int:
         try:
-            return int(value)  # type: ignore[arg-type]
+            return int(value)  
         except (TypeError, ValueError):
             return default
 
     def _record_rank(rec: models.CreditHistory) -> tuple[int, int, int, int, int]:
-        # Prefer rows that actually contain underwriting features used by analytics,
-        # then break ties by newer ids.
+      
         return (
             1 if rec.payment_history_score is not None else 0,
             1 if rec.debt_to_income is not None else 0,
@@ -196,9 +192,7 @@ def _is_seller_like_role(role: object) -> bool:
 
 
 def _resolve_valid_seller_ids(db: Session) -> set[int]:
-    """
-    Build seller IDs defensively so legacy/imported datasets still render correctly.
-    """
+    
     credit_history_ids = {
         int(row[0])
         for row in db.query(models.CreditHistory.seller_id)
@@ -230,20 +224,19 @@ def _resolve_valid_seller_ids(db: Session) -> set[int]:
         if _is_seller_like_role(role) or sid in invoice_seller_ids:
             valid_ids.add(sid)
 
-    # Keep seller explorer aligned with credit_history even when users table
-    # does not contain matching rows for imported/legacy seller IDs.
+    
     return credit_history_ids | valid_ids
 
 
 @router.get("/score/{seller_id}")
 def get_score(seller_id: int, db: Session = Depends(get_db)):
-    # 1. Get deterministic canonical seller record (old datasets may have duplicates).
+    
     seller = _canonical_credit_history_by_seller(db, {seller_id}).get(seller_id)
 
     if not seller:
         raise HTTPException(status_code=404, detail="Seller ID not found in database.")
 
-    # 2. Recompute only when scoring inputs changed.
+   
     if risk_engine.should_recompute(seller):
         result = risk_engine.calculate_score(db=db, seller_id=seller_id)
         db.refresh(seller)
@@ -279,7 +272,6 @@ def get_score(seller_id: int, db: Session = Depends(get_db)):
 def get_sellers(db: Session = Depends(get_db)):
     valid_seller_ids = _resolve_valid_seller_ids(db)
 
-    # Canonicalized list keeps one stable row per seller_id.
     sellers = [
         s
         for s in _canonical_credit_history_by_seller(db).values()
@@ -296,14 +288,12 @@ def get_sellers(db: Session = Depends(get_db)):
         for uid, email, full_name in seller_user_rows
     }
 
-    # Backfill only records whose scoring inputs changed or were never scored.
     stale_sellers = [s for s in sellers if risk_engine.should_recompute(s)]
     for s in stale_sellers:
         try:
             risk_engine.calculate_score(db=db, seller_id=int(s.seller_id))
             db.refresh(s)
         except Exception:
-            # Keep endpoint resilient even if one seller fails scoring.
             continue
 
     return [
@@ -328,7 +318,6 @@ def get_sellers(db: Session = Depends(get_db)):
 def get_risk_metrics(db: Session = Depends(get_db)):
     valid_seller_ids = _resolve_valid_seller_ids(db)
 
-    # Use one record per seller_id to keep counts consistent with /sellers
     records = (
         db.query(models.CreditHistory)
         .order_by(models.CreditHistory.seller_id.asc(), models.CreditHistory.id.asc())
@@ -420,8 +409,7 @@ def get_risk_metrics(db: Session = Depends(get_db)):
 
 @router.get("/admin/fraud-queue")
 def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db)):
-    # Keep fraud queue in sync with current risk model: every unresolved HIGH-risk
-    # seller should have at least one queue item.
+    
     try:
         canonical = _canonical_credit_history_by_seller(db)
         suppressed_ids = _get_suppressed_seller_ids(db)
@@ -447,7 +435,6 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
             if flag.seller_id is not None
         }
 
-        # Do not auto-requeue sellers already reviewed by admin.
         missing_ids = high_risk_ids - existing_open_ids - reviewed_ids
         if missing_ids:
             for sid in missing_ids:
@@ -463,8 +450,7 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
                 )
             db.commit()
 
-        # If a seller already has a resolved flag, close any newer pending
-        # auto-queued duplicates to avoid immediate reappearance after approval.
+        
         resolved_by_seller = {
             int(flag.seller_id)
             for flag in db.query(models.FraudFlag)
@@ -487,7 +473,7 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
         if duplicate_updated:
             db.commit()
 
-        # Resolve stale auto-queued flags if seller is no longer high risk.
+
         stale_auto_flags = (
             db.query(models.FraudFlag)
             .filter(models.FraudFlag.is_resolved.is_(False))
@@ -505,8 +491,7 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
         if stale_updated:
             db.commit()
 
-        # Backfill queue entries for legacy invoices marked as flagged without
-        # a corresponding FraudFlag row.
+        
         flagged_without_queue = (
             db.query(models.Invoice)
             .outerjoin(
@@ -543,7 +528,7 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
                         ) or reason_text
                     severity = str(anomaly_payload.get("severity") or severity)
                 except Exception:
-                    # Keep queue backfill resilient even if anomaly recompute fails for one invoice.
+                    
                     pass
 
                 db.add(
@@ -563,8 +548,7 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
             query = query.filter(models.FraudFlag.seller_id == seller_id)
         flags = query.order_by(models.FraudFlag.created_at.desc()).all()
 
-        # One-time repair for legacy backfilled queue rows that still have
-        # generic reasoning text and no invoice-specific anomaly metadata.
+       
         repair_candidates = [
             flag
             for flag in flags
@@ -634,8 +618,7 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
         reasons = meta.get("reasons") if isinstance(meta.get("reasons"), list) else None
         if not reasons:
             reason_text = (f.reason or "").strip()
-            # Provide more context for seller-level/backfill flags that may not
-            # have anomaly metadata yet (older DB rows included).
+            
             if reason_text.startswith("Auto-queued:"):
                 reasons = [
                     "Seller-level fraud flag (invoice anomaly details may be unavailable).",
@@ -697,7 +680,7 @@ class ManualFraudFlagRequest(BaseModel):
 
 
 class FraudReviewRequest(BaseModel):
-    action: str  # clear | confirm_fraud (legacy: approve/reject)
+    action: str  
 
 
 @router.post("/admin/manual-fraud-flag")
@@ -733,10 +716,7 @@ def manual_fraud_flag(
 
 @router.get("/admin/invoice-anomaly-explain/{invoice_id}")
 def explain_invoice_anomaly(invoice_id: int, db: Session = Depends(get_db)):
-    """
-    Return a structured explanation for why a given invoice was or would be
-    flagged as anomalous, including engineered feature values and reason text.
-    """
+   
     invoice = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
