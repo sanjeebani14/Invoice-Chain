@@ -1,16 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import {
-  Activity,
-  BadgeIndianRupee,
-  ChartNoAxesColumn,
-  CircleGauge,
-  Clock3,
-  ShieldCheck,
+import { 
+  Activity, BadgeIndianRupee, ChartNoAxesColumn, 
+  CircleGauge, Clock3, ShieldCheck, Loader2, AlertCircle 
 } from "lucide-react";
-
 import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -69,51 +64,60 @@ function asRelativeTime(iso?: string): string {
 }
 
 export default function SmeDashboardPage() {
-  const { currentUser } = useAuth();
-
+  const { user, isLoading: authLoading } = useAuth(); // Use 'user' from our verified context
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [trust, setTrust] = useState<DashboardTrust | null>(null);
   const [feed, setFeed] = useState<ActivityItem[]>([]);
 
-  const loadDashboard = useCallback(async () => {
-    if (!currentUser?.id) {
-      setLoading(false);
-      return;
-    }
+  const loadDashboard = useCallback(async (isInitial = false) => {
+    if (!user) return;
+    if (isInitial) setLoading(true);
 
     try {
-      setError(null);
       const [summaryRes, activityRes] = await Promise.all([
         api.get<DashboardSummaryResponse>("/sme/dashboard/summary"),
         api.get<DashboardActivityResponse>("/sme/dashboard/activity", {
-          params: { limit: 24 },
+          params: { limit: 15 }, // Lower limit for performance
         }),
       ]);
 
       setMetrics(summaryRes.data.metrics);
       setTrust(summaryRes.data.trust);
-      setFeed(
-        (activityRes.data.items || []).map((item) => ({
-          id: item.id,
-          message: item.message,
-          tone: item.tone,
-          at: item.at,
-        })),
-      );
-    } catch {
-      setError("Unable to load SME dashboard right now.");
+      setFeed(activityRes.data.items || []);
+      setError(null);
+    } catch (err) {
+      // Don't show full-page error if it's just a background refresh failing
+      if (isInitial) setError("Unable to load dashboard data.");
     } finally {
       setLoading(false);
     }
-  }, [currentUser?.id]);
+  }, [user]);
 
+  // Initial Load
   useEffect(() => {
-    loadDashboard();
-    const interval = window.setInterval(loadDashboard, 20000);
-    return () => window.clearInterval(interval);
+    loadDashboard(true);
   }, [loadDashboard]);
+
+  // Robust Polling: Only poll when tab is active
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadDashboard(false);
+      }
+    }, 20000);
+
+    return () => clearInterval(interval);
+  }, [loadDashboard]);
+
+  if (authLoading || (loading && !metrics)) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="page-shell">

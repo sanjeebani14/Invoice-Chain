@@ -186,7 +186,7 @@ export default function FraudQueue() {
                         Global Score
                       </p>
                       <p className="font-mono font-semibold">
-                        {formatScore(item.global_anomaly_score ?? null, 4)}
+                        {formatScore(item.anomaly_score ?? null, 4)}
                       </p>
                     </div>
                     <div className="rounded-md bg-muted/40 px-2 py-2">
@@ -194,8 +194,8 @@ export default function FraudQueue() {
                         Fraud Probability
                       </p>
                       <p className="font-mono font-semibold">
-                        {typeof item.supervised_probability === "number"
-                          ? `${(item.supervised_probability * 100).toFixed(1)}%`
+                        {typeof item.risk_score === "number"
+                          ? `${(item.risk_score * 100).toFixed(1)}%`
                           : "N/A"}
                       </p>
                     </div>

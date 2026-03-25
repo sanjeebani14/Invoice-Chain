@@ -1,11 +1,22 @@
 "use client";
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import * as web3 from "../lib/web3";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from "react";
 import { toast } from "sonner";
 import { EXPECTED_CHAIN_ID } from "@/lib/config";
-// Use our centralized API instead of raw fetch
-import { api, withAuthRefreshRetry } from "@/lib/api";
-import type { AxiosError } from "axios";
+import * as web3 from "@/lib/web3";
+
+// Import our master engine and wallet services
+import {
+  api,
+  getWalletNonce,
+  linkWallet as linkWalletService,
+  unlinkWallet as unlinkWalletService,
+} from "@/lib/api";
 
 type WalletContextShape = {
   isConnected: boolean;
@@ -31,7 +42,10 @@ type WalletContextShape = {
 
 const WalletContext = createContext<WalletContextShape | undefined>(undefined);
 
-export const WalletProvider: React.FC<{ children: React.ReactNode; rpcProvider: string }> = ({ children, rpcProvider }) => {
+export const WalletProvider: React.FC<{
+  children: React.ReactNode;
+  rpcProvider: string;
+}> = ({ children, rpcProvider }) => {
   const [accounts, setAccounts] = useState<string[]>([]);
   const [currentAccount, setCurrentAccount] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
@@ -39,22 +53,23 @@ export const WalletProvider: React.FC<{ children: React.ReactNode; rpcProvider: 
   const [balance, setBalance] = useState<string | null>(null);
   const [balanceWei, setBalanceWei] = useState<string | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
-  const [linkedWallets, setLinkedWallets] = useState<Array<{ wallet_address: string; is_primary: boolean }>>([]);
+  const [linkedWallets, setLinkedWallets] = useState<
+    Array<{ wallet_address: string; is_primary: boolean }>
+  >([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isConnected = accounts && accounts.length > 0;
+  const isConnected = accounts.length > 0;
   const isCorrectNetwork = chainId === EXPECTED_CHAIN_ID;
 
-  // 1. Fetch linked wallets from backend
+  // 1. Fetch linked wallets
   const fetchLinkedWallets = useCallback(async () => {
     try {
-      const call = async () => await api.get("/wallet/wallets");
-      const { data } = await withAuthRefreshRetry(call);
+      // Using base api since /wallet/wallets might not be in our specialized walletApi yet
+      const { data } = await api.get("/wallet/wallets");
       setLinkedWallets(data.wallets || []);
     } catch (e) {
-      console.error("Failed to fetch linked wallets", e);
-      setError(e instanceof Error ? e.message : "Failed to fetch linked wallets");
+      console.error("Wallet sync failed", e);
     }
   }, []);
 
@@ -66,16 +81,18 @@ export const WalletProvider: React.FC<{ children: React.ReactNode; rpcProvider: 
       const wei = await web3.getBalance(currentAccount, rpcProvider);
       setBalanceWei(wei);
       setBalance(web3.formatBalance(wei));
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to fetch balance");
+    } catch (e: any) {
+      setError(e.message || "Failed to fetch balance");
     } finally {
       setBalanceLoading(false);
     }
   }, [currentAccount, rpcProvider]);
 
   // 3. Initialize & Listeners
+  // 3. Initialize & Listeners
   useEffect(() => {
     const init = async () => {
+      // A. Check for MetaMask state (Browser-only, no API call)
       if (await web3.isMetaMaskAvailable()) {
         const accs = await web3.getConnectedAccounts();
         setAccounts(accs);
@@ -83,15 +100,21 @@ export const WalletProvider: React.FC<{ children: React.ReactNode; rpcProvider: 
         try {
           const cid = await web3.getChainId();
           setChainId(cid);
-          setNetworkName(await web3.getNetworkName(cid));
+          const name = await web3.getNetworkName(cid);
+          setNetworkName(name);
         } catch {}
       }
-      await fetchLinkedWallets();
+
+      // B. THE FIX: Only fetch linked wallets if we have a session hint
+      // This stops the 401 -> Interceptor -> Redirect loop for guests
+      const hasSessionHint = sessionStorage.getItem("is_logged_in") === "true";
+      if (hasSessionHint) {
+        await fetchLinkedWallets();
+      }
     };
 
     init();
 
-    // Listeners
     const onAcc = (accs: string[]) => {
       setAccounts(accs);
       setCurrentAccount(accs[0] ?? null);
@@ -106,8 +129,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode; rpcProvider: 
     web3.onChainChanged(onChain);
 
     return () => {
-      web3.removeListener("accountsChanged", onAcc);
-      web3.removeListener("chainChanged", onChain);
+      web3.removeWalletListener("accountsChanged", onAcc);
+      web3.removeWalletListener("chainChanged", onChain);
     };
   }, [fetchLinkedWallets]);
 
@@ -122,9 +145,13 @@ export const WalletProvider: React.FC<{ children: React.ReactNode; rpcProvider: 
       const cid = await web3.getChainId();
       setChainId(cid);
       setNetworkName(await web3.getNetworkName(cid));
-      await fetchLinkedWallets();
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Connection failed");
+
+      const hasSessionHint = sessionStorage.getItem("is_logged_in") === "true";
+      if (hasSessionHint) {
+        await fetchLinkedWallets();
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Connection failed");
     } finally {
       setLoading(false);
     }
@@ -135,27 +162,26 @@ export const WalletProvider: React.FC<{ children: React.ReactNode; rpcProvider: 
     if (!currentAccount) throw new Error("No wallet connected");
     setLoading(true);
     try {
-      // Step A: Get nonce
-      const { message, nonce } = await api.post("/wallet/nonce", { 
-        wallet_address: currentAccount 
-      }).then(res => res.data);
+      // Step A: Get nonce/message via our service
+      const { nonce } = await getWalletNonce(currentAccount);
 
-      // Step B: Sign message
-      const signature = await web3.signMessage(message, currentAccount);
+      // Use the backend's message if it exists, otherwise fallback to our default
+      const signTarget = `Sign this message to link your wallet: ${nonce}`;
 
-      // Step C: Link via backend
-      await api.post("/wallet/link", { 
-        wallet_address: currentAccount, 
-        nonce, 
-        signature 
+      // Step B: Sign the message
+      const signature = await web3.signMessage(signTarget, currentAccount);
+
+      // Step C: Link via backend service
+      await linkWalletService({
+        wallet_address: currentAccount,
+        nonce,
+        signature,
       });
 
       await fetchLinkedWallets();
       toast.success("Wallet linked successfully");
-    } catch (e: unknown) {
-      const msg =
-        (e as AxiosError<{ detail?: string }>).response?.data?.detail ||
-        (e instanceof Error ? e.message : "Linking failed");
+    } catch (e: any) {
+      const msg = e.response?.data?.detail || e.message || "Linking failed";
       toast.error(msg);
       throw new Error(msg);
     } finally {
@@ -168,14 +194,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode; rpcProvider: 
     setLoading(true);
     try {
       const target = web3.toChecksumAddress(address);
-      await api.delete(`/wallet/${encodeURIComponent(target)}`);
+      await unlinkWalletService(target);
       await fetchLinkedWallets();
       toast.success("Wallet unlinked");
-    } catch (e: unknown) {
-      const msg =
-        (e as AxiosError<{ detail?: string }>).response?.data?.detail ||
-        (e instanceof Error ? e.message : "Unlink failed");
-      toast.error(msg);
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Unlink failed");
     } finally {
       setLoading(false);
     }
@@ -196,7 +219,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode; rpcProvider: 
     }
   };
 
-  const value: WalletContextShape = {
+  const value = {
     isConnected,
     accounts,
     currentAccount,
@@ -218,11 +241,13 @@ export const WalletProvider: React.FC<{ children: React.ReactNode; rpcProvider: 
     error,
   };
 
-  return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
+  return (
+    <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
+  );
 };
 
-export function useWallet() {
+export const useWallet = () => {
   const ctx = useContext(WalletContext);
   if (!ctx) throw new Error("useWallet must be used within WalletProvider");
   return ctx;
-}
+};

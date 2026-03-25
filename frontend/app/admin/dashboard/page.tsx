@@ -198,9 +198,9 @@ export default function Dashboard() {
                 <div
                   key={`${insight.type}-${insight.title}`}
                   className={`rounded-lg border-l-4 p-4 transition-all ${
-                    insight.priority === "high"
+                    insight.priority === "HIGH"
                       ? "border-l-red-500 bg-red-50"
-                      : insight.priority === "medium"
+                      : insight.priority === "MEDIUM"
                         ? "border-l-amber-500 bg-amber-50"
                         : "border-l-emerald-500 bg-emerald-50"
                   }`}
@@ -216,12 +216,12 @@ export default function Dashboard() {
                     </div>
                     <span
                       className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold uppercase ${
-                        insight.priority === "high"
-                          ? "bg-red-200 text-red-800"
-                          : insight.priority === "medium"
-                            ? "bg-amber-200 text-amber-800"
-                            : "bg-emerald-200 text-emerald-800"
-                      }`}
+                      insight.priority === "HIGH" 
+                        ? "bg-red-200 text-red-800"
+                        : insight.priority === "MEDIUM"
+                          ? "bg-amber-200 text-amber-800"
+                          : "bg-emerald-200 text-emerald-800"
+                    }`}
                     >
                       {insight.priority}
                     </span>

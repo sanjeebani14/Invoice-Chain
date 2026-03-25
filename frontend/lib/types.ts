@@ -1,18 +1,27 @@
+//SHARED PRIMITIVES ──────────────────────────────────────────
+export type UserRole = "admin" | "investor" | "seller";
+export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
+export type KycStatus = "pending" | "approved" | "rejected" | "review";
+export type FinancingType = "fixed" | "auction" | "fractional";
+export type ListingStatus = "active" | "paused" | "sold" | "canceled";
 
+/** * ── USER & AUTHENTICATION ──────────────────────────────────────
+ */
 export interface User {
   id: number;
   email: string;
   full_name: string | null;
   phone: string | null;
   company_name: string | null;
-  role: string;
+  role: UserRole;
+  is_verified: boolean;
   wallet_address?: string | null;
 }
 
 export interface ProfileMeResponse {
   user: User;
   kyc: {
-    status: "pending" | "approved" | "rejected" | "review";
+    status: KycStatus;
     details?: Record<string, unknown> | null;
   } | null;
   primary_wallet?: {
@@ -21,50 +30,8 @@ export interface ProfileMeResponse {
   } | null;
 }
 
-export interface KycSubmissionOut {
-  id: number;
-  user_id: number;
-  status: "pending" | "approved" | "rejected" | "review";
-  rejection_reason?: string | null;
-  updated_at?: string;
-}
-/**
- * AUTHENTICATION TYPES
- */
-
-export interface MessageResponse {
-  message: string;
-}
-export type KycStatus = "pending" | "approved" | "rejected" | "review";
-
-export interface KycSubmissionOut {
-  id: number;
-  user_id: number;
-  doc_type: string;
-  status: KycStatus;
-  original_filename?: string | null;
-  size_bytes: number;
-  submitted_at: string;
-  reviewed_at?: string | null;
-  reviewed_by?: number | null;
-  rejection_reason?: string | null;
-}
-
-export interface KycMeResponse {
-  kyc: KycSubmissionOut | null;
-}
-
-export interface AdminKycListResponse {
-  submissions: KycSubmissionOut[];
-  total: number;
-}
-
-
-
-export interface RegisterData {
-  email: string;
-  password: string;
-  role: "seller" | "investor" | "admin";
+export interface RegisterData extends Omit<LoginData, "two_factor_code"> {
+  role: UserRole;
 }
 
 export interface LoginData {
@@ -73,9 +40,8 @@ export interface LoginData {
   two_factor_code?: string;
 }
 
-export interface TwoFactorLoginData {
-  two_factor_token: string;
-  code: string;
+export interface MessageResponse {
+  message: string;
 }
 
 export interface LoginResponse extends MessageResponse {
@@ -83,9 +49,10 @@ export interface LoginResponse extends MessageResponse {
   two_factor_token?: string | null;
 }
 
-/**
- * PASSWORD MANAGEMENT
- */
+export interface TwoFactorLoginData {
+  two_factor_token: string;
+  code: string;
+}
 
 export interface ForgotPasswordData {
   email: string;
@@ -116,18 +83,64 @@ export interface VerificationStatusResponse {
   error?: string;
 }
 
+export interface RiskOnboardingStatus {
+  required: boolean;
+  completed: boolean;
+  missing_fields: string[];
+  seller_id: number;
+}
+
+export interface SellerRiskOnboardingPayload {
+  payment_history_score: number;
+  client_reputation_score: number;
+  seller_track_record: number;
+  employment_years: number;
+  debt_to_income: number;
+  core_enterprise_rating: number;
+  transaction_stability: number;
+  logistics_consistency: number;
+  esg_score: number;
+}
+
+export interface SellerRiskOnboardingResponse {
+  message: string;
+  seller_id: number;
+  composite_score: number;
+  risk_level: string;
+}
+
+/** * ── KYC ────────────────────────────────────────────────────────
+ */
+export interface KycSubmissionOut {
+  id: number;
+  user_id: number;
+  doc_type: string;
+  status: KycStatus;
+  original_filename?: string | null;
+  size_bytes: number;
+  submitted_at: string;
+  reviewed_at?: string | null;
+  reviewed_by?: number | null;
+  rejection_reason?: string | null;
+  updated_at?: string;
+}
+
+export interface KycMeResponse {
+  kyc: KycSubmissionOut | null;
+}
+
+/** * ── RISK & FRAUD ───────────────────────────────────────────────
+ */
 export interface SellerScore {
   seller_id: number;
   composite_score: number;
-  risk_level: "LOW" | "MEDIUM" | "HIGH";
+  risk_level: RiskLevel;
   credit_score?: number;
   annual_income?: number;
   loan_amount?: number;
   debt_to_income?: number;
   employment_years?: number;
   last_updated?: string;
-
-  // Trust layer & interpretability
   insights?: string[];
   breakdown?: {
     financial_risk: number;
@@ -145,14 +158,9 @@ export interface FraudQueueItem {
   seller_id: number;
   risk_score: number;
   seller_composite_score?: number;
-  severity?: "LOW" | "MEDIUM" | "HIGH";
+  severity?: RiskLevel;
   fraud_reason: string;
   anomaly_score?: number | null;
-  global_anomaly_score?: number | null;
-  supervised_probability?: number | null;
-  amount_velocity_zscore?: number | null;
-  benford_deviation?: number | null;
-  net_delta_abs?: number | null;
   reasons?: string[];
   resolution_action?: "clear" | "confirm_fraud" | null;
   resolved_by?: number | null;
@@ -164,7 +172,7 @@ export interface ManualFraudFlagPayload {
   seller_id: number;
   invoice_id?: number;
   reason: string;
-  severity?: "LOW" | "MEDIUM" | "HIGH";
+  severity?: RiskLevel;
 }
 
 export interface InvoiceAnomalyExplanation {
@@ -204,22 +212,77 @@ export interface RiskMetrics {
   risk_level_breakdown: { level: string; count: number }[];
 }
 
-export interface AdminManagedUser {
+
+/** * ── MARKETPLACE & INVOICES ─────────────────────────────────────
+ */
+export interface MarketplaceInvoiceItem {
   id: number;
-  email: string;
+  invoice_number?: string | null;
+  client_name?: string | null;
+  amount?: number | null;
+  due_date?: string | null;
+  sector?: string | null;
+  financing_type?: FinancingType | null;
+  ask_price?: number | null;
+  share_price?: number | null;
+  min_bid_increment?: number | null;
+  canonical_hash?: string | null;
+  ocr_confidence?: { overall?: number } | null;
+}
+
+export interface MarketplaceListingItem {
+  id: number;
+  invoice_id: number;
+  seller_id: number;
+  listing_type: FinancingType;
+  status: ListingStatus;
+  ask_price?: number | null;
+  share_price?: number | null;
+  total_shares?: number | null;
+  available_shares?: number | null;
+  created_at?: string | null;
+}
+
+export interface MarketplaceListingUpdatePayload {
+  status?: ListingStatus;
+  ask_price?: number;
+  share_price?: number;
+  available_shares?: number;
+}
+
+/** * ── ADMIN & ANALYTICS ──────────────────────────────────────────
+ */
+export interface AdminManagedUser extends Omit<User, "full_name"> {
   full_name?: string | null;
-  role: "admin" | "investor" | "seller" | "seller";
   is_active: boolean;
   email_verified: boolean;
   created_at: string;
 }
 
 export interface GetAdminUsersParams {
-  role?: "admin" | "investor" | "seller";
+  role?: UserRole;
   is_active?: boolean;
 }
 
-// Platform Statistics Types
+export interface PlatformHealthMetrics {
+  gmv: number;
+  repayment_rate: number;
+  default_rate: number;
+  platform_revenue: number;
+  active_sellers: number;
+  active_investors: number;
+  avg_risk_score: number;
+  avg_invoice_yield: number;
+  high_risk_invoices: number;
+  top_sector: string | null;
+  sector_concentration: number;
+}
+
+export interface AdminKycListResponse {
+  submissions: KycSubmissionOut[];
+  total: number;
+}
+
 export interface PlatformStats {
   period: string;
   period_type: "monthly" | "quarterly" | "yearly";
@@ -249,20 +312,6 @@ export interface PlatformStats {
     active_sellers: number;
     active_investors: number;
   };
-}
-
-export interface PlatformHealthMetrics {
-  gmv: number;
-  repayment_rate: number;
-  default_rate: number;
-  platform_revenue: number;
-  active_sellers: number;
-  active_investors: number;
-  avg_risk_score: number;
-  avg_invoice_yield: number;
-  high_risk_invoices: number;
-  top_sector: string | null;
-  sector_concentration: number;
 }
 
 export interface RiskHeatmapData {
@@ -373,7 +422,13 @@ export interface AdminOverview {
     investors_count: number;
     sellers_count: number;
   };
-  actionable_insights: AdminOverviewInsight[];
+  actionable_insights: {
+    type: string;
+    priority: RiskLevel; // Reusing RiskLevel for priority
+    title: string;
+    description: string;
+    cta_path: string;
+  }[];
 }
 
 export interface BlockchainSyncStatusItem {
@@ -382,41 +437,6 @@ export interface BlockchainSyncStatusItem {
   last_synced_at?: string | null;
   last_error?: string | null;
   updated_at?: string | null;
-}
-
-export interface MarketplaceInvoiceItem {
-  id: number;
-  invoice_number?: string | null;
-  client_name?: string | null;
-  amount?: number | null;
-  due_date?: string | null;
-  sector?: string | null;
-  financing_type?: "fixed" | "auction" | "fractional" | null;
-  ask_price?: number | null;
-  share_price?: number | null;
-  min_bid_increment?: number | null;
-  canonical_hash?: string | null;
-  ocr_confidence?: { overall?: number } | null;
-}
-
-export interface MarketplaceListingItem {
-  id: number;
-  invoice_id: number;
-  seller_id: number;
-  listing_type: "fixed" | "auction" | "fractional";
-  status: "active" | "paused" | "sold" | "canceled";
-  ask_price?: number | null;
-  share_price?: number | null;
-  total_shares?: number | null;
-  available_shares?: number | null;
-  created_at?: string | null;
-}
-
-export interface MarketplaceListingUpdatePayload {
-  status?: "active" | "paused" | "sold" | "canceled";
-  ask_price?: number;
-  share_price?: number;
-  available_shares?: number;
 }
 
 export interface SettlementHistoryItem {

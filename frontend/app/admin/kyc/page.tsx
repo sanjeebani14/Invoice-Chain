@@ -23,9 +23,9 @@ import {
   adminApproveKyc,
   adminListKyc,
   adminRejectKyc,
-  type KycStatus,
-  type KycSubmissionOut,
-} from "@/lib/kyc";
+  KycStatus,
+  KycSubmissionOut,
+} from "@/lib/api";
 
 type FilterValue = "all" | KycStatus;
 

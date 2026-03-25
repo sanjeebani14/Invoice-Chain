@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import axios from "axios";
-import { api } from "@/lib/api";
+import { authApi } from "@/lib/api";
 import type { 
   VerifyEmailResponse, 
   ResendVerificationEmailResponse, 
   VerificationStatusResponse 
-} from "@/lib/api/types";
+} from "@/lib/types";
 
 export function useEmailVerification() {
   const [isLoading, setIsLoading] = useState(false);
@@ -16,85 +15,66 @@ export function useEmailVerification() {
   const verifyEmail = async (token: string): Promise<VerifyEmailResponse> => {
     setIsLoading(true);
     setError(null);
-
     try {
       if (!token?.trim()) throw new Error("Verification token is required");
 
-      const { data } = await api.post("/auth/verify-email", {
+      // Uses authApi, so the path is just /verify-email
+      const { data } = await authApi.post("/verify-email", {
         token: token.trim(),
       });
 
-      setIsLoading(false);
       return { success: true, user: data.user };
-    } catch (err: unknown) {
-      setIsLoading(false);
-      let message = "Failed to verify email";
-      
-      if (axios.isAxiosError(err)) {
-        message = err.response?.data?.detail || message;
-      } else if (err instanceof Error) {
-        message = err.message;
-      }
-      
+    } catch (err: any) {
+      const message = err.response?.data?.detail || err.message || "Failed to verify email";
       setError(message);
       return { success: false, error: message };
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const resendVerificationEmail = async (email: string): Promise<ResendVerificationEmailResponse> => {
     setIsLoading(true);
     setError(null);
-
     try {
       if (!email?.trim()) throw new Error("Email address is required");
 
-      const { data } = await api.post("/auth/resend-verification-email", {
+      const { data } = await authApi.post("/resend-verification-email", {
         email: email.trim(),
       });
 
-      setIsLoading(false);
       return { success: true, message: data.message || "Request processed." };
-    } catch (err: unknown) {
-      setIsLoading(false);
-      let message = "Failed to resend verification email";
-      
-      if (axios.isAxiosError(err)) {
-        message = err.response?.data?.detail || message;
-      }
-      
+    } catch (err: any) {
+      const message = err.response?.data?.detail || "Failed to resend verification email";
       setError(message);
       return { success: false, error: message };
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const getVerificationStatus = async (email: string): Promise<VerificationStatusResponse> => {
     setIsLoading(true);
     setError(null);
-
     try {
       if (!email?.trim()) throw new Error("Email address is required");
 
-      const { data } = await api.get(`/auth/verification-status`, {
+      const { data } = await authApi.get("/verification-status", {
         params: { email: email.trim() }
       });
 
-      setIsLoading(false);
       return {
         success: true,
         verified: data.email_verified,
         email: data.email,
         verified_at: data.verified_at,
       };
-    } catch (err: unknown) {
-      setIsLoading(false);
-      let message = "Failed to check status";
-      
-      if (axios.isAxiosError(err)) {
-        message = err.response?.data?.detail || message;
-      }
-      
+    } catch (err: any) {
+      const message = err.response?.data?.detail || "Failed to check status";
       setError(message);
       return { success: false, verified: false, error: message };
+    } finally {
+      setIsLoading(false);
     }
   };
 

@@ -1,42 +1,28 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Manrope } from "next/font/google";
 import { Toaster } from "sonner";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider } from "@/context/AuthContext";
 import { WalletProvider } from "@/context/WalletContext";
 import { RPC_PROVIDER } from "@/lib/config";
-import { TopBar } from "@/components/TopBar";
+import { AppShell } from "@/components/layout/AppShell"; // We'll create this
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
 
 export const metadata: Metadata = {
-  title: "InvoiceChain",
-  description: "InvoiceChain — Marketplace for verified invoices",
+  title: "InvoiceChain | Decentralized Liquidity",
+  description: "Institutional-grade invoice factoring meets DeFi.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+    <html lang="en" suppressHydrationWarning className="dark"> 
+      <body className={`${inter.variable} ${manrope.variable} font-sans antialiased bg-[#131313] text-[#e5e2e1]`}>
         <AuthProvider>
           <WalletProvider rpcProvider={RPC_PROVIDER}>
-            <TopBar />
-            {children}
-            <Toaster />
+            <AppShell>{children}</AppShell>
+            <Toaster position="top-center" richColors />
           </WalletProvider>
         </AuthProvider>
       </body>

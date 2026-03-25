@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getBackendOrigin } from "@/lib/backendOrigin";
 
-const PUBLIC_PATHS = ["/login", "/register", "/verify-email", "/forgot-password", "/reset-password"];
-const AUTH_PATHS = ["/login", "/register"]; // Paths users shouldn't see if logged in
+const PUBLIC_PATHS = ["/login", "/register", "/verify-email", "/reset-password"];
 
 async function getRole(request: NextRequest): Promise<string | null> {
   try {
@@ -25,7 +24,6 @@ export async function middleware(request: NextRequest) {
   
   // 1. Define path types
   const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p)) || pathname === "/";
-  const isAuthPage = AUTH_PATHS.some(p => pathname.startsWith(p));
   
   // 2. Check for ANY session cookie (Access OR Refresh)
   const hasSession = request.cookies.has("access_token") || request.cookies.has("refresh_token");
@@ -48,12 +46,6 @@ export async function middleware(request: NextRequest) {
       response.cookies.delete("access_token");
       response.cookies.delete("refresh_token");
       return response;
-    }
-
-    // Redirect AWAY from login if already authenticated
-    if (role && isAuthPage) {
-      const dashboard = role.includes("admin") ? "/admin/dashboard" : "/profile";
-      return NextResponse.redirect(new URL(dashboard, request.url));
     }
 
     // Admin Guard

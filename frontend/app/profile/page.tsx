@@ -1,142 +1,182 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, UserCircle } from "lucide-react";
+import { Loader2, UserCircle, ArrowLeft, Save } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
-import { useWallet } from "@/context/WalletContext";
-import KycForm from "@/components/KycForm";
-import WalletLogin from "@/components/WalletLogin";
+import KycForm from "@/components/auth/KycForm";
+import WalletLogin from "@/components/auth/WalletLogin";
 import { getMyProfile, updateMyProfile } from "@/lib/api";
-import type { ProfileMeResponse } from "@/lib/api/types";
 
 export default function ProfilePage() {
-  const { currentUser, isAuthenticated, isLoading: authLoading } = useAuth();
-  const { linkedWallets } = useWallet(); 
+  const { 
+    user: currentUser, 
+    profile,
+    isAuthenticated, 
+    isLoading: authLoading, 
+    refreshProfile 
+  } = useAuth();
+  
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [profileData, setProfileData] = useState<ProfileMeResponse | null>(null);
-  const [form, setForm] = useState({ fullName: "", phone: "", company: "" });
+  
+  const [form, setForm] = useState({ 
+    fullName: "", 
+    phone: "", 
+    company: "" 
+  });
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      (async () => {
-        try {
-          const res = await getMyProfile();
-          setProfileData(res);
-          setForm({
-            fullName: res.user.full_name ?? "",
-            phone: res.user.phone ?? "",
-            company: res.user.company_name ?? ""
-          });
-        } catch (err) {
-          console.error("Profile fetch failed");
-        } finally {
-          setLoading(false);
-        }
-      })();
+  const fetchProfile = useCallback(async () => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      const res = await getMyProfile();
+      setForm({
+        fullName: res.user.full_name ?? "",
+        phone: res.user.phone ?? "",
+        company: res.user.company_name ?? ""
+      });
+    } catch (err) {
+      toast.error("Could not load profile data.");
+    } finally {
+      setLoading(false);
     }
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
+
+  const isFormValid = form.fullName.trim().length > 2;
+
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isFormValid) {
+      toast.error("Full name must be at least 3 characters.");
+      return;
+    }
+
     setSaving(true);
     try {
       await updateMyProfile({
-        full_name: form.fullName,
-        phone: form.phone,
-        company_name: form.company
+        full_name: form.fullName.trim(),
+        phone: form.phone.trim(),
+        company_name: form.company.trim()
       });
-      toast.success("Profile updated");
-    } catch (err) {
-      toast.error("Update failed");
+      
+      // Update global context so name changes everywhere (like TopBar)
+      await refreshProfile(); 
+      toast.success("Profile updated successfully");
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || "Update failed";
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
   };
 
-  const dashboardHref = currentUser?.role === "admin" 
-    ? "/admin/dashboard" 
-    : currentUser?.role === "investor" 
-    ? "/INVESTOR/marketplace" 
-    : "/upload";
+  const handleBack = () => {
+    const role = currentUser?.role?.toLowerCase();
+
+    if (role?.includes("admin")) {
+      router.push("/admin/dashboard");
+      return;
+    }
+
+    if (role?.includes("investor")) router.push("/investor/marketplace");
+    else router.push("/sme/dashboard");
+  };
 
   if (authLoading || loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex h-[80vh] w-full items-center justify-center">
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground animate-pulse">Loading profile...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col items-center bg-background px-4 py-12">
-      <div className="w-full max-w-5xl">
-        
-        <div className="mb-10 flex flex-col items-center text-center">
-          <h1 className="text-4xl font-bold tracking-tight">Account Settings</h1>
-          <Button variant="link" className="mt-2 text-muted-foreground" onClick={() => router.push(dashboardHref)}>
-            ← Back to Dashboard
-          </Button>
+    <div className="container mx-auto max-w-6xl py-10 px-4 animate-in fade-in duration-500">
+      <div className="mb-10 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-tight">Account Settings</h1>
+          <p className="text-muted-foreground">Manage your identity and blockchain connections.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={handleBack} className="hidden sm:flex">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+        <div className="space-y-6 lg:col-span-5">
+          <KycForm />
+          <div className="rounded-xl border bg-card p-6 shadow-sm">
+            <h3 className="text-lg font-bold mb-4">Blockchain Links</h3>
+            <WalletLogin />
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
-          
-          {/* LEFT SIDE: KYC & WALLET */}
-          <div className="space-y-6 md:col-span-5">
-            <div className="rounded-2xl border bg-card p-6 shadow-sm">
-              {/* KycForm is now embedded directly here */}
-              <KycForm />
+        <div className="lg:col-span-7">
+          <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
+            <div className="bg-muted/30 px-8 py-4 border-b flex items-center gap-3">
+              <UserCircle className="h-5 w-5 text-primary" />
+              <h2 className="font-bold">Personal Details</h2>
             </div>
 
-            <div className="rounded-2xl border bg-card p-6 shadow-sm">
-              <h2 className="text-xl font-semibold mb-4">Wallets</h2>
-              <WalletLogin />
-            </div>
-          </div>
-
-          {/* RIGHT SIDE: PROFILE FORM */}
-          <div className="md:col-span-7">
-            <div className="rounded-2xl border bg-card p-8 shadow-sm">
-              <div className="flex items-center gap-3 mb-8">
-                <UserCircle className="h-6 w-6 text-primary" />
-                <h2 className="text-xl font-semibold">Personal Details</h2>
+            <form onSubmit={onSave} className="p-8 space-y-6">
+              <div className="space-y-2">
+                <Label className="text-xs uppercase font-black text-muted-foreground">Email Address</Label>
+                <Input value={currentUser?.email || ""} disabled className="bg-muted/50 border-dashed" />
               </div>
 
-              <form onSubmit={onSave} className="space-y-6">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input value={currentUser?.email || ""} disabled className="bg-muted border-none" />
+                  <Label htmlFor="fullName" className="text-xs uppercase font-black">Full Name</Label>
+                  <Input 
+                    id="fullName" 
+                    value={form.fullName} 
+                    onChange={(e) => setForm({...form, fullName: e.target.value})} 
+                  />
                 </div>
-
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="fullName">Full Name</Label>
-                    <Input id="fullName" value={form.fullName} onChange={(e) => setForm({...form, fullName: e.target.value})} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone</Label>
-                    <Input id="phone" value={form.phone} onChange={(e) => setForm({...form, phone: e.target.value})} />
-                  </div>
-                </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="company">Company</Label>
-                  <Input id="company" value={form.company} onChange={(e) => setForm({...form, company: e.target.value})} />
+                  <Label htmlFor="phone" className="text-xs uppercase font-black">Phone Number</Label>
+                  <Input 
+                    id="phone" 
+                    value={form.phone} 
+                    onChange={(e) => setForm({...form, phone: e.target.value})} 
+                  />
                 </div>
+              </div>
 
-                <Button type="submit" disabled={saving} className="w-full sm:w-auto px-10">
+              <div className="space-y-2">
+                <Label htmlFor="company" className="text-xs uppercase font-black">Company Name</Label>
+                <Input 
+                  id="company" 
+                  value={form.company} 
+                  onChange={(e) => setForm({...form, company: e.target.value})} 
+                />
+              </div>
+
+              <div className="pt-4 border-t flex justify-end">
+                <Button type="submit" disabled={saving || !isFormValid}>
+                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                   {saving ? "Saving..." : "Update Profile"}
                 </Button>
-              </form>
-            </div>
+              </div>
+            </form>
           </div>
         </div>
       </div>

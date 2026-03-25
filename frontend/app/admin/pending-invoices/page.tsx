@@ -5,7 +5,7 @@ import {
   getAdminPendingInvoices,
   reviewAdminPendingInvoice,
 } from "@/lib/api";
-import type { AdminPendingInvoice } from "@/lib/api/types";
+import type { AdminPendingInvoice } from "@/lib/types";
 
 const BACKEND_ORIGIN = "http://localhost:8000";
 
@@ -35,7 +35,7 @@ export default function PendingInvoicesPage() {
       setSelectedId((prev) => {
         if (data.invoices.length === 0) return null;
         if (prev === null) return data.invoices[0].id;
-        return data.invoices.some((row) => row.id === prev)
+        return data.invoices.some((row: { id: number | string }) => row.id === prev)
           ? prev
           : data.invoices[0].id;
       });

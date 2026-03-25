@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, Eye, EyeOff } from "lucide-react";
@@ -12,13 +12,12 @@ import { Label } from "@/components/ui/label";
 import { AuthCard } from "@/components/auth/AuthCard";
 
 // Centralized Logic
-import { login, loginWithTwoFactor } from "@/lib/auth";
-import { getMyProfile, getWalletNonce, api } from "@/lib/api";
+import { getMyProfile, getWalletNonce, api, loginWithTwoFactor } from "@/lib/api";
 import { useWallet } from "@/context/WalletContext";
 import { useAuth } from "@/hooks/useAuth";
 import * as web3 from "@/lib/web3";
 
-import type { ProfileMeResponse } from "@/lib/api/types";
+import type { ProfileMeResponse } from "@/lib/types";
 
 /**
  * DETERMINES THE POST-LOGIN LANDING PAGE
@@ -26,27 +25,18 @@ import type { ProfileMeResponse } from "@/lib/api/types";
  */
 function resolveUserDestination(profile: ProfileMeResponse): string {
   const { user, kyc } = profile;
-  const primaryWallet = (profile as { primary_wallet?: unknown })
-    .primary_wallet;
   const role = String(user.role || "").toLowerCase();
 
-  // Admins bypass the completion checks to ensure platform management isn't blocked
+  // Admins are always routed to admin dashboard.
   if (role.includes("admin")) return "/admin/dashboard";
 
-  // Identify "Pending" or "Incomplete" items
-  const isProfileIncomplete =
-    !user.full_name || !user.phone || !user.company_name;
-  const isKycPending = kyc?.status !== "approved";
-  const isWalletMissing = !primaryWallet;
-
-  // Reroute to profile if ANY check fails
-  if (isProfileIncomplete || isKycPending || isWalletMissing) {
+  // Pending KYC users must complete profile/KYC first.
+  if (kyc?.status === "pending") {
     return "/profile";
   }
 
-  // Fully verified routing
-  if (role.includes("investor")) return "/INVESTOR/marketplace";
-  if (role.includes("seller")) return "/upload";
+  if (role.includes("investor")) return "/investor/marketplace";
+  if (role.includes("seller")) return "/sme/dashboard";
 
   return "/profile"; // Default safety fallback
 }
@@ -59,13 +49,17 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [walletLoading, setWalletLoading] = useState(false);
 
-  const { login: authLogin } = useAuth();
+  const { login: authLogin, refreshProfile } = useAuth();
 
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [twoFactorToken, setTwoFactorToken] = useState("");
   const [twoFactorCode, setTwoFactorCode] = useState("");
 
   const { connectWallet, currentAccount } = useWallet();
+
+  useEffect(() => {
+    sessionStorage.removeItem("is_logged_in");
+  }, []);
 
   /**
    * AUTHENTICATION SUCCESS HANDLER
@@ -100,6 +94,9 @@ export default function LoginPage() {
         signature,
       });
 
+      sessionStorage.setItem("is_logged_in", "true");
+      await refreshProfile();
+
       toast.success("Signed in with wallet");
       await handlePostLoginRouting();
     } catch (e: unknown) {
@@ -122,8 +119,15 @@ export default function LoginPage() {
           two_factor_token: twoFactorToken,
           code: twoFactorCode,
         });
+        sessionStorage.setItem("is_logged_in", "true");
       } else {
-        await authLogin(email, password);
+        const loginResult = await authLogin(email, password);
+        if (loginResult.requires2FA) {
+          setRequiresTwoFactor(true);
+          setTwoFactorToken(loginResult.twoFactorToken ?? "");
+          toast.info("Enter your authenticator code to continue");
+          return;
+        }
       }
 
       toast.success("Logged in successfully");

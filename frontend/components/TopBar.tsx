@@ -2,12 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
-// FIX: Import from centralized API
-import { getMyProfile } from "@/lib/api";
+import { useWallet } from "@/hooks/useWallet"; // Added Wallet hook
+import { NavLink } from "./NavLink"; // Use your new NavLink!
 
 const PUBLIC_PATHS = ["/", "/login", "/register", "/verify-email"];
 
@@ -15,39 +13,27 @@ export function TopBar() {
   const pathname = usePathname();
   const router = useRouter();
 
-  const { currentUser, isAuthenticated, isLoading, logout } = useAuth();
-  const [kycStatus, setKycStatus] = useState<string | null>(null);
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      if (!isAuthenticated) return;
-      try {
-        // This now uses the interceptor logic from lib/api
-        const p = await getMyProfile();
-        if (!mounted) return;
-        setKycStatus(p?.kyc?.status ?? null);
-      } catch {
-        if (mounted) setKycStatus(null);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [isAuthenticated]);
+  // Pull everything from Context - no local useEffect needed!
+  const { user, kycStatus, isAuthenticated, isLoading, logout } = useAuth();
+  const { isConnected, shortAddress, balance } = useWallet();
 
   const isPublicPath = PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/"),
   );
 
-  if (isPublicPath) return null;
-  if (!isAuthenticated && !isLoading) return null;
+  if (isPublicPath || (isLoading && !isAuthenticated)) return null;
 
-  const roleValue = String(currentUser?.role ?? "").toLowerCase();
-  const avatarLetter = (currentUser?.email?.[0] || "U").toUpperCase();
+  const roleValue = user?.role?.toLowerCase() || "";
+  const avatarLetter = (user?.email?.[0] || "U").toUpperCase();
 
-  // FIX: Redirect to /profile instead of /kyc
-  const homeHref = roleValue === "admin" ? "/admin/dashboard" : "/profile";
+  const homeHref =
+    roleValue === "admin"
+      ? "/admin/dashboard"
+      : roleValue === "investor"
+        ? "/investor/marketplace"
+        : roleValue === "seller"
+          ? "/sme/dashboard"
+          : "/profile";
   const isKycPending = kycStatus === "pending" || kycStatus === "review";
 
   return (
@@ -57,51 +43,53 @@ export function TopBar() {
           KYC verification in progress. Some features are currently locked.
         </div>
       )}
+      
       <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-6">
-          <Link
-            href={homeHref}
-            className="font-bold tracking-tight text-primary"
-          >
+          <Link href={homeHref} className="font-bold tracking-tight text-primary">
             InvoiceChain
           </Link>
 
           <nav className="hidden items-center gap-5 text-sm font-medium text-muted-foreground sm:flex">
-            {roleValue !== "admin" && (
-              <Link
-                href="/profile"
-                className="hover:text-foreground transition-colors"
-              >
-                Verification
-              </Link>
-            )}
             {roleValue === "investor" && (
-              <Link
-                href="/INVESTOR/marketplace"
-                className="hover:text-foreground transition-colors"
-              >
-                Marketplace
-              </Link>
+              <>
+                <NavLink to="/investor/marketplace" activeClassName="text-foreground">
+                  Marketplace
+                </NavLink>
+                <NavLink to="/investor/portfolio" activeClassName="text-foreground">
+                  Portfolio
+                </NavLink>
+              </>
             )}
             {(roleValue === "sme" || roleValue === "seller") && (
               <>
-                <Link href="/sme/dashboard" className="hover:text-foreground">
-                  SME Dashboard
-                </Link>
-                <Link href="/upload" className="hover:text-foreground">
-                  SME Upload
-                </Link>
+                <NavLink to="/sme/dashboard" activeClassName="text-foreground">
+                  Dashboard
+                </NavLink>
+                <NavLink to="/sme/invoices" activeClassName="text-foreground">
+                  Invoices
+                </NavLink>
+                <NavLink to="/sme/upload" activeClassName="text-foreground">
+                  Upload
+                </NavLink>
               </>
-            )}
-            {roleValue === "admin" && (
-              <Link href="/admin/dashboard" className="hover:text-foreground">
-                Admin
-              </Link>
             )}
           </nav>
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Wallet Status Indicator */}
+          {isConnected && (
+            <div className="hidden md:flex flex-col items-end mr-2">
+              <span className="text-[10px] text-muted-foreground leading-none">
+                {shortAddress}
+              </span>
+              <span className="text-[11px] font-bold text-primary leading-tight">
+                {balance || "0.00"} MATIC
+              </span>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => router.push("/profile")}
@@ -109,6 +97,7 @@ export function TopBar() {
           >
             {avatarLetter}
           </button>
+          
           <Button
             variant="ghost"
             size="sm"

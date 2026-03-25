@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getAdminUsers } from "@/lib/api";
-import type { AdminManagedUser } from "@/lib/api/types";
+import type { AdminManagedUser } from "@/lib/types";
 
 export default function InvestorsListPage() {
   const [rows, setRows] = useState<AdminManagedUser[]>([]);

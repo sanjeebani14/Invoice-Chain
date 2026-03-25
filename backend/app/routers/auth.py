@@ -68,9 +68,6 @@ async def verify_email(req: EmailVerificationRequest, response: Response, db: Se
     user = service.validate_verification_token(req.token)
     if not user:
         raise HTTPException(400, "Invalid or expired token")
-
-    access, refresh = service.create_login_session(user)
-    set_auth_cookies(response, access, refresh)
     return {"message": "Email verified successfully", "user": UserOut.from_orm(user)}
 
 @router.get("/verify-email")
@@ -88,13 +85,9 @@ def verify_email_link(token: str, db: Session = Depends(get_db)):
             print(f"DEBUG: Verification failed for token: {token}")
             return RedirectResponse(url=f"{frontend_url}/verify-email?status=error")
 
-        # Create session and update user status
+        # Update user status and redirect to verification result page.
         service.heal_user_status(user)
-        access, refresh = service.create_login_session(user)
         response = RedirectResponse(url=f"{frontend_url}/verify-email?status=success")
-        
-        # Set the cookies on the redirect object
-        set_auth_cookies(response, access, refresh)
         print(f"DEBUG: Verification successful for user: {user.email}")
         return response
 
