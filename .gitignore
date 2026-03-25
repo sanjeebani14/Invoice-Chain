@@ -34,3 +34,5 @@ node_modules/
 blockchain/artifacts/
 blockchain/cache/
 blockchain/ignition/deployments/
+blockchain/deployments/addresses.ts
+blockchain/deployments/baseSepolia.json
