@@ -180,49 +180,53 @@ export default function Analytics() {
   useEffect(() => {
     let isMounted = true;
 
-    const loadPlatformStatistics = async () => {
-      setPlatformLoading(true);
-      try {
-        const [healthResult, timeseriesResult, heatmapResult, concentrationResult] =
-          await Promise.allSettled([
-            getPlatformHealthMetrics(),
-            getPlatformTimeSeries(12, false),
-            getRiskHeatmap(),
-            getPlatformConcentration(20),
-          ]);
+    // Fire all requests concurrently, but only block the skeleton on "health"
+    // so the first KPI grid can appear quickly.
+    setPlatformLoading(true);
 
+    void getPlatformHealthMetrics()
+      .then((data) => {
         if (!isMounted) return;
-
-        setHealthMetrics(
-          healthResult.status === "fulfilled" ? healthResult.value : null,
-        );
-        setTimeSeriesData(
-          timeseriesResult.status === "fulfilled"
-            ? timeseriesResult.value.data
-            : [],
-        );
-        setRiskHeatmap(
-          heatmapResult.status === "fulfilled" ? heatmapResult.value : null,
-        );
-        setPlatformConcentration(
-          concentrationResult.status === "fulfilled"
-            ? concentrationResult.value
-            : null,
-        );
-      } catch {
+        setHealthMetrics(data);
+      })
+      .catch(() => {
         if (!isMounted) return;
         setHealthMetrics(null);
-        setTimeSeriesData([]);
-        setRiskHeatmap(null);
-        setPlatformConcentration(null);
-      } finally {
-        if (isMounted) {
-          setPlatformLoading(false);
-        }
-      }
-    };
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setPlatformLoading(false);
+      });
 
-    loadPlatformStatistics();
+    void getPlatformTimeSeries(12, true)
+      .then((data) => {
+        if (!isMounted) return;
+        setTimeSeriesData(data?.data ?? []);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setTimeSeriesData([]);
+      });
+
+    void getRiskHeatmap()
+      .then((data) => {
+        if (!isMounted) return;
+        setRiskHeatmap(data);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setRiskHeatmap(null);
+      });
+
+    void getPlatformConcentration(20)
+      .then((data) => {
+        if (!isMounted) return;
+        setPlatformConcentration(data);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setPlatformConcentration(null);
+      });
 
     return () => {
       isMounted = false;
@@ -252,107 +256,94 @@ export default function Analytics() {
         </TabsList>
 
         <TabsContent value="platform" className="space-y-6">
-          {platformLoading ? (
+          {platformLoading && !healthMetrics && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {Array.from({ length: 8 }).map((_, i) => (
                 <ChartSkeleton key={i} />
               ))}
             </div>
-          ) : (
-            <>
-              {healthMetrics && (
-                <PlatformMetricsGrid
-                  metrics={healthMetrics}
-                  isLoading={platformLoading}
-                />
-              )}
+          )}
+          {healthMetrics && (
+            <PlatformMetricsGrid
+              metrics={healthMetrics}
+              isLoading={platformLoading}
+            />
+          )}
 
-              {timeSeriesData.length > 0 && (
-                <GrowthTrendChart
-                  data={timeSeriesData}
-                  isLoading={platformLoading}
-                />
-              )}
+          {timeSeriesData.length > 0 && (
+            <GrowthTrendChart data={timeSeriesData} isLoading={platformLoading} />
+          )}
 
-              {riskHeatmap && (
-                <SectorExposureChart
-                  data={riskHeatmap}
-                  isLoading={platformLoading}
-                />
-              )}
+          {riskHeatmap && (
+            <SectorExposureChart data={riskHeatmap} isLoading={platformLoading} />
+          )}
 
-              {platformConcentration && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <ChartPanel title="Platform Concentration Alerts">
-                    <div className="space-y-2 text-sm text-gray-700">
-                      <p className="font-semibold text-gray-900">
-                        Top 5 sellers share{" "}
-                        {platformConcentration.top_5_seller_share_pct.toFixed(
-                          2,
-                        )}
-                        % of total volume
-                      </p>
-                      {platformConcentration.alerts.length === 0 && (
-                        <p>
-                          No concentration alerts above{" "}
-                          {platformConcentration.threshold_pct}%.
-                        </p>
-                      )}
-                      {platformConcentration.alerts.slice(0, 6).map((alert) => (
+          {platformConcentration && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <ChartPanel title="Platform Concentration Alerts">
+                <div className="space-y-2 text-sm text-gray-700">
+                  <p className="font-semibold text-gray-900">
+                    Top 5 sellers share{" "}
+                    {platformConcentration.top_5_seller_share_pct.toFixed(2)}% of
+                    total volume
+                  </p>
+                  {platformConcentration.alerts.length === 0 && (
+                    <p>
+                      No concentration alerts above{" "}
+                      {platformConcentration.threshold_pct}%.
+                    </p>
+                  )}
+                  {platformConcentration.alerts.slice(0, 6).map((alert) => (
+                    <div
+                      key={`${alert.type}-${alert.key}`}
+                      className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2"
+                    >
+                      <span className="capitalize">
+                        {alert.type}: {alert.key}
+                      </span>
+                      <span className="font-semibold">
+                        {alert.percentage.toFixed(2)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </ChartPanel>
+
+              <ChartPanel title="Sector and Geo Concentration">
+                <div className="space-y-3 text-sm text-gray-700">
+                  <div>
+                    <p className="mb-1 font-semibold text-gray-900">Top Sectors</p>
+                    {platformConcentration.sector_breakdown
+                      .slice(0, 5)
+                      .map((item) => (
                         <div
-                          key={`${alert.type}-${alert.key}`}
-                          className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2"
+                          key={item.key}
+                          className="flex items-center justify-between"
                         >
-                          <span className="capitalize">
-                            {alert.type}: {alert.key}
-                          </span>
-                          <span className="font-semibold">
-                            {alert.percentage.toFixed(2)}%
-                          </span>
+                          <span>{item.key}</span>
+                          <span>{item.percentage.toFixed(2)}%</span>
                         </div>
                       ))}
-                    </div>
-                  </ChartPanel>
-
-                  <ChartPanel title="Sector and Geo Concentration">
-                    <div className="space-y-3 text-sm text-gray-700">
-                      <div>
-                        <p className="mb-1 font-semibold text-gray-900">
-                          Top Sectors
-                        </p>
-                        {platformConcentration.sector_breakdown
-                          .slice(0, 5)
-                          .map((item) => (
-                            <div
-                              key={item.key}
-                              className="flex items-center justify-between"
-                            >
-                              <span>{item.key}</span>
-                              <span>{item.percentage.toFixed(2)}%</span>
-                            </div>
-                          ))}
-                      </div>
-                      <div>
-                        <p className="mb-1 font-semibold text-gray-900">
-                          Top Geographies
-                        </p>
-                        {platformConcentration.geo_breakdown
-                          .slice(0, 5)
-                          .map((item) => (
-                            <div
-                              key={item.key}
-                              className="flex items-center justify-between"
-                            >
-                              <span>{item.key}</span>
-                              <span>{item.percentage.toFixed(2)}%</span>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  </ChartPanel>
+                  </div>
+                  <div>
+                    <p className="mb-1 font-semibold text-gray-900">
+                      Top Geographies
+                    </p>
+                    {platformConcentration.geo_breakdown
+                      .slice(0, 5)
+                      .map((item) => (
+                        <div
+                          key={item.key}
+                          className="flex items-center justify-between"
+                        >
+                          <span>{item.key}</span>
+                          <span>{item.percentage.toFixed(2)}%</span>
+                        </div>
+                      ))}
+                  </div>
                 </div>
-              )}
-            </>
+              </ChartPanel>
+            </div>
           )}
         </TabsContent>
 

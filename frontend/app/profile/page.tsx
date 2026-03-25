@@ -14,23 +14,23 @@ import WalletLogin from "@/components/auth/WalletLogin";
 import { getMyProfile, updateMyProfile } from "@/lib/api";
 
 export default function ProfilePage() {
-  const { 
-    user: currentUser, 
+  const {
+    user: currentUser,
     profile,
-    isAuthenticated, 
-    isLoading: authLoading, 
-    refreshProfile 
+    isAuthenticated,
+    isLoading: authLoading,
+    refreshProfile,
   } = useAuth();
-  
+
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  
-  const [form, setForm] = useState({ 
-    fullName: "", 
-    phone: "", 
-    company: "" 
+
+  const [form, setForm] = useState({
+    fullName: "",
+    phone: "",
+    company: "",
   });
 
   const fetchProfile = useCallback(async () => {
@@ -38,13 +38,13 @@ export default function ProfilePage() {
       setLoading(false);
       return;
     }
-    
+
     try {
       const res = await getMyProfile();
       setForm({
         fullName: res.user.full_name ?? "",
         phone: res.user.phone ?? "",
-        company: res.user.company_name ?? ""
+        company: res.user.company_name ?? "",
       });
     } catch (err) {
       toast.error("Could not load profile data.");
@@ -71,11 +71,11 @@ export default function ProfilePage() {
       await updateMyProfile({
         full_name: form.fullName.trim(),
         phone: form.phone.trim(),
-        company_name: form.company.trim()
+        company_name: form.company.trim(),
       });
-      
+
       // Update global context so name changes everywhere (like TopBar)
-      await refreshProfile(); 
+      await refreshProfile();
       toast.success("Profile updated successfully");
     } catch (err: any) {
       const msg = err.response?.data?.detail || "Update failed";
@@ -93,7 +93,7 @@ export default function ProfilePage() {
       return;
     }
 
-    if (role?.includes("investor")) router.push("/investor/marketplace");
+    if (role?.includes("investor")) router.push("/INVESTOR/marketplace");
     else router.push("/sme/dashboard");
   };
 
@@ -102,7 +102,9 @@ export default function ProfilePage() {
       <div className="flex h-[80vh] w-full items-center justify-center">
         <div className="flex flex-col items-center gap-2">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground animate-pulse">Loading profile...</p>
+          <p className="text-sm text-muted-foreground animate-pulse">
+            Loading profile...
+          </p>
         </div>
       </div>
     );
@@ -112,10 +114,19 @@ export default function ProfilePage() {
     <div className="container mx-auto max-w-6xl py-10 px-4 animate-in fade-in duration-500">
       <div className="mb-10 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">Account Settings</h1>
-          <p className="text-muted-foreground">Manage your identity and blockchain connections.</p>
+          <h1 className="text-3xl font-extrabold tracking-tight">
+            Account Settings
+          </h1>
+          <p className="text-muted-foreground">
+            Manage your identity and blockchain connections.
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleBack} className="hidden sm:flex">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleBack}
+          className="hidden sm:flex"
+        >
           <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
         </Button>
       </div>
@@ -138,41 +149,72 @@ export default function ProfilePage() {
 
             <form onSubmit={onSave} className="p-8 space-y-6">
               <div className="space-y-2">
-                <Label className="text-xs uppercase font-black text-muted-foreground">Email Address</Label>
-                <Input value={currentUser?.email || ""} disabled className="bg-muted/50 border-dashed" />
+                <Label className="text-xs uppercase font-black text-muted-foreground">
+                  Email Address
+                </Label>
+                <Input
+                  value={currentUser?.email || ""}
+                  disabled
+                  className="bg-muted/50 border-dashed"
+                />
               </div>
 
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="fullName" className="text-xs uppercase font-black">Full Name</Label>
-                  <Input 
-                    id="fullName" 
-                    value={form.fullName} 
-                    onChange={(e) => setForm({...form, fullName: e.target.value})} 
+                  <Label
+                    htmlFor="fullName"
+                    className="text-xs uppercase font-black"
+                  >
+                    Full Name
+                  </Label>
+                  <Input
+                    id="fullName"
+                    value={form.fullName}
+                    onChange={(e) =>
+                      setForm({ ...form, fullName: e.target.value })
+                    }
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="phone" className="text-xs uppercase font-black">Phone Number</Label>
-                  <Input 
-                    id="phone" 
-                    value={form.phone} 
-                    onChange={(e) => setForm({...form, phone: e.target.value})} 
+                  <Label
+                    htmlFor="phone"
+                    className="text-xs uppercase font-black"
+                  >
+                    Phone Number
+                  </Label>
+                  <Input
+                    id="phone"
+                    value={form.phone}
+                    onChange={(e) =>
+                      setForm({ ...form, phone: e.target.value })
+                    }
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="company" className="text-xs uppercase font-black">Company Name</Label>
-                <Input 
-                  id="company" 
-                  value={form.company} 
-                  onChange={(e) => setForm({...form, company: e.target.value})} 
+                <Label
+                  htmlFor="company"
+                  className="text-xs uppercase font-black"
+                >
+                  Company Name
+                </Label>
+                <Input
+                  id="company"
+                  value={form.company}
+                  onChange={(e) =>
+                    setForm({ ...form, company: e.target.value })
+                  }
                 />
               </div>
 
               <div className="pt-4 border-t flex justify-end">
                 <Button type="submit" disabled={saving || !isFormValid}>
-                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  {saving ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
                   {saving ? "Saving..." : "Update Profile"}
                 </Button>
               </div>

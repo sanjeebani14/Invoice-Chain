@@ -12,7 +12,12 @@ import { Label } from "@/components/ui/label";
 import { AuthCard } from "@/components/auth/AuthCard";
 
 // Centralized Logic
-import { getMyProfile, getWalletNonce, api, loginWithTwoFactor } from "@/lib/api";
+import {
+  getMyProfile,
+  getWalletNonce,
+  api,
+  loginWithTwoFactor,
+} from "@/lib/api";
 import { useWallet } from "@/context/WalletContext";
 import { useAuth } from "@/hooks/useAuth";
 import * as web3 from "@/lib/web3";
@@ -35,7 +40,7 @@ function resolveUserDestination(profile: ProfileMeResponse): string {
     return "/profile";
   }
 
-  if (role.includes("investor")) return "/investor/marketplace";
+  if (role.includes("investor")) return "/INVESTOR/marketplace";
   if (role.includes("seller")) return "/sme/dashboard";
 
   return "/profile"; // Default safety fallback

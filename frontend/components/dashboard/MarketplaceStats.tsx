@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Activity, TrendingUp, Users, Trophy } from "lucide-react";
-import { getPlatformHealthMetrics, PlatformHealthMetrics } from "@/lib/api";
+import type { PlatformHealthMetrics } from "@/lib/api";
+import { getInvestorPlatformHealthMetrics } from "@/lib/api";
 
 export function MarketplaceStats() {
   const [metrics, setMetrics] = useState<PlatformHealthMetrics | null>(null);
@@ -10,7 +11,7 @@ export function MarketplaceStats() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getPlatformHealthMetrics({ suppressErrors: false })
+    getInvestorPlatformHealthMetrics()
       .then((data) => {
         setMetrics(data);
         setError(null);

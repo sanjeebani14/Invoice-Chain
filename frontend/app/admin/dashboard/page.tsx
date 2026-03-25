@@ -29,22 +29,29 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const [overviewData, riskData, syncData] = await Promise.all([
-        getAdminOverview(),
-        getRiskMetrics(),
-        getBlockchainSyncStatus(),
-      ]);
-      setOverview(overviewData);
-      setRisk(riskData);
-      setSyncStates(syncData.items || []);
-    } catch {
-      setError("Unable to load admin overview right now.");
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true);
+    setError(null);
+
+    const overviewPromise = getAdminOverview()
+      .then((data) => setOverview(data))
+      .catch(() => {
+        setError("Unable to load admin overview right now.");
+      });
+
+    const riskPromise = getRiskMetrics()
+      .then((data) => setRisk(data))
+      .catch(() => {
+        // Risk is non-critical for the initial dashboard render.
+      });
+
+    const syncPromise = getBlockchainSyncStatus()
+      .then((data) => setSyncStates(data.items || []))
+      .catch(() => {
+        // Sync is non-critical for the initial dashboard render.
+      });
+
+    await Promise.allSettled([overviewPromise, riskPromise, syncPromise]);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -70,11 +77,26 @@ export default function Dashboard() {
     return <div className="text-sm text-destructive">{error}</div>;
   }
 
-  if (!overview || !risk) {
+  if (!overview) {
     return (
       <div className="text-sm text-muted-foreground">No overview data available.</div>
     );
   }
+
+  const riskFallback: RiskMetrics = {
+    total_sellers: 0,
+    high_risk: 0,
+    medium_risk: 0,
+    low_risk: 0,
+    avg_composite_score: 0,
+    risk_distribution: [],
+    fraud_alerts_over_time: [],
+    seller_risk_trends: [],
+    top_high_risk_sellers: [],
+    risk_level_breakdown: [],
+  };
+
+  const riskSafe = risk ?? riskFallback;
 
   const kpiCards = [
     {
@@ -128,7 +150,7 @@ export default function Dashboard() {
     },
     {
       label: "Sellers",
-      value: risk.total_sellers,
+      value: riskSafe.total_sellers,
       icon: TrendingUp,
       color: "bg-cyan-50 border-cyan-200",
       textColor: "text-cyan-600",
@@ -252,7 +274,7 @@ export default function Dashboard() {
                 </span>
               </div>
               <span className="text-xl font-bold text-red-600">
-                {risk.high_risk}
+                {riskSafe.high_risk}
               </span>
             </div>
             <div className="flex items-center justify-between rounded-lg bg-amber-50 p-4">
@@ -263,7 +285,7 @@ export default function Dashboard() {
                 </span>
               </div>
               <span className="text-xl font-bold text-amber-600">
-                {risk.medium_risk}
+                {riskSafe.medium_risk}
               </span>
             </div>
             <div className="flex items-center justify-between rounded-lg bg-emerald-50 p-4">
@@ -274,7 +296,7 @@ export default function Dashboard() {
                 </span>
               </div>
               <span className="text-xl font-bold text-emerald-600">
-                {risk.low_risk}
+                {riskSafe.low_risk}
               </span>
             </div>
             <div className="rounded-lg border-2 border-blue-300 bg-gradient-to-r from-blue-50 to-indigo-50 p-4">
@@ -282,7 +304,7 @@ export default function Dashboard() {
                 Platform Average
               </p>
               <p className="mt-2 text-2xl font-bold text-blue-700">
-                {risk.avg_composite_score.toFixed(2)}
+                {riskSafe.avg_composite_score.toFixed(2)}
               </p>
               <p className="text-xs text-muted-foreground">Composite score</p>
             </div>

@@ -1,11 +1,13 @@
-import { riskApi, analyticsApi } from "./api";
+import axios from "axios";
+import { riskApi, analyticsApi, adminStatsApi, withTimeoutRetry } from "./api";
 import type { 
   SellerScore, 
   FraudQueueItem, 
   RiskMetrics, 
   ManualFraudFlagPayload, 
   InvoiceAnomalyExplanation,
-  ConcentrationAnalysis 
+  ConcentrationAnalysis,
+  PlatformHealthMetrics,
 } from "./types";
 
 /**
@@ -91,4 +93,61 @@ export const getPlatformConcentration = async (thresholdPct: number = 20): Promi
     { params: { threshold_pct: thresholdPct } }
   );
   return data;
+};
+
+const mapAnyPlatformHealthMetricsToHealthMetrics = (
+  data: any,
+): PlatformHealthMetrics => ({
+  // Support both "health-metrics" and "summary" shaped payloads.
+  gmv: Number(data.gmv ?? data.total_funded_volume ?? 0),
+  repayment_rate: Number(
+    data.repayment_rate ?? data.repayment_metrics?.repayment_rate ?? 0,
+  ),
+  default_rate: Number(
+    data.default_rate ?? data.repayment_metrics?.default_rate ?? 0,
+  ),
+  platform_revenue: Number(data.platform_revenue ?? 0),
+  active_sellers: Number(
+    data.active_sellers ?? data.user_metrics?.active_sellers ?? 0,
+  ),
+  active_investors: Number(
+    data.active_investors ?? data.user_metrics?.active_investors ?? 0,
+  ),
+  avg_risk_score: Number(
+    data.avg_risk_score ?? data.risk_distribution?.avg_score ?? data.avg_score ?? 0,
+  ),
+  avg_invoice_yield: Number(
+    data.avg_invoice_yield ?? data.average_invoice_yield ?? 0,
+  ),
+  high_risk_invoices: Number(
+    data.high_risk_invoices ?? data.risk_distribution?.high ?? data.high ?? 0,
+  ),
+  top_sector: data.top_sector ?? data.sector_exposure?.top_sector ?? null,
+  sector_concentration: Number(
+    data.sector_concentration ?? data.sector_exposure?.concentration_ratio ?? 0,
+  ),
+});
+
+/**
+ * Investor-safe platform stats.
+ */
+export const getInvestorPlatformHealthMetrics = async (): Promise<PlatformHealthMetrics> => {
+  // Prefer the shared health-metrics endpoint. Despite living under the
+  // admin router, the backend allows investors via `get_current_admin_or_investor`.
+  try {
+    const { data } = await withTimeoutRetry(() =>
+      adminStatsApi.get<any>("/health-metrics"),
+    );
+    return mapAnyPlatformHealthMetricsToHealthMetrics(data);
+  } catch (err) {
+    const status = axios.isAxiosError(err) ? err.response?.status : null;
+    // Let the global axios interceptor handle auth failures (refresh/redirect).
+    if (status === 401 || status === 403) throw err;
+
+    // Fallback for older backend shapes.
+    const { data } = await withTimeoutRetry(() =>
+      analyticsApi.get<any>("/platform/summary"),
+    );
+    return mapAnyPlatformHealthMetricsToHealthMetrics(data);
+  }
 };

@@ -30,7 +30,7 @@ export function TopBar() {
     roleValue === "admin"
       ? "/admin/dashboard"
       : roleValue === "investor"
-        ? "/investor/marketplace"
+        ? "/INVESTOR/marketplace"
         : roleValue === "seller"
           ? "/sme/dashboard"
           : "/profile";
@@ -43,20 +43,29 @@ export function TopBar() {
           KYC verification in progress. Some features are currently locked.
         </div>
       )}
-      
+
       <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-6">
-          <Link href={homeHref} className="font-bold tracking-tight text-primary">
+          <Link
+            href={homeHref}
+            className="font-bold tracking-tight text-primary"
+          >
             InvoiceChain
           </Link>
 
           <nav className="hidden items-center gap-5 text-sm font-medium text-muted-foreground sm:flex">
             {roleValue === "investor" && (
               <>
-                <NavLink to="/investor/marketplace" activeClassName="text-foreground">
+                <NavLink
+                  to="/INVESTOR/marketplace"
+                  activeClassName="text-foreground"
+                >
                   Marketplace
                 </NavLink>
-                <NavLink to="/investor/portfolio" activeClassName="text-foreground">
+                <NavLink
+                  to="/INVESTOR/portfolio"
+                  activeClassName="text-foreground"
+                >
                   Portfolio
                 </NavLink>
               </>
@@ -97,7 +106,7 @@ export function TopBar() {
           >
             {avatarLetter}
           </button>
-          
+
           <Button
             variant="ghost"
             size="sm"
