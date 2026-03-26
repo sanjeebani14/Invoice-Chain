@@ -97,7 +97,7 @@ export default function SellerDetails() {
 
   const details = [
     { label: "Seller ID", value: `#${seller.seller_id}` },
-    { label: "Credit Score", value: seller.credit_score ?? "N/A" },
+    { label: "Payment History Score", value: seller.credit_score ?? "N/A" },
     {
       label: "Financial Risk (0-100)",
       value: seller.breakdown?.financial_risk ?? "N/A",

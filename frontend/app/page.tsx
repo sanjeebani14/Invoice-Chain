@@ -70,7 +70,7 @@ export default function Home() {
             </div>
             <h2 className="text-3xl font-bold mb-4 text-white">Admin Portal</h2>
             <p className="text-slate-400 mb-10 text-lg leading-relaxed">
-              Manage users, invoices, risk metrics, and platform operations.
+              Manage users, invoices, risk metrics, and admin operations.
             </p>
             <Link
               href="/login"

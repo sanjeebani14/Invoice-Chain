@@ -195,6 +195,9 @@ export default function PendingInvoicesPage() {
                   <p className="mb-2 text-sm font-medium text-gray-900">
                     Original Upload
                   </p>
+                  <p className="mb-3 text-xs font-medium text-gray-800">
+                    {selected.original_filename || `invoice-${selected.id}`}
+                  </p>
                   {selected.upload_url ? (
                     isPdf(selected.upload_url) ? (
                       <iframe
@@ -225,43 +228,43 @@ export default function PendingInvoicesPage() {
                   </p>
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center justify-between border-b pb-2">
-                      <span>Invoice Number</span>
-                      <span className="font-medium">
+                      <span className="text-gray-800">Invoice Number</span>
+                      <span className="font-medium text-gray-900">
                         {selected.ocr_extracted.invoice_number || "-"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b pb-2">
-                      <span>Seller Name</span>
-                      <span className="font-medium">
+                      <span className="text-gray-800">Seller Name</span>
+                      <span className="font-medium text-gray-900">
                         {selected.ocr_extracted.seller_name || "-"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b pb-2">
-                      <span>Buyer Name</span>
-                      <span className="font-medium">
+                      <span className="text-gray-800">Buyer Name</span>
+                      <span className="font-medium text-gray-900">
                         {selected.ocr_extracted.client_name || "-"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b pb-2">
-                      <span>Amount</span>
-                      <span className="font-medium">
+                      <span className="text-gray-800">Amount</span>
+                      <span className="font-medium text-gray-900">
                         {selected.ocr_extracted.amount ?? "-"}{" "}
                         {selected.ocr_extracted.currency || ""}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b pb-2">
-                      <span>Due Date</span>
-                      <span className="font-medium">
+                      <span className="text-gray-800">Due Date</span>
+                      <span className="font-medium text-gray-900">
                         {selected.ocr_extracted.due_date || "-"}
                       </span>
                     </div>
                   </div>
 
                   <div className="mt-4 rounded bg-gray-50 p-3">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-800">
                       Confidence Scores
                     </p>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-700">
+                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-800">
                       <div>Invoice #</div>
                       <div className="text-right">
                         {formatPercent(selected.confidence.invoice_number)}
