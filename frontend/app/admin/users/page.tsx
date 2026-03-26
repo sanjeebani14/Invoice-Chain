@@ -48,7 +48,11 @@ function RoleBadge({ role }: { role: AdminManagedUser["role"] }) {
   const value = normalizeRole(role);
   if (value === "admin") return <Badge variant="destructive">ADMIN</Badge>;
   if (value === "investor") return <Badge variant="secondary">INVESTOR</Badge>;
-  return <Badge variant="outline">SELLER</Badge>;
+  return (
+    <Badge variant="outline" className="border-sky-300 bg-sky-50 text-sky-900">
+      SELLER
+    </Badge>
+  );
 }
 
 export default function AdminUsersPage() {

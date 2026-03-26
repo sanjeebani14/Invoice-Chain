@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
 
 import {
@@ -52,15 +52,18 @@ export function CheckoutSidebar({
   const [txHash, setTxHash] = useState<string | null>(null);
   const [txExplorerUrl, setTxExplorerUrl] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open) {
-      setTermsAccepted(false);
-      setStep("review");
-      setError(null);
-      setTxHash(null);
-      setTxExplorerUrl(null);
-    }
-  }, [open, invoice?.id]);
+  const resetCheckoutState = () => {
+    setTermsAccepted(false);
+    setStep("review");
+    setError(null);
+    setTxHash(null);
+    setTxExplorerUrl(null);
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) resetCheckoutState();
+    onOpenChange(nextOpen);
+  };
 
   const platformFee = useMemo(() => {
     if (!invoice) return 0;
@@ -101,7 +104,7 @@ export function CheckoutSidebar({
     process.env.NEXT_PUBLIC_BLOCK_EXPLORER_BASE_URL || DEFAULT_EXPLORER_BASE;
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="right"
         className="w-full border-l border-slate-200 bg-white p-0 sm:max-w-xl"
@@ -123,7 +126,10 @@ export function CheckoutSidebar({
                   const isActive = idx === progressIndex;
                   const isDone = idx < progressIndex;
                   return (
-                    <div key={label} className="flex items-center gap-2 text-xs">
+                    <div
+                      key={label}
+                      className="flex items-center gap-2 text-xs"
+                    >
                       <div
                         className={`flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold ${
                           isDone || isActive
@@ -252,7 +258,9 @@ export function CheckoutSidebar({
                 <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                   <div className="mb-2 flex items-center gap-2 text-emerald-800">
                     <CheckCircle2 size={18} />
-                    <h4 className="text-sm font-semibold">Purchase Completed</h4>
+                    <h4 className="text-sm font-semibold">
+                      Purchase Completed
+                    </h4>
                   </div>
                   <p className="text-xs text-emerald-900">
                     Transaction submitted successfully.

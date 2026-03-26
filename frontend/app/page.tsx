@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Zap, TrendingUp, Landmark } from "lucide-react"; // Nice icons to replace material symbols
+import { Zap, TrendingUp, Landmark, Shield } from "lucide-react"; // Nice icons to replace material symbols
 
 export default function Home() {
   return (
@@ -28,7 +28,7 @@ export default function Home() {
         </div>
 
         {/* Action Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-6xl">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl">
           {/* Investor Card */}
           <div className="group relative flex flex-col p-8 md:p-12 rounded-[2.5rem] bg-white/[0.03] border border-white/10 transition-all duration-300 hover:scale-[1.02] hover:bg-white/[0.06] text-left">
             <div className="p-3 bg-indigo-500/20 rounded-2xl w-fit mb-6">
@@ -60,6 +60,23 @@ export default function Home() {
               className="mt-auto inline-flex items-center gap-2 text-sm font-bold text-blue-400 hover:text-blue-300 transition-colors"
             >
               Access Capital <Zap size={16} />
+            </Link>
+          </div>
+
+          {/* Admin Card */}
+          <div className="group relative flex flex-col p-8 md:p-12 rounded-[2.5rem] bg-white/[0.03] border border-white/10 transition-all duration-300 hover:scale-[1.02] hover:bg-white/[0.06] text-left">
+            <div className="p-3 bg-emerald-500/20 rounded-2xl w-fit mb-6">
+              <Shield className="text-emerald-400" size={28} />
+            </div>
+            <h2 className="text-3xl font-bold mb-4 text-white">Admin Portal</h2>
+            <p className="text-slate-400 mb-10 text-lg leading-relaxed">
+              Manage users, invoices, risk metrics, and platform operations.
+            </p>
+            <Link
+              href="/login"
+              className="mt-auto inline-flex items-center gap-2 text-sm font-bold text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              Admin Login <Zap size={16} />
             </Link>
           </div>
         </div>

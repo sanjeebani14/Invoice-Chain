@@ -281,8 +281,8 @@ export default function Analytics() {
           {platformConcentration && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <ChartPanel title="Platform Concentration Alerts">
-                <div className="space-y-2 text-sm text-gray-700">
-                  <p className="font-semibold text-gray-900">
+                <div className="space-y-2 text-sm text-slate-700">
+                  <p className="font-semibold text-foreground">
                     Top 5 sellers share{" "}
                     {platformConcentration.top_5_seller_share_pct.toFixed(2)}% of
                     total volume
@@ -298,10 +298,10 @@ export default function Analytics() {
                       key={`${alert.type}-${alert.key}`}
                       className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2"
                     >
-                      <span className="capitalize">
+                      <span className="capitalize text-slate-900">
                         {alert.type}: {alert.key}
                       </span>
-                      <span className="font-semibold">
+                      <span className="font-semibold text-slate-900">
                         {alert.percentage.toFixed(2)}%
                       </span>
                     </div>
@@ -310,9 +310,9 @@ export default function Analytics() {
               </ChartPanel>
 
               <ChartPanel title="Sector and Geo Concentration">
-                <div className="space-y-3 text-sm text-gray-700">
+                <div className="space-y-3 text-sm text-muted-foreground">
                   <div>
-                    <p className="mb-1 font-semibold text-gray-900">Top Sectors</p>
+                    <p className="mb-1 font-semibold text-foreground">Top Sectors</p>
                     {platformConcentration.sector_breakdown
                       .slice(0, 5)
                       .map((item) => (
@@ -320,13 +320,17 @@ export default function Analytics() {
                           key={item.key}
                           className="flex items-center justify-between"
                         >
-                          <span>{item.key}</span>
-                          <span>{item.percentage.toFixed(2)}%</span>
+                          <span className="text-white">
+                            {item.key}
+                          </span>
+                          <span className="text-white">
+                            {item.percentage.toFixed(2)}%
+                          </span>
                         </div>
                       ))}
                   </div>
                   <div>
-                    <p className="mb-1 font-semibold text-gray-900">
+                    <p className="mb-1 font-semibold text-foreground">
                       Top Geographies
                     </p>
                     {platformConcentration.geo_breakdown
@@ -336,8 +340,12 @@ export default function Analytics() {
                           key={item.key}
                           className="flex items-center justify-between"
                         >
-                          <span>{item.key}</span>
-                          <span>{item.percentage.toFixed(2)}%</span>
+                          <span className="text-white">
+                            {item.key}
+                          </span>
+                          <span className="text-white">
+                            {item.percentage.toFixed(2)}%
+                          </span>
                         </div>
                       ))}
                   </div>
@@ -418,7 +426,7 @@ export default function Analytics() {
 
                 <ChartPanel title="Credit Score vs Risk Score">
                   {scatter.length === 0 ? (
-                    <div className="flex h-[240px] items-center justify-center text-sm text-gray-600">
+                    <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
                       No valid credit score data available for this filter.
                     </div>
                   ) : (
@@ -450,7 +458,7 @@ export default function Analytics() {
 
                 <ChartPanel title="Debt-to-Income vs Risk Score">
                   {dtiScatter.length === 0 ? (
-                    <div className="flex h-[240px] items-center justify-center text-sm text-gray-600">
+                    <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
                       No valid debt-to-income data available for this filter.
                     </div>
                   ) : (

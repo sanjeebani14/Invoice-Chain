@@ -17,14 +17,14 @@ import {
 import { AuthCard } from "@/components/auth/AuthCard";
 import { register } from "@/lib/auth";
 import { Eye, EyeOff } from "lucide-react";
-import { getMyKyc } from "@/lib/kyc";
+import type { UserRole } from "@/lib/types";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [role, setRole] = useState<"seller" | "investor">("seller");
+  const [role, setRole] = useState<UserRole>("seller");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,7 +48,7 @@ export default function RegisterPage() {
   return (
     <AuthCard
       title="Create an account"
-      subtitle="Join InvoiceChain as a Seller or Investor"
+      subtitle="Join InvoiceChain as a Seller, Investor, or Admin"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
@@ -92,13 +92,14 @@ export default function RegisterPage() {
         <div className="space-y-2">
           <Label htmlFor="role">Role</Label>
           {/* Uses the exact same Select component as admin/sellers/page.tsx */}
-          <Select value={role} onValueChange={(v: string) => setRole(v as "seller" | "investor")}>
+          <Select value={role} onValueChange={(v: string) => setRole(v as UserRole)}>
             <SelectTrigger id="role" className="bg-card border-border">
               <SelectValue placeholder="Select your role" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="seller">Seller (Invoice Seller)</SelectItem>
               <SelectItem value="investor">Investor (Invoice Buyer)</SelectItem>
+              <SelectItem value="admin">Admin</SelectItem>
             </SelectContent>
           </Select>
         </div>
