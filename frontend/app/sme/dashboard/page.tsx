@@ -140,7 +140,7 @@ export default function SmeDashboardPage() {
                 Real-time activity feed enabled
               </div>
               <Link
-                href="/upload"
+                href="/sme/upload"
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Upload Invoice

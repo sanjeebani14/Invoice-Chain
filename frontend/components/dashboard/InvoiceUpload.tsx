@@ -3,7 +3,7 @@
 import React, { useState} from "react";
 import { toast } from "sonner";
 import { Upload, FileText, Loader2, CheckCircle } from "lucide-react";
-import { api } from "@/lib/api";
+import { invoiceApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 type OcrField = { value: string | number | null; confidence: number };
@@ -53,15 +53,27 @@ export default function InvoiceUpload({ onUploadSuccess }: InvoiceUploadProps) {
     formData.append("file", file);
 
     try {
-      // Using the centralized api instance for interceptors and base URL
-      const response = await api.post("/invoice/upload", formData, {
+      // OCR + scanning can take longer than default API timeout.
+      const response = await invoiceApi.post("/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
+        timeout: 120000,
       });
-      
-      toast.success("OCR Extraction Successful!");
+
+      if (!response?.data?.invoice_id) {
+        throw new Error("Upload completed but invoice payload is missing");
+      }
+
+      setFile(null);
       onUploadSuccess(response.data);
+      toast.success("Upload complete. Please verify extracted fields.");
     } catch (err: any) {
-      const message = err.response?.data?.detail || "Upload failed. Please try again.";
+      const isTimeout =
+        err?.code === "ECONNABORTED" ||
+        String(err?.message || "").toLowerCase().includes("timeout");
+
+      const message = isTimeout
+        ? "Upload took too long. Wait a few seconds and check My Invoices before retrying."
+        : err.response?.data?.detail || "Upload failed. Please try again.";
       toast.error(message);
     } finally {
       setIsUploading(false);
