@@ -1,7 +1,5 @@
 .env
 .vscode
-data/
-backend/data/
 minio_data/
 .venv/
 register.json

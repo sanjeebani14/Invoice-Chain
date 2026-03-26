@@ -221,9 +221,7 @@ export default function SellerDetails() {
         </Card>
       )}
 
-      <ChartPanel title="Feature Impact on Risk">
-        <RiskContributorChart contributors={seller.risk_contributors} />
-      </ChartPanel>
+      {/* Feature Impact on Risk section removed as requested */}
     </div>
   );
 }
