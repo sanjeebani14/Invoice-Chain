@@ -271,11 +271,17 @@ export default function Analytics() {
           )}
 
           {timeSeriesData.length > 0 && (
-            <GrowthTrendChart data={timeSeriesData} isLoading={platformLoading} />
+            <GrowthTrendChart
+              data={timeSeriesData}
+              isLoading={platformLoading}
+            />
           )}
 
           {riskHeatmap && (
-            <SectorExposureChart data={riskHeatmap} isLoading={platformLoading} />
+            <SectorExposureChart
+              data={riskHeatmap}
+              isLoading={platformLoading}
+            />
           )}
 
           {platformConcentration && (
@@ -284,8 +290,8 @@ export default function Analytics() {
                 <div className="space-y-2 text-sm text-slate-700">
                   <p className="font-semibold text-foreground">
                     Top 5 sellers share{" "}
-                    {platformConcentration.top_5_seller_share_pct.toFixed(2)}% of
-                    total volume
+                    {platformConcentration.top_5_seller_share_pct.toFixed(2)}%
+                    of total volume
                   </p>
                   {platformConcentration.alerts.length === 0 && (
                     <p>
@@ -312,7 +318,9 @@ export default function Analytics() {
               <ChartPanel title="Sector and Geo Concentration">
                 <div className="space-y-3 text-sm text-muted-foreground">
                   <div>
-                    <p className="mb-1 font-semibold text-foreground">Top Sectors</p>
+                    <p className="mb-1 font-semibold text-foreground">
+                      Top Sectors
+                    </p>
                     {platformConcentration.sector_breakdown
                       .slice(0, 5)
                       .map((item) => (
@@ -320,9 +328,7 @@ export default function Analytics() {
                           key={item.key}
                           className="flex items-center justify-between"
                         >
-                          <span className="text-white">
-                            {item.key}
-                          </span>
+                          <span className="text-white">{item.key}</span>
                           <span className="text-white">
                             {item.percentage.toFixed(2)}%
                           </span>
@@ -340,9 +346,7 @@ export default function Analytics() {
                           key={item.key}
                           className="flex items-center justify-between"
                         >
-                          <span className="text-white">
-                            {item.key}
-                          </span>
+                          <span className="text-white">{item.key}</span>
                           <span className="text-white">
                             {item.percentage.toFixed(2)}%
                           </span>
