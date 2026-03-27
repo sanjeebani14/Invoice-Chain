@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from .. import models
 
 try:
-    from scipy.optimize import brentq  # type: ignore
-except Exception:  # pragma: no cover - fallback path
+    from scipy.optimize import brentq  
+except Exception:  
     brentq = None
 
 
@@ -30,6 +30,66 @@ class InvestorRow:
 class PortfolioAnalyticsService:
     def __init__(self, db: Session):
         self.db = db
+
+    def get_investor_investments(self, investor_id: int) -> dict[str, Any]:
+        rows = self._investor_rows(investor_id)
+        today = datetime.now(timezone.utc).date()
+
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            due_date = self._parse_date(row.invoice.due_date)
+            repayment_target = self._expected_repayment(row)
+            funded_amount = self._funded_amount(row)
+            repaid_amount = float(row.snapshot.repayment_amount or 0.0)
+
+            if row.snapshot.repaid_at is not None or self._status(row.invoice.status) in REPAID_STATUSES:
+                position_state = "repaid"
+            elif self._status(row.invoice.status) in ACTIVE_STATUSES:
+                position_state = "active"
+            else:
+                position_state = "pending"
+
+            days_to_due = (due_date - today).days if due_date else None
+            simulated_pnl = repaid_amount - funded_amount if repaid_amount > 0 else repayment_target - funded_amount
+
+            items.append(
+                {
+                    "snapshot_id": row.snapshot.id,
+                    "invoice_id": row.invoice.id,
+                    "invoice_number": row.invoice.invoice_number,
+                    "client_name": row.invoice.client_name,
+                    "sector": row.invoice.sector,
+                    "status": row.invoice.status,
+                    "position_state": position_state,
+                    "funded_amount": round(funded_amount, 2),
+                    "repayment_target": round(repayment_target, 2),
+                    "repaid_amount": round(repaid_amount, 2),
+                    "estimated_pnl": round(simulated_pnl, 2),
+                    "due_date": row.invoice.due_date,
+                    "days_to_due": days_to_due,
+                    "funded_at": row.snapshot.funded_at.isoformat() if row.snapshot.funded_at else None,
+                    "repaid_at": row.snapshot.repaid_at.isoformat() if row.snapshot.repaid_at else None,
+                }
+            )
+
+        items.sort(
+            key=lambda item: (
+                item.get("position_state") == "repaid",
+                item.get("due_date") is None,
+                item.get("due_date") or "",
+            )
+        )
+
+        total_funded = round(sum(item["funded_amount"] for item in items), 2)
+        total_repaid = round(sum(item["repaid_amount"] for item in items), 2)
+
+        return {
+            "investor_id": investor_id,
+            "total": len(items),
+            "total_funded": total_funded,
+            "total_repaid": total_repaid,
+            "items": items,
+        }
 
     def get_investor_summary(self, investor_id: int) -> dict[str, Any]:
         rows = self._investor_rows(investor_id)

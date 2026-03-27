@@ -1,19 +1,23 @@
 import { network } from "hardhat";
-import * as fs from "fs";
-import * as path from "path";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function main() {
-  const { viem } = await network.connect();
-  const [deployer] = await viem.getWalletClients();
-  const publicClient = await viem.getPublicClient();
+    const { viem } = await network.connect();
+    const [deployer] = await viem.getWalletClients();
+    const publicClient = await viem.getPublicClient();
 
   console.log("Deploying with account:", deployer.account.address);
 
   const balance = await publicClient.getBalance({ address: deployer.account.address });
   console.log("Account balance:", balance.toString(), "wei");
 
-  // Deploy InvoiceNFT
-  console.log("\nDeploying InvoiceNFT");
+  // deploy project
+  console.log("\ndeploying invoicenft");
   const invoiceNFT = await viem.deployContract("InvoiceNFT", [
     deployer.account.address,
   ]);
@@ -119,81 +123,81 @@ async function main() {
   fs.mkdirSync(outDir, { recursive: true });
 
   // Write JSON deployment info
+  // deploy marketplace
+  console.log("\ndeploying marketplace");
+  const marketplace = await viem.deployContract("Marketplace", [
+    invoiceNFT.address,
+    deployer.account.address, // fee recipient — update to multisig in prod
+    250n,
+  ]);
+  console.log("Marketplace deployed to:", marketplace.address);
+
+  // deploy auction
+  console.log("\ndeploying auction");
+  const auction = await viem.deployContract("Auction", [
+    invoiceNFT.address,
+    deployer.account.address,
+  ]);
+  console.log("Auction deployed to:", auction.address);
+
+  // grants minter_role to backend deployer address
+  // in production, will grant this to the fastapi backend wallet
+  console.log("\nconfiguring roles");
+  await invoiceNFT.write.grantMinterRole([deployer.account.address]);
+  console.log("MINTER_ROLE granted to deployer");
+
+  // exports addresses and ABIs for frontend/backend
+  const deploymentInfo = {
+    network: "baseSepolia" ,
+    chainId: 84532,
+    deployedAt: new Date().toISOString(),
+    contracts: {
+      InvoiceNFT: {
+        address: invoiceNFT.address,
+        abi: JSON.parse(fs.readFileSync(path.join(__dirname, "../artifacts/contracts/InvoiceNFT.sol/InvoiceNFT.json"), "utf8")).abi,
+      },
+      Marketplace: {
+        address: marketplace.address,
+        abi: JSON.parse(fs.readFileSync(path.join(__dirname, "../artifacts/contracts/Marketplace.sol/Marketplace.json"), "utf8")).abi,
+      },
+      Auction: {
+        address: auction.address,
+        abi: JSON.parse(fs.readFileSync(path.join(__dirname, "../artifacts/contracts/Auction.sol/Auction.json"), "utf8")).abi,
+      },
+    },
+  };
+
+  // writes to a shared location both frontend and backend can read
+  const outDir = path.join(__dirname, "../deployments");
+  fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(
     path.join(outDir, "baseSepolia.json"),
     JSON.stringify(deploymentInfo, null, 2)
   );
-  console.log("✓ Deployment info written to deployments/baseSepolia.json");
+  console.log(`\nDeployment info written to deployments/baseSepolia.json`);
 
-  // Write TypeScript address constants
+  // typescript file with typed addresses for frontend import
   const tsContent = `// AUTO-GENERATED — do not edit manually
 // Generated at: ${new Date().toISOString()}
 
 export const CONTRACT_ADDRESSES = {
   InvoiceNFT: "${invoiceNFT.address}" as const,
-  Escrow: "${escrow.address}" as const,
   Marketplace: "${marketplace.address}" as const,
   Auction: "${auction.address}" as const,
 } as const;
 
 export const CHAIN_ID = 84532; // Base Sepolia
-export const DEPLOYER = "${deployer.account.address}" as const;
 
-export const DEPLOYMENT_INFO = {
-  network: "baseSepolia" as const,
-  chainId: 84532 as const,
-  deployedAt: "${new Date().toISOString()}",
-  deployer: DEPLOYER,
-} as const;
-`;
   fs.writeFileSync(path.join(outDir, "addresses.ts"), tsContent);
-  console.log("✓ TypeScript address file written to deployments/addresses.ts");
+  console.log("TypeScript address file written to deployments/addresses.ts");
 
-  // Write environment template
-  const envTemplate = `# Auto-generated environment template
-# Generated: ${new Date().toISOString()}
-
-# Blockchain
-BLOCKCHAIN_RPC_URL=https://sepolia.base.org
-INVOICE_NFT_CONTRACT_ADDRESS=${invoiceNFT.address}
-ESCROW_CONTRACT_ADDRESS=${escrow.address}
-MARKETPLACE_CONTRACT_ADDRESS=${marketplace.address}
-AUCTION_CONTRACT_ADDRESS=${auction.address}
-
-# Backend wallet (for minting and burning)
-MINTER_PRIVATE_KEY=<your-backend-private-key>
-
-# Multisig/Fee recipient
-FEE_RECIPIENT_ADDRESS=${deployer.account.address}
-
-# Blockchain sync
-BLOCKCHAIN_SYNC_ENABLED=true
-BLOCKCHAIN_SYNC_INTERVAL_SECONDS=30
-BLOCKCHAIN_SYNC_START_BLOCK=latest
-`;
-  fs.writeFileSync(path.join(outDir, ".env.example"), envTemplate);
-  console.log("✓ Environment template written to deployments/.env.example");
-
-  console.log("\n" + "=".repeat(60));
-  console.log("Deployment Complete");
-  console.log("=".repeat(60));
-  console.log("\nDeployed Contracts:");
-  console.log(`  InvoiceNFT:  ${invoiceNFT.address}`);
-  console.log(`  Escrow:      ${escrow.address}`);
-  console.log(`  Marketplace: ${marketplace.address}`);
-  console.log(`  Auction:     ${auction.address}`);
-
-  console.log("\nNext Steps:");
-  console.log("1. Copy deployments/baseSepolia.json to frontend/public/ and backend/");
-  console.log("2. Update .env with MINTER_PRIVATE_KEY");
-  console.log("3. Deploy additional backend wallet with MINTER_ROLE (optional):");
-  console.log(`   npx hardhat --network baseSepolia eval "console.log('Deploy your backend wallet')" `);
-  console.log("4. Verify contracts on Basescan:");
-  console.log(`   npx hardhat verify --network baseSepolia ${invoiceNFT.address} ${deployer.account.address}`);
-  console.log("\nDocumentation: See deployments/baseSepolia.json for ABI references");
+  console.log("\nAll contracts deployed successfully!");
+  console.log("\nNext steps:");
+  console.log("1. Copy deployments/baseSepolia.json to the frontend/backend");
+  console.log("2. Run: npx hardhat verify --network baseSepolia", invoiceNFT.address, deployer.account.address);
 }
 
 main().catch((error) => {
-  console.error("Deployment failed:", error);
+  console.error(error);
   process.exitCode = 1;
 });

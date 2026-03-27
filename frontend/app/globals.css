@@ -12,7 +12,7 @@
   --secondary: #e2e8f0;
   --secondary-foreground: #0f172a;
   --muted: #f1f5f9;
-  --muted-foreground: #475569;
+  --muted-foreground: #334155;
   --accent: #dbeafe;
   --accent-foreground: #1e3a8a;
   --destructive: #dc2626;
@@ -72,10 +72,10 @@
     --popover-foreground: #e2e8f0;
     --primary: #3b82f6;
     --primary-foreground: #ffffff;
-    --secondary: #1e293b;
+    --secondary: #334155;
     --secondary-foreground: #e2e8f0;
     --muted: #1e293b;
-    --muted-foreground: #94a3b8;
+    --muted-foreground: #cbd5e1;
     --accent: #1e3a8a;
     --accent-foreground: #dbeafe;
     --destructive: #ef4444;
@@ -98,4 +98,34 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), "Segoe UI", sans-serif;
+}
+
+@layer components {
+  .page-shell {
+    @apply min-h-screen bg-background text-foreground;
+  }
+
+  .page-container {
+    @apply mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8;
+  }
+
+  .surface-card {
+    @apply rounded-2xl border border-border bg-card text-card-foreground shadow-sm;
+  }
+
+  .surface-subtle {
+    @apply rounded-xl border border-border bg-muted/65;
+  }
+
+  .section-title {
+    @apply text-2xl font-semibold tracking-tight text-foreground;
+  }
+
+  .section-subtitle {
+    @apply text-sm text-muted-foreground;
+  }
+
+  .status-chip {
+    @apply inline-flex items-center rounded-full border border-border bg-secondary px-3 py-1 text-xs font-medium text-foreground;
+  }
 }

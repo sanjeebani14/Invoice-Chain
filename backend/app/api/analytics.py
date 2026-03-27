@@ -6,7 +6,7 @@ from ..database import get_db
 from ..models import User
 from ..services.portfolio_service import PortfolioAnalyticsService
 
-router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"])
+router = APIRouter()
 
 
 @router.get("/investor/summary")
@@ -27,6 +27,15 @@ def get_investor_cash_flow(
 ):
     service = PortfolioAnalyticsService(db)
     return service.get_investor_cash_flow(current_user.id)
+
+
+@router.get("/investor/investments")
+def get_investor_investments(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_investor),
+):
+    service = PortfolioAnalyticsService(db)
+    return service.get_investor_investments(current_user.id)
 
 
 @router.get("/platform/concentration")

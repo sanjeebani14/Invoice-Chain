@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getAdminPendingInvoices,
   reviewAdminPendingInvoice,
-  type AdminPendingInvoice,
 } from "@/lib/api";
+import type { AdminPendingInvoice } from "@/lib/types";
 
 const BACKEND_ORIGIN = "http://localhost:8000";
 
@@ -35,7 +35,7 @@ export default function PendingInvoicesPage() {
       setSelectedId((prev) => {
         if (data.invoices.length === 0) return null;
         if (prev === null) return data.invoices[0].id;
-        return data.invoices.some((row) => row.id === prev)
+        return data.invoices.some((row: { id: number | string }) => row.id === prev)
           ? prev
           : data.invoices[0].id;
       });
@@ -184,8 +184,9 @@ export default function PendingInvoicesPage() {
               {(selected.is_duplicate ||
                 selected.duplicate_invoice_number_exists) && (
                 <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  Duplicate detection alert: invoice number appears in existing
-                  records ({selected.duplicate_matches} matches).
+                  {selected.duplicate_matches > 0
+                    ? `Duplicate detection alert: invoice number appears in existing records (${selected.duplicate_matches} ${selected.duplicate_matches === 1 ? "match" : "matches"}).`
+                    : "Duplicate detection alert: invoice was flagged by hash/similarity checks, not invoice-number count."}
                 </div>
               )}
 
@@ -193,6 +194,9 @@ export default function PendingInvoicesPage() {
                 <div className="rounded border border-gray-200 p-3">
                   <p className="mb-2 text-sm font-medium text-gray-900">
                     Original Upload
+                  </p>
+                  <p className="mb-3 text-xs font-medium text-gray-800">
+                    {selected.original_filename || `invoice-${selected.id}`}
                   </p>
                   {selected.upload_url ? (
                     isPdf(selected.upload_url) ? (
@@ -224,43 +228,43 @@ export default function PendingInvoicesPage() {
                   </p>
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center justify-between border-b pb-2">
-                      <span>Invoice Number</span>
-                      <span className="font-medium">
+                      <span className="text-gray-800">Invoice Number</span>
+                      <span className="font-medium text-gray-900">
                         {selected.ocr_extracted.invoice_number || "-"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b pb-2">
-                      <span>Seller Name</span>
-                      <span className="font-medium">
+                      <span className="text-gray-800">Seller Name</span>
+                      <span className="font-medium text-gray-900">
                         {selected.ocr_extracted.seller_name || "-"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b pb-2">
-                      <span>Buyer Name</span>
-                      <span className="font-medium">
+                      <span className="text-gray-800">Buyer Name</span>
+                      <span className="font-medium text-gray-900">
                         {selected.ocr_extracted.client_name || "-"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b pb-2">
-                      <span>Amount</span>
-                      <span className="font-medium">
+                      <span className="text-gray-800">Amount</span>
+                      <span className="font-medium text-gray-900">
                         {selected.ocr_extracted.amount ?? "-"}{" "}
                         {selected.ocr_extracted.currency || ""}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b pb-2">
-                      <span>Due Date</span>
-                      <span className="font-medium">
+                      <span className="text-gray-800">Due Date</span>
+                      <span className="font-medium text-gray-900">
                         {selected.ocr_extracted.due_date || "-"}
                       </span>
                     </div>
                   </div>
 
                   <div className="mt-4 rounded bg-gray-50 p-3">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-800">
                       Confidence Scores
                     </p>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-700">
+                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-800">
                       <div>Invoice #</div>
                       <div className="text-right">
                         {formatPercent(selected.confidence.invoice_number)}

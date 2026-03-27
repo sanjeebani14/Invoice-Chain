@@ -1,17 +1,8 @@
 "use client";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, RefreshCw, Flag } from "lucide-react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RiskBadge } from "@/components/dashboard/RiskBadge";
@@ -26,16 +17,6 @@ import {
 } from "@/lib/api";
 import { toast } from "sonner";
 
-// Light-mode friendly chart colors
-const GRID_STROKE = "hsl(210, 16%, 90%)";
-const TICK_STYLE = { fill: "hsl(215, 15%, 35%)", fontSize: 11 };
-const TOOLTIP_STYLE = {
-  background: "#fff",
-  border: "1px solid hsl(220, 13%, 87%)",
-  borderRadius: 4,
-  color: "hsl(220, 20%, 14%)",
-};
-
 export default function SellerDetails() {
   const params = useParams();
   const seller_id = params?.seller_id as string | undefined;
@@ -44,40 +25,6 @@ export default function SellerDetails() {
   const [loading, setLoading] = useState(true);
   const [inQueue, setInQueue] = useState(false);
   const [flagging, setFlagging] = useState(false);
-
-  const deterministicOffset = (seed: number, index: number) => {
-    const n = ((seed * 9301 + (index + 1) * 49297) % 233280) / 233280;
-    return Math.floor(n * 20 - 10); // -10..9
-  };
-
-  const mockHistory = useMemo(() => {
-    if (!seller) return [];
-    const months = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "Jun",
-      "Jul",
-      "Aug",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dec",
-    ];
-    return Array.from({ length: 12 }, (_, i) => ({
-      month: months[i],
-      score: Math.max(
-        0,
-        Math.min(
-          100,
-          (seller.composite_score ?? 50) +
-            deterministicOffset(seller.seller_id, i),
-        ),
-      ),
-    }));
-  }, [seller]);
 
   useEffect(() => {
     if (!seller_id) return;
@@ -150,7 +97,7 @@ export default function SellerDetails() {
 
   const details = [
     { label: "Seller ID", value: `#${seller.seller_id}` },
-    { label: "Credit Score", value: seller.credit_score ?? "N/A" },
+    { label: "Payment History Score", value: seller.credit_score ?? "N/A" },
     {
       label: "Financial Risk (0-100)",
       value: seller.breakdown?.financial_risk ?? "N/A",
@@ -274,41 +221,7 @@ export default function SellerDetails() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <ChartPanel title="Historical Risk Score">
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={mockHistory}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke={GRID_STROKE}
-                vertical={false}
-              />
-              <XAxis
-                dataKey="month"
-                tick={TICK_STYLE}
-                axisLine={{ stroke: GRID_STROKE }}
-              />
-              <YAxis
-                tick={TICK_STYLE}
-                domain={[0, 100]}
-                axisLine={{ stroke: GRID_STROKE }}
-              />
-              <Tooltip contentStyle={TOOLTIP_STYLE} />
-              <Line
-                type="monotone"
-                dataKey="score"
-                stroke="hsl(222, 84%, 56%)"
-                strokeWidth={1.5}
-                dot={{ fill: "hsl(222, 84%, 56%)", r: 3 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartPanel>
-
-        <ChartPanel title="Feature Impact on Risk">
-          <RiskContributorChart contributors={seller.risk_contributors} />
-        </ChartPanel>
-      </div>
+      {/* Feature Impact on Risk section removed as requested */}
     </div>
   );
 }

@@ -1,72 +1,73 @@
-import axios from "axios";
-import { getBackendOrigin } from "@/lib/backendOrigin";
+import { api, authApi } from "./api"; // Using the specialized auth instance
+import type { 
+  RegisterData, 
+  LoginData, 
+  TwoFactorLoginData, 
+  MessageResponse, 
+  LoginResponse 
+} from "./types";
 
-const AUTH_BASE = `${getBackendOrigin()}/auth`;
+/**
+ * AUTH SERVICES
+ * Uses authApi (baseURL: .../api/v1/auth)
+ */
 
-// Configure axios to send cookies with requests
-axios.defaults.withCredentials = true;
-
-// ── Types ─────────────────────────────────────────────────────
-export interface RegisterData {
-  email: string;
-  password: string;
-  role: "sme" | "investor" | "admin";
-}
-
-export interface LoginData {
-  email: string;
-  password: string;
-}
-
-export interface MessageResponse {
-  message: string;
-}
-
-export interface UserOut {
-  id: number;
-  email: string;
-  role: string;
-  is_active: boolean;
-  full_name?: string | null;
-  phone?: string | null;
-  email_verified: boolean;
-  verified_at?: string | null;
-}
-
-// ── API calls ─────────────────────────────────────────────────
+// 1. Register a new account
 export async function register(data: RegisterData): Promise<MessageResponse> {
-  const response = await axios.post<MessageResponse>(
-    `${AUTH_BASE}/register`,
-    data,
-  );
-  return response.data;
+  const { data: responseData } = await authApi.post<MessageResponse>("/register", data);
+  return responseData;
 }
 
-export async function login(data: LoginData): Promise<MessageResponse> {
-  const response = await axios.post<MessageResponse>(
-    `${AUTH_BASE}/login`,
-    data,
-  );
-  // Tokens are automatically set in HTTP-only cookies by the backend
-  // No need to save them manually
-  return response.data;
+// 2. Standard Login
+export async function login(data: LoginData): Promise<LoginResponse> {
+  const { data: responseData } = await authApi.post<LoginResponse>("/login", data);
+  return responseData;
 }
 
+// 3. Two-Factor Authentication Login
+export async function loginWithTwoFactor(data: TwoFactorLoginData): Promise<MessageResponse> {
+  const { data: responseData } = await authApi.post<MessageResponse>("/login/2fa", data);
+  return responseData;
+}
+
+// 4. Logout (Clears session and redirects)
 export async function logout(): Promise<MessageResponse> {
   try {
-    const response = await axios.post<MessageResponse>(`${AUTH_BASE}/logout`);
-    // Cookies are automatically cleared by the backend
-    window.location.href = "/login";
-    return response.data;
+    // 1. Notify the backend to void the Refresh Token cookie
+    const { data: responseData } = await authApi.post<MessageResponse>("/logout");
+    return responseData;
   } catch (error) {
-    // Even if logout fails, clear local state and redirect
-    window.location.href = "/login";
-    throw error;
+    console.error("Logout request failed, proceeding with local cleanup", error);
+    return { message: "Local logout completed" };
+  } finally {
+    if (typeof window !== "undefined") {
+      // 2. Clear LocalStorage / SessionStorage
+      localStorage.clear(); 
+      sessionStorage.clear();
+
+      // 3. Reset the Interceptor state (optional but safer)
+      // If your 'isRefreshing' is exported, set it to false here.
+    }
   }
 }
 
+// 5. Explicit Token Refresh
 export async function refreshToken(): Promise<MessageResponse> {
-  const response = await axios.post<MessageResponse>(`${AUTH_BASE}/refresh`);
-  // New access token is automatically set in cookie by the backend
-  return response.data;
+  const { data: responseData } = await authApi.post<MessageResponse>("/refresh");
+  return responseData;
+}
+
+// 6. Password Recovery
+export async function forgotPassword(email: string): Promise<MessageResponse> {
+  const { data: responseData } = await authApi.post<MessageResponse>("/forgot-password", { email });
+  return responseData;
+}
+
+// 7. Password Reset
+export async function resetPassword(token: string, newPassword: string): Promise<MessageResponse> {
+  const { data: responseData } = await authApi.post<MessageResponse>("/reset-password", {
+    token,
+    new_password: newPassword,
+  });
+  return responseData;
 }

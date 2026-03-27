@@ -1,140 +1,223 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, UserCircle, ArrowLeft, Save } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
-import { getMyProfile, updateMyProfile } from "@/lib/profile";
-import type { ProfileMeResponse } from "@/lib/profile";
+import KycForm from "@/components/auth/KycForm";
+import WalletLogin from "@/components/auth/WalletLogin";
+import { getMyProfile, updateMyProfile } from "@/lib/api";
 
 export default function ProfilePage() {
-  const { currentUser, isAuthenticated, isLoading: authLoading } = useAuth();
+  const {
+    user: currentUser,
+    profile,
+    isAuthenticated,
+    isLoading: authLoading,
+    refreshProfile,
+  } = useAuth();
+
+  const router = useRouter();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [data, setData] = useState<ProfileMeResponse | null>(null);
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
+
+  const [form, setForm] = useState({
+    fullName: "",
+    phone: "",
+    company: "",
+  });
+
+  const fetchProfile = useCallback(async () => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await getMyProfile();
+      setForm({
+        fullName: res.user.full_name ?? "",
+        phone: res.user.phone ?? "",
+        company: res.user.company_name ?? "",
+      });
+    } catch (err) {
+      toast.error("Could not load profile data.");
+    } finally {
+      setLoading(false);
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
-    const run = async () => {
-      try {
-        const res = await getMyProfile();
-        setData(res);
-        setFullName(res.user.full_name ?? "");
-        setPhone(res.user.phone ?? "");
-      } catch {
-        setData(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-    run();
-  }, []);
+    fetchProfile();
+  }, [fetchProfile]);
 
-  const kycCta = useMemo(() => {
-    const kyc = data?.kyc;
-    if (!kyc) return { label: "Submit KYC", href: "/kyc", tone: "text-amber-600" };
-    if (kyc.status === "approved") return { label: "KYC Approved", href: "/kyc", tone: "text-green-600" };
-    if (kyc.status === "rejected") return { label: "Fix KYC", href: "/kyc", tone: "text-red-600" };
-    return { label: "KYC Pending", href: "/kyc", tone: "text-amber-600" };
-  }, [data]);
-
-  const disabled = !isAuthenticated || authLoading || loading;
+  const isFormValid = form.fullName.trim().length > 2;
 
   const onSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isFormValid) {
+      toast.error("Full name must be at least 3 characters.");
+      return;
+    }
+
     setSaving(true);
     try {
-      const updated = await updateMyProfile({
-        full_name: fullName,
-        phone,
+      await updateMyProfile({
+        full_name: form.fullName.trim(),
+        phone: form.phone.trim(),
+        company_name: form.company.trim(),
       });
-      setData((prev) => (prev ? { ...prev, user: updated } : prev));
-      toast.success("Profile updated");
+
+      // Update global context so name changes everywhere (like TopBar)
+      await refreshProfile();
+      toast.success("Profile updated successfully");
     } catch (err: any) {
-      const message = err?.response?.data?.detail ?? "Profile update failed";
-      toast.error(message);
+      const msg = err.response?.data?.detail || "Update failed";
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
   };
 
-  const email = currentUser?.email ?? data?.user.email ?? "";
-  const role = currentUser?.role ?? data?.user.role ?? "";
+  const handleBack = () => {
+    const role = currentUser?.role?.toLowerCase();
+
+    if (role?.includes("admin")) {
+      router.push("/admin/dashboard");
+      return;
+    }
+
+    if (role?.includes("investor")) router.push("/INVESTOR/marketplace");
+    else router.push("/sme/dashboard");
+  };
+
+  if (authLoading || loading) {
+    return (
+      <div className="flex h-[80vh] w-full items-center justify-center">
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground animate-pulse">
+            Loading profile...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-2xl px-4 py-10">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold">Your Profile</h1>
-          <Link className="text-sm text-muted-foreground hover:underline" href="/kyc">
-            KYC
-          </Link>
+    <div className="container mx-auto max-w-6xl py-10 px-4 animate-in fade-in duration-500">
+      <div className="mb-10 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-tight">
+            Account Settings
+          </h1>
+          <p className="text-muted-foreground">
+            Manage your identity and blockchain connections.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleBack}
+          className="hidden sm:flex"
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+        <div className="space-y-6 lg:col-span-5">
+          <KycForm />
+          <div className="rounded-xl border bg-card p-6 shadow-sm">
+            <h3 className="text-lg font-bold mb-4">Blockchain Links</h3>
+            <WalletLogin />
+          </div>
         </div>
 
-        <div className="mt-6 grid gap-6">
-          <div className="rounded-2xl border border-border bg-card p-6">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Email (immutable)</p>
-                <p className="mt-1 font-medium">{email || "—"}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-muted-foreground">Role</p>
-                <p className="mt-1 font-medium">{role || "—"}</p>
-              </div>
+        <div className="lg:col-span-7">
+          <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
+            <div className="bg-muted/30 px-8 py-4 border-b flex items-center gap-3">
+              <UserCircle className="h-5 w-5 text-primary" />
+              <h2 className="font-bold">Personal Details</h2>
             </div>
 
-            <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-border bg-background p-4">
-              <div>
-                <div className="text-sm text-muted-foreground">KYC</div>
-                <div className={`mt-1 font-medium ${kycCta.tone}`}>{kycCta.label}</div>
-              </div>
-              <Button asChild variant="outline">
-                <Link href={kycCta.href}>Open</Link>
-              </Button>
-            </div>
-
-            {(loading || authLoading) && (
-              <div className="mt-4 flex items-center text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold">Edit profile</h2>
-            <form onSubmit={onSave} className="mt-4 space-y-4">
+            <form onSubmit={onSave} className="p-8 space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="full_name">Full name</Label>
+                <Label className="text-xs uppercase font-black text-muted-foreground">
+                  Email Address
+                </Label>
                 <Input
-                  id="full_name"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  disabled={disabled || saving}
-                  placeholder="Your name"
+                  value={currentUser?.email || ""}
+                  disabled
+                  className="bg-muted/50 border-dashed"
                 />
               </div>
+
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="fullName"
+                    className="text-xs uppercase font-black"
+                  >
+                    Full Name
+                  </Label>
+                  <Input
+                    id="fullName"
+                    value={form.fullName}
+                    onChange={(e) =>
+                      setForm({ ...form, fullName: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="phone"
+                    className="text-xs uppercase font-black"
+                  >
+                    Phone Number
+                  </Label>
+                  <Input
+                    id="phone"
+                    value={form.phone}
+                    onChange={(e) =>
+                      setForm({ ...form, phone: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
-                <Label htmlFor="phone">Phone</Label>
+                <Label
+                  htmlFor="company"
+                  className="text-xs uppercase font-black"
+                >
+                  Company Name
+                </Label>
                 <Input
-                  id="phone"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  disabled={disabled || saving}
-                  placeholder="+91-xxxxxxxxxx"
+                  id="company"
+                  value={form.company}
+                  onChange={(e) =>
+                    setForm({ ...form, company: e.target.value })
+                  }
                 />
               </div>
-              <Button type="submit" disabled={disabled || saving}>
-                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save changes
-              </Button>
+
+              <div className="pt-4 border-t flex justify-end">
+                <Button type="submit" disabled={saving || !isFormValid}>
+                  {saving ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  {saving ? "Saving..." : "Update Profile"}
+                </Button>
+              </div>
             </form>
           </div>
         </div>
@@ -142,4 +225,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-

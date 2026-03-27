@@ -3,7 +3,6 @@ from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 import os
 
-# Read from environment variables
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 
@@ -19,7 +18,7 @@ def create_access_token(
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=30)  # Default: 30 minutes
+        expire = datetime.utcnow() + timedelta(minutes=30)  
     
     to_encode.update({"exp": expire})
     

@@ -1,93 +1,56 @@
-import axios from "axios";
+import { kycApi, api } from "./api"; // Use kycApi for user, api for admin paths
+import type {
+  KycStatus,
+  KycSubmissionOut,
+  KycMeResponse,
+  AdminKycListResponse,
+} from "./types";
 
-axios.defaults.withCredentials = true;
+/**
+ * USER KYC SERVICES
+ */
 
-const KYC_BASE = "http://localhost:8000/api/v1/kyc";
-const ADMIN_KYC_BASE = "http://localhost:8000/api/v1/admin/kyc";
-
-export type KycStatus = "pending" | "approved" | "rejected";
-
-export interface KycSubmissionOut {
-  id: number;
-  user_id: number;
-  doc_type: string;
-  status: KycStatus;
-  original_filename?: string | null;
-  size_bytes: number;
-  submitted_at: string;
-  reviewed_at?: string | null;
-  reviewed_by?: number | null;
-  rejection_reason?: string | null;
-}
-
-export interface KycMeResponse {
-  kyc: KycSubmissionOut | null;
-}
-
+// 1. Get current user's KYC status
 export async function getMyKyc(): Promise<KycMeResponse> {
-  const res = await axios.get<KycMeResponse>(`${KYC_BASE}/me`);
-  return res.data;
+  const { data } = await kycApi.get<KycMeResponse>("/me");
+  return data;
 }
 
+// 2. Submit PAN/ID Document
 export async function submitPan(file: File): Promise<KycSubmissionOut> {
   const form = new FormData();
   form.append("file", file);
-  const res = await axios.post<KycSubmissionOut>(
-    `${KYC_BASE}/submissions`,
-    form,
-    {
-      headers: { "Content-Type": "multipart/form-data" },
-      withCredentials: true,
-    },
-  );
-  return res.data;
+
+  const { data } = await kycApi.post<KycSubmissionOut>("/submissions", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
 }
 
-export interface AdminKycListResponse {
-  submissions: KycSubmissionOut[];
-  total: number;
-}
+/**
+ * ADMIN KYC SERVICES
+ * These use the base 'api' instance because the path starts with /admin
+ */
 
 export async function adminListKyc(params?: {
   status_filter?: KycStatus;
   skip?: number;
   limit?: number;
 }): Promise<AdminKycListResponse> {
-  const res = await axios.get<AdminKycListResponse>(
-    `${ADMIN_KYC_BASE}/submissions`,
-    {
-      params: params?.status_filter
-        ? {
-            status_filter: params.status_filter,
-            skip: params.skip,
-            limit: params.limit,
-          }
-        : { skip: params?.skip, limit: params?.limit },
-      withCredentials: true,
-    },
-  );
-  return res.data;
+  const { data } = await api.get<AdminKycListResponse>("/admin/kyc/submissions", { 
+    params 
+  });
+  return data;
 }
 
-export async function adminApproveKyc(
-  submissionId: number,
-): Promise<KycSubmissionOut> {
-  const res = await axios.post<KycSubmissionOut>(
-    `${ADMIN_KYC_BASE}/${submissionId}/approve`,
-    undefined,
-    { withCredentials: true },
-  );
-  return res.data;
+export async function adminApproveKyc(submissionId: number): Promise<KycSubmissionOut> {
+  const { data } = await api.post<KycSubmissionOut>(`/admin/kyc/${submissionId}/approve`);
+  return data;
 }
 
-export async function adminRejectKyc(
-  submissionId: number,
-  reason: string,
-): Promise<KycSubmissionOut> {
-  const res = await axios.post<KycSubmissionOut>(
-    `${ADMIN_KYC_BASE}/${submissionId}/reject`,
-    { reason },
-    { withCredentials: true },
-  );
-  return res.data;
+export async function adminRejectKyc(submissionId: number, reason: string): Promise<KycSubmissionOut> {
+  const { data } = await api.post<KycSubmissionOut>(`/admin/kyc/${submissionId}/reject`, {
+    reason,
+  });
+  return data;
 }

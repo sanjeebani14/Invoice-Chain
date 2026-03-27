@@ -1,9 +1,3 @@
-"""
-Admin Statistics Router
-
-Provides platform-level analytics and statistics endpoints.
-"""
-
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from datetime import datetime, date
 from sqlalchemy import func
@@ -11,11 +5,19 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 
 from ..database import get_db
-from ..models import User, Invoice, KycSubmission, FraudFlag, CreditHistory
-from ..auth.dependencies import get_current_admin
+from ..models import (
+    User,
+    UserRole,
+    Invoice,
+    KycSubmission,
+    FraudFlag,
+    CreditHistory,
+    BlockchainSyncState,
+)
+from ..auth.dependencies import get_current_admin, get_current_admin_or_investor
 from ..services.platform_stats import PlatformStatsService
 
-router = APIRouter(prefix="/api/v1/admin/stats", tags=["Admin - Statistics"])
+router = APIRouter()
 
 
 def _parse_due_date(raw: str | None) -> date | None:
@@ -55,10 +57,12 @@ def get_admin_overview(
 
     investors_count = db.query(func.count(User.id)).filter(User.role == "investor").scalar() or 0
 
-    # Keep this aligned with the Seller Explorer page, which is based on CreditHistory rows.
+   
     sellers_count = (
         db.query(func.count(func.distinct(CreditHistory.seller_id)))
+        .join(User, User.id == CreditHistory.seller_id)
         .filter(CreditHistory.seller_id.isnot(None))
+        .filter(User.role.in_([UserRole.SELLER, UserRole.SME]))
         .scalar()
         or 0
     )
@@ -142,18 +146,7 @@ def get_platform_summary(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    """
-    Get aggregated platform statistics for a specific period.
     
-    Returns:
-    - total_funded_volume: Sum of ask_price for funded invoices (GMV)
-    - repayment_metrics: Repayment rate, default rate, counts
-    - platform_revenue: Total fees collected
-    - average_invoice_yield: Average return on invested amount
-    - risk_distribution: High/medium/low risk invoice counts
-    - sector_exposure: Volume breakdown by sector
-    - user_metrics: Active sellers and investors count
-    """
     try:
         stats = PlatformStatsService.aggregate_stats(
             db, period=period, period_type=period_type, use_cache=use_cache
@@ -175,15 +168,7 @@ def get_platform_timeseries(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    """
-    Get time-series statistics for the last N months.
-    
-    Returns a list of monthly aggregations showing:
-    - Growth trends in funded volume
-    - Repayment rate trends
-    - Revenue trends
-    - Risk distribution changes
-    """
+   
     try:
         timeseries = PlatformStatsService.get_time_series(
             db, months=months, use_cache=use_cache
@@ -202,12 +187,6 @@ def refresh_platform_stats(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    """
-    Manually refresh platform statistics.
-    Recalculates and persists stats to the database.
-    
-    Useful after bulk data imports or for forcing recalculation.
-    """
     try:
         PlatformStatsService.persist_stats_to_db(db, period=period)
         return {
@@ -225,19 +204,11 @@ def refresh_platform_stats(
 @router.get("/health-metrics")
 def get_health_metrics(
     db: Session = Depends(get_db),
-    current_admin: User = Depends(get_current_admin),
+    current_user: User = Depends(get_current_admin_or_investor),
 ):
-    """
-    Get real-time platform health metrics for dashboard display.
     
-    Key metrics:
-    - GMV: Total funded volume
-    - Repayment Rate: % of invoices successfully repaid
-    - Default Rate: % of invoices defaulted
-    - Active Users: Sellers and investors
-    - Avg Risk Score: Average seller credit rating
-    """
     try:
+        _ = current_user
         stats = PlatformStatsService.aggregate_stats(db, use_cache=False)
         
         # Curate for dashboard display
@@ -263,21 +234,40 @@ def get_health_metrics(
         )
 
 
+@router.get("/blockchain-sync")
+def get_blockchain_sync_status(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    _ = current_admin
+    states = (
+        db.query(BlockchainSyncState)
+        .order_by(BlockchainSyncState.updated_at.desc())
+        .all()
+    )
+    return {
+        "count": len(states),
+        "items": [
+            {
+                "contract_address": item.contract_address,
+                "last_synced_block": int(item.last_synced_block or 0),
+                "last_synced_at": item.last_synced_at.isoformat() if item.last_synced_at else None,
+                "last_error": item.last_error,
+                "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+            }
+            for item in states
+        ],
+    }
+
+
 @router.get("/risk-heatmap")
 def get_risk_heatmap(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    """
-    Get portfolio risk heatmap data.
     
-    Shows:
-    - Exposure by sector and default rate per sector
-    - Concentration risk (top sectors)
-    - Risk distribution across portfolio
-    """
     try:
-        stats = PlatformStatsService.aggregate_stats(db, use_cache=True)
+        stats = PlatformStatsService.aggregate_stats(db, use_cache=False)
         sector_exp = stats["sector_exposure"]
         risk_dist = stats["risk_distribution"]
         

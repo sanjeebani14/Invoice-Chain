@@ -15,65 +15,40 @@ from app import models
 
 logger = logging.getLogger(__name__)
 
-
+ #ML risk engine built around XGBoost with z-score-based explanations
 class RiskScoringEngine:
-    """
-    ML-ready risk engine built around XGBoost with z-score-based explanations.
-
-    In production you should:
-    - Train an XGBoost model on your SCF-style dataset.
-    - Save it as `model.json` (or similar).
-    - Configure `model_path` to point to it.
-
-    This implementation is defensive:
-    - If the model cannot be loaded, it falls back to a
-            deterministic z-score algorithm using the same features.
-    """
-
+    
     def __init__(self, model_path: str | None = None) -> None:
         self.model: Optional[xgb.Booster] = None
-
-        # Resolve default model path to the same directory as this file so that
-        # `backend/app/services/risk_scoring/model.json` is picked up
-        # without needing extra configuration.
         base_dir = os.path.dirname(__file__)
         default_model_path = os.path.join(base_dir, "model.json")
 
         self.model_path = model_path or default_model_path
         self._try_load_model()
 
-    # ── Model loading ──────────────────────────────────────────────
     def _try_load_model(self) -> None:
         try:
             booster = xgb.Booster()
             booster.load_model(self.model_path)
             self.model = booster
-            logger.info(f"✓ XGBoost model loaded successfully from {self.model_path}")
-            # Explainer will be created lazily when first used
         except FileNotFoundError as e:
             logger.warning(
-                f"⚠ Model file not found at {self.model_path}. "
                 f"Will fall back to z-score scoring. Error: {e}"
             )
             self.model = None
         except Exception as e:
             logger.error(
-                f"✗ Failed to load XGBoost model from {self.model_path}. "
                 f"Will fall back to z-score scoring. Error: {type(e).__name__}: {e}"
             )
-            # Keep model as None – engine will fall back to z-score scoring
             self.model = None
 
-    # ── Public API ────────────────────────────────────────────────
+    
     def calculate_score(
         self,
         db: Session,
         seller_id: int,
         invoice_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        # 1. Fetch a deterministic canonical record.
-        # Historical datasets may contain duplicate rows per seller_id, so
-        # relying on unordered `.first()` can alternate rows between calls.
         seller_query = (
             db.query(models.CreditHistory)
             .filter(models.CreditHistory.seller_id == seller_id)
@@ -95,7 +70,7 @@ class RiskScoringEngine:
         features_df = self._build_feature_vector(seller, invoice_data)
         current_signature = self._build_signature_from_features(features_df)
 
-        # If inputs are unchanged, skip inference and reuse stored score.
+        # If inputs are unchanged,reuse stored score.
         if (
             seller.composite_score is not None
             and getattr(seller, "risk_input_signature", None) == current_signature
@@ -141,7 +116,6 @@ class RiskScoringEngine:
         bounded_score = float(max(0.0, min(100.0, score)))
         score_int = int(round(bounded_score))
         if model_used and score_int == 0 and bounded_score > 0.0:
-            # Avoid collapsing tiny-but-positive model probabilities to 0 after integer conversion.
             score_int = 1
         risk_level = "High" if score_int > 70 else "Medium" if score_int > 40 else "Low"
 
@@ -155,14 +129,11 @@ class RiskScoringEngine:
             score_int,
         )
 
-        # Persist attribution vector for future analytics
         seller.risk_contributors = contributors
         seller.composite_score = score_int
         seller.risk_input_signature = current_signature
 
-        # Automatically open a fraud review flag whenever a newly
-        # calculated score crosses the high‑risk threshold, regardless
-        # of whether an admin has visited the seller in the UI.
+        # High risk sellers get automatically flagged for manual review if not already flagged.
         if score_int > 70:
             existing_flag = (
                 db.query(models.FraudFlag)
@@ -176,23 +147,19 @@ class RiskScoringEngine:
                 auto_flag = models.FraudFlag(
                     invoice_id=None,
                     seller_id=seller_id,
-                    # Keep consistent with `risk.py` queue maintenance logic
-                    # (it looks for `Auto-queued:%` in `reason`).
                     reason=f"Auto-queued: HIGH risk seller (composite score {score_int}).",
                     severity="HIGH",
                     anomaly_metadata={
                         "source": "risk_engine_auto_flag",
                         "reasons": [
                             f"Seller composite risk score is {score_int}, above the HIGH-risk threshold.",
-                            "This is a seller-level flag; invoice-level anomaly details may be unavailable until an invoice is evaluated.",
+                            "This is a seller-level flag,invoice-level anomaly details may be unavailable until an invoice is evaluated.",
                         ],
                     },
                     is_resolved=False,
                 )
                 db.add(auto_flag)
 
-        # Commit persistence-side effects so that both the updated
-        # composite score and any newly created fraud flag are stored.
         db.add(seller)
         db.commit()
 
@@ -211,7 +178,7 @@ class RiskScoringEngine:
         seller: models.CreditHistory,
         invoice_data: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """Return True only when score inputs changed or score is missing."""
+        
         if seller.composite_score is None:
             return True
 
@@ -251,7 +218,7 @@ class RiskScoringEngine:
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    # ── Feature engineering ───────────────────────────────────────
+    # Feature engineering 
     def _extract_numeric(
         self,
         payload: Dict[str, Any],
@@ -297,21 +264,14 @@ class RiskScoringEngine:
         seller: models.CreditHistory,
         invoice_data: Optional[Dict[str, Any]] = None,
     ) -> pd.DataFrame:
-        """
-        Constructs the feature vector for the ML model from:
-        - SME financial behaviour (payment history, track record)
-        - Core enterprise strength (core_enterprise_rating)
-        - Relationship & logistics (transaction_stability, logistics_consistency)
-        - ESG signal (esg_score)
-        """
+       
+        #Constructs the feature vector
         invoice_data = invoice_data or {}
         normalised_invoice_data: Dict[str, Any] = {}
         for k, v in invoice_data.items():
             if isinstance(k, str):
                 normalised_invoice_data[self._normalise_feature_name(k)] = v
 
-        # If the loaded model expects a different schema (e.g., loan-approval style),
-        # generate exactly those feature names so inference matches training.
         expected = list(getattr(self.model, "feature_names", None) or []) if self.model is not None else []
         if expected:
             years_employed = self._extract_numeric(
@@ -431,12 +391,10 @@ class RiskScoringEngine:
                 elif name.startswith("loan_intent_"):
                     mapped[name] = 1.0 if loan_intent == name.split("loan_intent_", 1)[1] else 0.0
 
-            # Build the final feature row in the exact expected order.
             row = {k: float(mapped.get(k, 0.0)) for k in expected}
             return pd.DataFrame([row], columns=expected)
 
-        # Default feature set for the built-in SCF-style heuristic / model.
-        # Simple defaults when new fields are still being backfilled
+        
         core_rating = seller.core_enterprise_rating or 70
         relationship_years = float(seller.transaction_stability or 1.0)
         logistics_score = float(seller.logistics_consistency or 80.0)
@@ -459,21 +417,14 @@ class RiskScoringEngine:
 
         return pd.DataFrame([base_features])
 
-    # ── XGBoost scoring ───────────────────────────────────────────
+    # XGBoost scoring
     def _align_features_for_model(self, features: pd.DataFrame) -> pd.DataFrame:
-        """
-        Align inference features to the exact feature order/names the loaded model expects.
-
-        This allows the service to run even if the current backend feature schema differs
-        from the schema used during training. Missing features are filled with 0.0 and
-        extra features are dropped.
-        """
+        
         if self.model is None:
             return features
 
         expected = list(getattr(self.model, "feature_names", None) or [])
         if not expected:
-            # Some models may not store feature names; in that case we keep the input as-is.
             return features
 
         aligned = features.reindex(columns=expected, fill_value=0.0)
@@ -482,7 +433,6 @@ class RiskScoringEngine:
         extra = [c for c in features.columns if c not in expected]
         if missing or extra:
             logger.warning(
-                "Aligning features for XGBoost inference. "
                 f"Missing filled with 0: {len(missing)}; Extra dropped: {len(extra)}"
             )
 
@@ -494,17 +444,17 @@ class RiskScoringEngine:
     ) -> tuple[float, List[str], Dict[str, float]]:
         aligned_features = self._align_features_for_model(features)
         dmat = xgb.DMatrix(aligned_features)
-        # Assuming binary classification – model outputs PD in [0, 1]
+        
         prob_default = float(self.model.predict(dmat)[0])
 
-        # Convert PD into 0-100 risk score (higher = riskier)
+        
         score = prob_default * 100.0
         _, contributors = self._zscore_algorithm(aligned_features.iloc[0].to_dict())
 
         summary = self._summarise_contributors(prob_default, contributors)
         return score, summary, contributors
 
-    # ── Fallback z-score scoring (no model yet) ───────────────────
+    # Fallback z-score scoring(Initial risk scoring method we used).
     def _fallback_score(
         self,
         features: pd.DataFrame,
@@ -515,7 +465,7 @@ class RiskScoringEngine:
 
     def _zscore_algorithm(self, row: Dict[str, Any]) -> tuple[float, Dict[str, float]]:
         profile: Dict[str, tuple[float, float, float]] = {
-            # feature: (mean, std, direction) where direction=+1 means higher value => higher risk.
+            # Feature: (mean, std, direction) where direction=+1 means higher value => higher risk.
             "payment_history": (70.0, 15.0, -1.0),
             "client_reputation": (70.0, 15.0, -1.0),
             "seller_track_record": (70.0, 15.0, -1.0),
@@ -558,7 +508,6 @@ class RiskScoringEngine:
         top = sorted(contributions.items(), key=lambda kv: abs(kv[1]), reverse=True)[:8]
         return score, {k: float(v) for k, v in top}
 
-    # ── Interpretability text ─────────────────────────────────────
     def _summarise_contributors(
         self,
         prob_default: Optional[float],
@@ -571,7 +520,6 @@ class RiskScoringEngine:
                 f"Estimated probability of default is {prob_default * 100:.1f}% based on combined features."
             )
 
-        # Sort contributors by absolute impact
         top_items = sorted(
             contributors.items(),
             key=lambda kv: abs(kv[1]),
@@ -611,7 +559,7 @@ class RiskScoringEngine:
 
         return messages
 
-    # ── Simple breakdown for dashboards ───────────────────────────
+    # Breakdown for UI
     def _build_breakdown(
         self,
         seller: models.CreditHistory,

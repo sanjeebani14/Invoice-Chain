@@ -78,6 +78,11 @@ type MonthlyRiskPoint = {
   high: number;
 };
 
+const toFiniteNumber = (value: unknown): number | null => {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
 export default function Analytics() {
   // Risk Analytics state
   const [loading, setLoading] = useState(true);
@@ -98,51 +103,134 @@ export default function Analytics() {
     useState<ConcentrationAnalysis | null>(null);
 
   useEffect(() => {
-    Promise.all([getRiskMetrics(), getAllSellers()]).then(
-      ([metrics, sellers]) => {
-        setDistribution(metrics.risk_distribution);
-        setFraudTrend(metrics.fraud_alerts_over_time);
-        setMonthlyTrend(metrics.seller_risk_trends);
+    let isMounted = true;
+
+    const loadRiskAnalytics = async () => {
+      setLoading(true);
+      try {
+        const [metricsResult, sellersResult] = await Promise.allSettled([
+          getRiskMetrics(),
+          getAllSellers(),
+        ]);
+
+        const metrics =
+          metricsResult.status === "fulfilled" ? metricsResult.value : null;
+        const sellers =
+          sellersResult.status === "fulfilled" ? sellersResult.value : [];
+
+        if (!isMounted) return;
+
+        setDistribution(metrics?.risk_distribution ?? []);
+        setFraudTrend(metrics?.fraud_alerts_over_time ?? []);
+        setMonthlyTrend(metrics?.seller_risk_trends ?? []);
 
         const filtered =
           riskFilter === "all"
             ? sellers
             : sellers.filter((s) => s.risk_level === riskFilter);
-        setScatter(
-          filtered
-            .filter((s) => s.credit_score !== undefined)
-            .map((s) => ({
-              credit_score: s.credit_score as number,
-              risk_score: s.composite_score,
-            })),
-        );
-        setDtiScatter(
-          filtered
-            .filter((s) => s.debt_to_income !== undefined)
-            .map((s) => ({
-              dti: s.debt_to_income as number,
-              risk_score: s.composite_score,
-            })),
-        );
-        setLoading(false);
-      },
-    );
+
+        const creditScatterData: CreditRiskPoint[] = filtered
+          .map((s) => {
+            const creditScore = toFiniteNumber(s.credit_score);
+            const riskScore = toFiniteNumber(s.composite_score);
+            if (creditScore === null || riskScore === null) return null;
+            return {
+              credit_score: creditScore,
+              risk_score: riskScore,
+            };
+          })
+          .filter((point): point is CreditRiskPoint => point !== null);
+
+        const dtiScatterData: DtiRiskPoint[] = filtered
+          .map((s) => {
+            const dti = toFiniteNumber(s.debt_to_income);
+            const riskScore = toFiniteNumber(s.composite_score);
+            if (dti === null || riskScore === null) return null;
+            return {
+              dti,
+              risk_score: riskScore,
+            };
+          })
+          .filter((point): point is DtiRiskPoint => point !== null);
+
+        setScatter(creditScatterData);
+        setDtiScatter(dtiScatterData);
+      } catch {
+        if (!isMounted) return;
+        setDistribution([]);
+        setFraudTrend([]);
+        setMonthlyTrend([]);
+        setScatter([]);
+        setDtiScatter([]);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadRiskAnalytics();
+
+    return () => {
+      isMounted = false;
+    };
   }, [riskFilter]);
 
   // Load platform statistics
   useEffect(() => {
-    Promise.all([
-      getPlatformHealthMetrics(),
-      getPlatformTimeSeries(12),
-      getRiskHeatmap(),
-      getPlatformConcentration(20),
-    ]).then(([health, timeseries, heatmap, concentration]) => {
-      setHealthMetrics(health);
-      setTimeSeriesData(timeseries.data);
-      setRiskHeatmap(heatmap);
-      setPlatformConcentration(concentration);
-      setPlatformLoading(false);
-    });
+    let isMounted = true;
+
+    // Fire all requests concurrently, but only block the skeleton on "health"
+    // so the first KPI grid can appear quickly.
+    setPlatformLoading(true);
+
+    void getPlatformHealthMetrics()
+      .then((data) => {
+        if (!isMounted) return;
+        setHealthMetrics(data);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setHealthMetrics(null);
+      })
+      .finally(() => {
+        if (!isMounted) return;
+        setPlatformLoading(false);
+      });
+
+    void getPlatformTimeSeries(12, true)
+      .then((data) => {
+        if (!isMounted) return;
+        setTimeSeriesData(data?.data ?? []);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setTimeSeriesData([]);
+      });
+
+    void getRiskHeatmap()
+      .then((data) => {
+        if (!isMounted) return;
+        setRiskHeatmap(data);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setRiskHeatmap(null);
+      });
+
+    void getPlatformConcentration(20)
+      .then((data) => {
+        if (!isMounted) return;
+        setPlatformConcentration(data);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setPlatformConcentration(null);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   if (loading && platformLoading)
@@ -168,107 +256,106 @@ export default function Analytics() {
         </TabsList>
 
         <TabsContent value="platform" className="space-y-6">
-          {platformLoading ? (
+          {platformLoading && !healthMetrics && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {Array.from({ length: 8 }).map((_, i) => (
                 <ChartSkeleton key={i} />
               ))}
             </div>
-          ) : (
-            <>
-              {healthMetrics && (
-                <PlatformMetricsGrid
-                  metrics={healthMetrics}
-                  isLoading={platformLoading}
-                />
-              )}
+          )}
+          {healthMetrics && (
+            <PlatformMetricsGrid
+              metrics={healthMetrics}
+              isLoading={platformLoading}
+            />
+          )}
 
-              {timeSeriesData.length > 0 && (
-                <GrowthTrendChart
-                  data={timeSeriesData}
-                  isLoading={platformLoading}
-                />
-              )}
+          {timeSeriesData.length > 0 && (
+            <GrowthTrendChart
+              data={timeSeriesData}
+              isLoading={platformLoading}
+            />
+          )}
 
-              {riskHeatmap && (
-                <SectorExposureChart
-                  data={riskHeatmap}
-                  isLoading={platformLoading}
-                />
-              )}
+          {riskHeatmap && (
+            <SectorExposureChart
+              data={riskHeatmap}
+              isLoading={platformLoading}
+            />
+          )}
 
-              {platformConcentration && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <ChartPanel title="Platform Concentration Alerts">
-                    <div className="space-y-2 text-sm text-gray-700">
-                      <p className="font-semibold text-gray-900">
-                        Top 5 sellers share{" "}
-                        {platformConcentration.top_5_seller_share_pct.toFixed(
-                          2,
-                        )}
-                        % of total volume
-                      </p>
-                      {platformConcentration.alerts.length === 0 && (
-                        <p>
-                          No concentration alerts above{" "}
-                          {platformConcentration.threshold_pct}%.
-                        </p>
-                      )}
-                      {platformConcentration.alerts.slice(0, 6).map((alert) => (
+          {platformConcentration && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <ChartPanel title="Platform Concentration Alerts">
+                <div className="space-y-2 text-sm text-slate-700">
+                  <p className="font-semibold text-foreground">
+                    Top 5 sellers share{" "}
+                    {platformConcentration.top_5_seller_share_pct.toFixed(2)}%
+                    of total volume
+                  </p>
+                  {platformConcentration.alerts.length === 0 && (
+                    <p>
+                      No concentration alerts above{" "}
+                      {platformConcentration.threshold_pct}%.
+                    </p>
+                  )}
+                  {platformConcentration.alerts.slice(0, 6).map((alert) => (
+                    <div
+                      key={`${alert.type}-${alert.key}`}
+                      className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2"
+                    >
+                      <span className="capitalize text-slate-900">
+                        {alert.type}: {alert.key}
+                      </span>
+                      <span className="font-semibold text-slate-900">
+                        {alert.percentage.toFixed(2)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </ChartPanel>
+
+              <ChartPanel title="Sector and Geo Concentration">
+                <div className="space-y-3 text-sm text-muted-foreground">
+                  <div>
+                    <p className="mb-1 font-semibold text-foreground">
+                      Top Sectors
+                    </p>
+                    {platformConcentration.sector_breakdown
+                      .slice(0, 5)
+                      .map((item) => (
                         <div
-                          key={`${alert.type}-${alert.key}`}
-                          className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2"
+                          key={item.key}
+                          className="flex items-center justify-between"
                         >
-                          <span className="capitalize">
-                            {alert.type}: {alert.key}
-                          </span>
-                          <span className="font-semibold">
-                            {alert.percentage.toFixed(2)}%
+                          <span className="text-white">{item.key}</span>
+                          <span className="text-white">
+                            {item.percentage.toFixed(2)}%
                           </span>
                         </div>
                       ))}
-                    </div>
-                  </ChartPanel>
-
-                  <ChartPanel title="Sector and Geo Concentration">
-                    <div className="space-y-3 text-sm text-gray-700">
-                      <div>
-                        <p className="mb-1 font-semibold text-gray-900">
-                          Top Sectors
-                        </p>
-                        {platformConcentration.sector_breakdown
-                          .slice(0, 5)
-                          .map((item) => (
-                            <div
-                              key={item.key}
-                              className="flex items-center justify-between"
-                            >
-                              <span>{item.key}</span>
-                              <span>{item.percentage.toFixed(2)}%</span>
-                            </div>
-                          ))}
-                      </div>
-                      <div>
-                        <p className="mb-1 font-semibold text-gray-900">
-                          Top Geographies
-                        </p>
-                        {platformConcentration.geo_breakdown
-                          .slice(0, 5)
-                          .map((item) => (
-                            <div
-                              key={item.key}
-                              className="flex items-center justify-between"
-                            >
-                              <span>{item.key}</span>
-                              <span>{item.percentage.toFixed(2)}%</span>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  </ChartPanel>
+                  </div>
+                  <div>
+                    <p className="mb-1 font-semibold text-foreground">
+                      Top Geographies
+                    </p>
+                    {platformConcentration.geo_breakdown
+                      .slice(0, 5)
+                      .map((item) => (
+                        <div
+                          key={item.key}
+                          className="flex items-center justify-between"
+                        >
+                          <span className="text-white">{item.key}</span>
+                          <span className="text-white">
+                            {item.percentage.toFixed(2)}%
+                          </span>
+                        </div>
+                      ))}
+                  </div>
                 </div>
-              )}
-            </>
+              </ChartPanel>
+            </div>
           )}
         </TabsContent>
 
@@ -342,47 +429,67 @@ export default function Analytics() {
                 </ChartPanel>
 
                 <ChartPanel title="Credit Score vs Risk Score">
-                  <ResponsiveContainer width="100%" height={240}>
-                    <ScatterChart>
-                      <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
-                      <XAxis
-                        dataKey="credit_score"
-                        name="Credit Score"
-                        tick={TICK}
-                        axisLine={{ stroke: GRID }}
-                      />
-                      <YAxis
-                        dataKey="risk_score"
-                        name="Risk Score"
-                        tick={TICK}
-                        axisLine={{ stroke: GRID }}
-                      />
-                      <Tooltip contentStyle={TT} />
-                      <Scatter data={scatter} fill="hsl(25, 90%, 55%)" />
-                    </ScatterChart>
-                  </ResponsiveContainer>
+                  {scatter.length === 0 ? (
+                    <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
+                      No valid credit score data available for this filter.
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={240}>
+                      <ScatterChart>
+                        <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+                        <XAxis
+                          dataKey="credit_score"
+                          name="Credit Score"
+                          tick={TICK}
+                          axisLine={{ stroke: GRID }}
+                        />
+                        <YAxis
+                          dataKey="risk_score"
+                          name="Risk Score"
+                          tick={TICK}
+                          axisLine={{ stroke: GRID }}
+                        />
+                        <Tooltip contentStyle={TT} />
+                        <Scatter
+                          data={scatter}
+                          fill="hsl(25, 90%, 55%)"
+                          isAnimationActive={false}
+                        />
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  )}
                 </ChartPanel>
 
                 <ChartPanel title="Debt-to-Income vs Risk Score">
-                  <ResponsiveContainer width="100%" height={240}>
-                    <ScatterChart>
-                      <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
-                      <XAxis
-                        dataKey="dti"
-                        name="DTI"
-                        tick={TICK}
-                        axisLine={{ stroke: GRID }}
-                      />
-                      <YAxis
-                        dataKey="risk_score"
-                        name="Risk Score"
-                        tick={TICK}
-                        axisLine={{ stroke: GRID }}
-                      />
-                      <Tooltip contentStyle={TT} />
-                      <Scatter data={dtiScatter} fill="hsl(270, 50%, 55%)" />
-                    </ScatterChart>
-                  </ResponsiveContainer>
+                  {dtiScatter.length === 0 ? (
+                    <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
+                      No valid debt-to-income data available for this filter.
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={240}>
+                      <ScatterChart>
+                        <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
+                        <XAxis
+                          dataKey="dti"
+                          name="DTI"
+                          tick={TICK}
+                          axisLine={{ stroke: GRID }}
+                        />
+                        <YAxis
+                          dataKey="risk_score"
+                          name="Risk Score"
+                          tick={TICK}
+                          axisLine={{ stroke: GRID }}
+                        />
+                        <Tooltip contentStyle={TT} />
+                        <Scatter
+                          data={dtiScatter}
+                          fill="hsl(270, 50%, 55%)"
+                          isAnimationActive={false}
+                        />
+                      </ScatterChart>
+                    </ResponsiveContainer>
+                  )}
                 </ChartPanel>
 
                 <ChartPanel title="Fraud Probability Trends">

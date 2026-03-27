@@ -1,90 +1,82 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@/hooks/useAuth";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { toast } from "sonner";
+import { getApiV1Base } from "@/lib/backendOrigin";
 
-const API_URL = "http://localhost:8000/auth";
+const API_URL = `${getApiV1Base()}/auth`;
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { currentUser } = useAuth();
 
-  const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "success" | "error">(
+    "loading",
+  );
   const [message, setMessage] = useState("Verifying your email...");
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [showResend, setShowResend] = useState(false);
   const [resendEmail, setResendEmail] = useState("");
   const [isResending, setIsResending] = useState(false);
 
-  // Extract token from URL on mount
-    useEffect(() => {
-      const statusParam = searchParams.get("status");
-      const token = searchParams.get("token");
+  const handleSuccess = async () => {
+    setStatus("success");
+    setMessage("✅ Email verified successfully!");
+    toast.success("Welcome to InvoiceChain!");
 
-      if (statusParam) {
-        // handle status from backend redirect
-        if (statusParam === "success") {
-          setStatus("success");
-          setMessage("✅ Email verified successfully!");
-          toast.success("Welcome to InvoiceChain!");
-          setTimeout(() => {
-            router.push("/kyc");
-          }, 2000);
-        } else if (statusParam === "error") {
-          setStatus("error");
-          setMessage("Verification failed");
-          setErrorDetails("Your verification link is invalid or has expired. Please request a new one.");
-          setShowResend(true);
-        } else {
-          setStatus("error");
-          setMessage("Verification failed");
-          setErrorDetails("Unknown verification status.");
-          setShowResend(true);
-        }
-      } else if (token) {
-        // If token param present without status, call backend to verify
-        verifyEmail(token);
-      } else {
-        setStatus("error");
-        setMessage("No verification token provided");
-        setErrorDetails("The verification link is missing the token. Please request a new verification email.");
-      }
-    }, [searchParams]);
+    setTimeout(() => {
+      router.push("/login");
+    }, 2000);
+  };
+
+  useEffect(() => {
+    const statusParam = searchParams.get("status");
+    const token = searchParams.get("token");
+
+    if (statusParam === "success") {
+      handleSuccess();
+    } else if (statusParam === "error") {
+      setStatus("error");
+      setMessage("Verification failed");
+      setErrorDetails("Your verification link is invalid or has expired.");
+      setShowResend(true);
+    } else if (token) {
+      verifyEmail(token);
+    } else {
+      setStatus("error");
+      setMessage("Missing Token");
+      setErrorDetails("No verification token was found in the link.");
+    }
+  }, [searchParams]);
 
   const verifyEmail = async (token: string) => {
     try {
       setStatus("loading");
-      setMessage("Verifying your email...");
-
-      const response = await axios.post(
+      await axios.post(
         `${API_URL}/verify-email`,
         { token },
-        { withCredentials: true }
+        { withCredentials: true },
       );
-
-      setStatus("success");
-      setMessage("✅ Email verified successfully!");
-
-      // Auto-redirect after 2 seconds
-      toast.success("Welcome to InvoiceChain!");
-      setTimeout(() => {
-        router.push("/kyc");
-      }, 2000);
-    } catch (error: any) {
+      await handleSuccess();
+    } catch (error: unknown) {
       setStatus("error");
 
-      const errorDetail = error.response?.data?.detail || "Failed to verify email";
+      const errorDetail =
+        (error as AxiosError<{ detail?: string }>).response?.data?.detail ||
+        "Failed to verify email";
 
       if (errorDetail.includes("expired")) {
         setMessage("❌ Verification link expired");
-        setErrorDetails("Your verification link has expired. Please request a new one.");
+        setErrorDetails(
+          "Your verification link has expired. Please request a new one.",
+        );
       } else if (errorDetail.includes("Invalid")) {
         setMessage("❌ Invalid verification link");
-        setErrorDetails("The verification link is invalid or has already been used.");
+        setErrorDetails(
+          "The verification link is invalid or has already been used.",
+        );
       } else {
         setMessage("❌ Verification failed");
         setErrorDetails(errorDetail);
@@ -108,15 +100,19 @@ export default function VerifyEmailPage() {
       const response = await axios.post(
         `${API_URL}/resend-verification-email`,
         { email: resendEmail },
-        { withCredentials: true }
+        { withCredentials: true },
       );
 
-      const msg = response.data?.message || "Request processed. Check your inbox if applicable.";
+      const msg =
+        response.data?.message ||
+        "Request processed. Check your inbox if applicable.";
       toast.success(msg);
       setShowResend(false);
       setResendEmail("");
-    } catch (error: any) {
-      const errorMsg = error.response?.data?.detail || "Failed to resend email";
+    } catch (error: unknown) {
+      const errorMsg =
+        (error as AxiosError<{ detail?: string }>).response?.data?.detail ||
+        "Failed to resend email";
       toast.error(errorMsg);
     } finally {
       setIsResending(false);
@@ -148,11 +144,13 @@ export default function VerifyEmailPage() {
                 </div>
               </div>
               <p className="text-gray-600 text-lg">{message}</p>
-              <p className="text-gray-400 text-sm">Please wait while we verify your email address...</p>
+              <p className="text-gray-400 text-sm">
+                Please wait while we verify your email address...
+              </p>
             </div>
           )}
 
-          {/* Success State */}
+          {/* Success State - Optimized for the strict flow */}
           {status === "success" && (
             <div className="space-y-6">
               <div className="flex justify-center">
@@ -174,21 +172,17 @@ export default function VerifyEmailPage() {
               </div>
               <h2 className="text-2xl font-bold text-gray-800">{message}</h2>
               <p className="text-gray-600">
-                Your email has been verified. You can now access all InvoiceChain features.
+                Your email has been verified. Continue to login to access your account.
               </p>
-              <p className="text-sm text-gray-500">Redirecting to KYC in 2 seconds...</p>
+              <p className="text-sm text-gray-500 italic">
+                Redirecting you to login in 2 seconds...
+              </p>
               <div className="flex flex-col gap-2 pt-2">
                 <button
-                  onClick={() => router.push("/kyc")}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+                  onClick={() => router.push("/login")}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors shadow-md"
                 >
-                  Continue to KYC
-                </button>
-                <button
-                  onClick={() => router.push("/INVESTOR/marketplace")}
-                  className="w-full border border-gray-300 hover:bg-gray-50 text-gray-800 font-semibold py-2 px-4 rounded-lg transition-colors"
-                >
-                  Skip for now (browse marketplace)
+                  Go to Login
                 </button>
               </div>
             </div>
@@ -220,7 +214,10 @@ export default function VerifyEmailPage() {
               {showResend && (
                 <form onSubmit={handleResendEmail} className="space-y-4 mt-6">
                   <div>
-                    <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label
+                      htmlFor="email"
+                      className="block text-sm font-medium text-gray-700 mb-2"
+                    >
                       Email Address
                     </label>
                     <input
@@ -266,5 +263,21 @@ export default function VerifyEmailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function VerifyEmailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+          <div className="bg-white rounded-lg shadow-lg p-8 text-center text-sm text-gray-600">
+            Loading verification page...
+          </div>
+        </div>
+      }
+    >
+      <VerifyEmailContent />
+    </Suspense>
   );
 }

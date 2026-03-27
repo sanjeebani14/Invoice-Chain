@@ -20,7 +20,7 @@ from ..schemas.admin_users import (
     AdminUserUpdate,
 )
 
-router = APIRouter(prefix="/api/v1/admin/users", tags=["Admin - Users"])
+router = APIRouter()
 
 
 def _quote_ident(identifier: str) -> str:
@@ -28,7 +28,7 @@ def _quote_ident(identifier: str) -> str:
 
 
 def _cleanup_user_foreign_keys(db: Session, user_id: int) -> None:
-    """Best-effort cleanup for schema drift where tables reference users.id."""
+    
     inspector = inspect(db.bind)
     nullify_column_names = {
         "reviewed_by",
@@ -108,11 +108,7 @@ def list_users(
     query = db.query(User)
 
     if role is not None:
-        # Include legacy SME rows when filtering for SELLER.
-        if role == UserRole.SELLER:
-            query = query.filter(User.role.in_([UserRole.SELLER, UserRole.SME]))
-        else:
-            query = query.filter(User.role == role)
+        query = query.filter(User.role == role)
 
     if is_active is not None:
         query = query.filter(User.is_active == is_active)
@@ -188,7 +184,7 @@ def delete_user(
         synchronize_session=False,
     )
 
-    # Handle legacy/schema-drift foreign-key dependencies in local environments.
+    
     _cleanup_user_foreign_keys(db, user_id)
 
     db.delete(user)

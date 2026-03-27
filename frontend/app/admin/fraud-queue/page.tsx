@@ -101,6 +101,28 @@ export default function FraudQueue() {
     return value.toFixed(digits);
   };
 
+  const hasNumericScore = (value?: number | null): value is number =>
+    typeof value === "number" && Number.isFinite(value);
+
+  const anomalyBand = (value: number) => {
+    if (value >= 0.8) {
+      return {
+        label: "Critical",
+        className: "bg-destructive/15 text-destructive border-destructive/30",
+      };
+    }
+    if (value >= 0.5) {
+      return {
+        label: "Elevated",
+        className: "bg-risk-medium/15 text-risk-medium border-risk-medium/30",
+      };
+    }
+    return {
+      label: "Low",
+      className: "bg-risk-low/15 text-risk-low border-risk-low/30",
+    };
+  };
+
   const reasonsForItem = (item: FraudQueueItem) => {
     if (item.reasons && item.reasons.length > 0) return item.reasons;
     return item.fraud_reason
@@ -111,8 +133,8 @@ export default function FraudQueue() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-border bg-gradient-to-r from-slate-50 via-amber-50 to-rose-50 px-5 py-4">
-        <h1 className="text-2xl font-semibold tracking-tight">
+      <div className="px-1 py-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Fraud Review Queue
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -150,9 +172,26 @@ export default function FraudQueue() {
                 </div>
                 <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-right">
                   <p className="text-xs text-muted-foreground">Anomaly Score</p>
-                  <p className="font-mono text-lg font-semibold">
-                    {formatScore(item.anomaly_score ?? null, 4)}
-                  </p>
+                  {hasNumericScore(item.anomaly_score) ? (
+                    <div className="space-y-1">
+                      <p className="font-mono text-lg font-semibold">
+                        {formatScore(item.anomaly_score, 4)}
+                      </p>
+                      <Badge
+                        variant="outline"
+                        className={anomalyBand(item.anomaly_score).className}
+                      >
+                        {anomalyBand(item.anomaly_score).label} anomaly
+                      </Badge>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-foreground">
+                        Not enough data
+                      </p>
+                      
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -177,25 +216,37 @@ export default function FraudQueue() {
                       <p className="text-xs text-muted-foreground">
                         Invoice Anomaly
                       </p>
-                      <p className="font-mono font-semibold">
-                        {formatScore(item.anomaly_score ?? null, 4)}
-                      </p>
+                      {hasNumericScore(item.anomaly_score) ? (
+                        <p className="font-mono font-semibold">
+                          {formatScore(item.anomaly_score, 4)}
+                        </p>
+                      ) : (
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Not enough data
+                        </p>
+                      )}
                     </div>
                     <div className="rounded-md bg-muted/40 px-2 py-2">
                       <p className="text-xs text-muted-foreground">
                         Global Score
                       </p>
-                      <p className="font-mono font-semibold">
-                        {formatScore(item.global_anomaly_score ?? null, 4)}
-                      </p>
+                      {hasNumericScore(item.anomaly_score) ? (
+                        <p className="font-mono font-semibold">
+                          {formatScore(item.anomaly_score, 4)}
+                        </p>
+                      ) : (
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Awaiting model output
+                        </p>
+                      )}
                     </div>
                     <div className="rounded-md bg-muted/40 px-2 py-2">
                       <p className="text-xs text-muted-foreground">
                         Fraud Probability
                       </p>
                       <p className="font-mono font-semibold">
-                        {typeof item.supervised_probability === "number"
-                          ? `${(item.supervised_probability * 100).toFixed(1)}%`
+                        {typeof item.risk_score === "number"
+                          ? `${(item.risk_score * 100).toFixed(1)}%`
                           : "N/A"}
                       </p>
                     </div>

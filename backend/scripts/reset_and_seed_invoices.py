@@ -14,7 +14,7 @@ from app.services.hashing import generate_invoice_hash
 def _pick_seller_id(db: Session) -> int | None:
     seller = (
         db.query(User)
-        .filter(User.role.in_([UserRole.SELLER, UserRole.SME]))
+        .filter(User.role.in_([UserRole.SELLER, UserRole.seller]))
         .order_by(User.id.asc())
         .first()
     )

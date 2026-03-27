@@ -154,7 +154,7 @@ def train_model(df: pd.DataFrame, contamination: float) -> tuple[IsolationForest
     feature_df = build_features(df)
     labels = _derive_labels(df)
 
-    # Train on all examples to preserve broad transaction geometry.
+    
     model = IsolationForest(
         n_estimators=300,
         contamination=contamination,
@@ -170,16 +170,11 @@ def train_supervised_classifier(
     df: pd.DataFrame,
     minority_target_fraction: float = 0.05,
 ) -> tuple[XGBClassifier, pd.DataFrame, pd.Series, dict[str, float]]:
-    """
-    Train an XGBoost classifier on the same feature space using SMOTE to
-    rebalance the minority fraud class. Designed to be used once you have a
-    meaningful number of resolved fraud examples.
-    """
+   
     feature_df = build_features(df)
     y = _derive_labels(df)
 
-    # Guardrail: if there are almost no positive labels, supervised learning
-    # will not be meaningful – fall back to passthrough behaviour.
+    
     pos_frac = float(y.mean())
     if pos_frac <= 0 or y.sum() < 10:
         baseline = {
@@ -200,7 +195,6 @@ def train_supervised_classifier(
         x_res, y_res = smote.fit_resample(feature_df, y)
         used_smote = True
     except Exception:
-        # Keep training flow available even if imbalanced-learn/sklearn versions mismatch.
         x_res, y_res = feature_df, y
 
     clf = XGBClassifier(
@@ -298,7 +292,6 @@ def main() -> None:
 
     joblib.dump(model, model_path)
 
-    # Supervised path (optional; will no-op gracefully if there are no labels)
     clf, x_sup, y_sup, smote_meta = train_supervised_classifier(df)
     try:
         clf.save_model(supervised_model_path)

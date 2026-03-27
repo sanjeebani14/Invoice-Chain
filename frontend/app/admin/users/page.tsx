@@ -40,7 +40,7 @@ import {
 type EditableRole = "admin" | "investor" | "seller";
 
 const normalizeRole = (role: AdminManagedUser["role"]): EditableRole => {
-  if (role === "sme") return "seller";
+  if (role === "seller") return "seller";
   return role;
 };
 
@@ -48,7 +48,11 @@ function RoleBadge({ role }: { role: AdminManagedUser["role"] }) {
   const value = normalizeRole(role);
   if (value === "admin") return <Badge variant="destructive">ADMIN</Badge>;
   if (value === "investor") return <Badge variant="secondary">INVESTOR</Badge>;
-  return <Badge variant="outline">SELLER</Badge>;
+  return (
+    <Badge variant="outline" className="border-sky-300 bg-sky-50 text-sky-900">
+      SELLER
+    </Badge>
+  );
 }
 
 export default function AdminUsersPage() {
@@ -152,7 +156,9 @@ export default function AdminUsersPage() {
   };
 
   const onDeleteUser = async (user: AdminManagedUser) => {
-    const ok = window.confirm(`Delete user ${user.email}? This action cannot be undone.`);
+    const ok = window.confirm(
+      `Delete user ${user.email}? This action cannot be undone.`,
+    );
     if (!ok) return;
 
     try {
@@ -198,20 +204,20 @@ export default function AdminUsersPage() {
       ) : null}
 
       <div className="rounded border border-gray-200 bg-white">
-        <Table>
+        <Table className="[&_td]:text-black [&_th]:text-black">
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Action</TableHead>
+              <TableHead className="text-black">Name</TableHead>
+              <TableHead className="text-black">Email</TableHead>
+              <TableHead className="text-black">Role</TableHead>
+              <TableHead className="text-black">Status</TableHead>
+              <TableHead className="text-right text-black">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-gray-500">
+                <TableCell colSpan={5} className="text-center text-black">
                   Loading...
                 </TableCell>
               </TableRow>
@@ -253,7 +259,7 @@ export default function AdminUsersPage() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-gray-500">
+                <TableCell colSpan={5} className="text-center text-black">
                   No users found.
                 </TableCell>
               </TableRow>

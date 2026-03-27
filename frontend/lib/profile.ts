@@ -1,25 +1,43 @@
-import axios from "axios";
+import { api } from "./api";
+import type { User, ProfileMeResponse, RiskOnboardingStatus, SellerRiskOnboardingPayload, SellerRiskOnboardingResponse } from "./types";
 
-import type { UserOut } from "@/lib/auth";
-import type { KycSubmissionOut } from "@/lib/kyc";
+/**
+ * USER ACCOUNT SERVICES
+ */
 
-const PROFILE_BASE = "http://localhost:8000/api/v1/profile";
+// Get full profile including KYC status
+export const getMyProfile = async (): Promise<ProfileMeResponse> => {
+  const { data } = await api.get<ProfileMeResponse>("/profile/me");
+  return data;
+};
 
-export interface ProfileMeResponse {
-  user: UserOut;
-  kyc: KycSubmissionOut | null;
-}
-
-export async function getMyProfile(): Promise<ProfileMeResponse> {
-  const res = await axios.get<ProfileMeResponse>(`${PROFILE_BASE}/me`);
-  return res.data;
-}
-
-export async function updateMyProfile(payload: {
+// Update personal/company details
+export const updateMyProfile = async (payload: {
   full_name?: string | null;
+  company_name?: string | null;
   phone?: string | null;
-}): Promise<UserOut> {
-  const res = await axios.patch<UserOut>(`${PROFILE_BASE}/me`, payload);
-  return res.data;
-}
+  wallet_address?: string | null;
+}): Promise<User> => {
+  const { data } = await api.patch<User>("/profile/me", payload);
+  return data;
+};
 
+/**
+ * RISK ONBOARDING
+ * Specific for Sellers to determine their risk tier
+ */
+
+export const getRiskOnboardingStatus = async (): Promise<RiskOnboardingStatus> => {
+  const { data } = await api.get<RiskOnboardingStatus>("/profile/risk-onboarding/status");
+  return data;
+};
+
+export const submitRiskOnboarding = async (
+  payload: SellerRiskOnboardingPayload,
+): Promise<SellerRiskOnboardingResponse> => {
+  const { data } = await api.put<SellerRiskOnboardingResponse>(
+    "/profile/risk-onboarding",
+    payload,
+  );
+  return data;
+};

@@ -2,20 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { Activity, TrendingUp, Users, Trophy } from "lucide-react";
-import { getPlatformHealthMetrics, PlatformHealthMetrics } from "@/lib/api";
+import type { PlatformHealthMetrics } from "@/lib/api";
+import { getInvestorPlatformHealthMetrics } from "@/lib/api";
 
 export function MarketplaceStats() {
   const [metrics, setMetrics] = useState<PlatformHealthMetrics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getPlatformHealthMetrics()
+    getInvestorPlatformHealthMetrics()
       .then((data) => {
         setMetrics(data);
+        setError(null);
         setLoading(false);
       })
       .catch((err) => {
         console.error("Failed to load marketplace stats:", err);
+        setError("Unable to load live marketplace stats.");
         setLoading(false);
       });
   }, []);
@@ -36,7 +40,11 @@ export function MarketplaceStats() {
   }
 
   if (!metrics) {
-    return null;
+    return (
+      <div className="mb-8 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+        {error ?? "Marketplace stats are temporarily unavailable."}
+      </div>
+    );
   }
 
   // Calculate average IRR (estimated as yield)
