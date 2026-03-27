@@ -289,3 +289,27 @@ From `frontend/`:
 npm run dev
 ```
 
+## UI Previews
+
+### SME
+### Investor
+### Admin
+#### Admin Dashboard
+<p align="center">
+  <img src="frontend/ui-previews/admin_dashboard.png" width="80%" />
+</p>
+
+#### Fraud Review Queue
+<p align="center">
+  <img src="frontend/ui-previews/fraud_review_queue.png" width="80%" />
+</p>
+
+#### Platform Statistics and Analytics
+<p align="center">
+  <img src="frontend\ui-previews\platform_statistics.png" width="80%" />
+</p>
+<p align="center">
+  <img src="frontend\ui-previews\risk_analytics.png" width="80%" />
+</p>
+
+
