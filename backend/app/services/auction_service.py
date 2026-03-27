@@ -390,7 +390,11 @@ class AuctionService:
         except Exception as e:
             logger.error(f"Error placing bid: {e}", exc_info=True)
             db.rollback()
-            return {"success": False, "error": str(e)}
+            # Return a generic error message to avoid exposing internal details
+            return {
+                "success": False,
+                "error": "Bid placement failed due to an internal error.",
+            }
 
 
 _auction_service: Optional[AuctionService] = None
