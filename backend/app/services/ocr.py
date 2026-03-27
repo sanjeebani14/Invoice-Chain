@@ -6,8 +6,8 @@ import pytesseract
 import pdfplumber
 from PIL import Image
 
+# PDF → clean image
 
-# PDF → clean image 
 
 def pdf_to_image(file_bytes: bytes, page_number: int = 0) -> np.ndarray:
     """Convert a PDF page to a numpy image array using pdfplumber."""
@@ -36,7 +36,8 @@ def preprocess_image(img: np.ndarray) -> np.ndarray:
     return denoised
 
 
-# Run Tesseract OCR 
+# Run Tesseract OCR
+
 
 def run_ocr(img: np.ndarray) -> dict:
     """
@@ -60,7 +61,8 @@ def run_ocr(img: np.ndarray) -> dict:
     }
 
 
-# Also extract text directly from PDF 
+# Also extract text directly from PDF
+
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """
@@ -79,7 +81,8 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
         return ""
 
 
-#  specific fields using regex 
+#  specific fields using regex
+
 
 def extract_fields(text: str) -> dict:
     """
@@ -88,7 +91,7 @@ def extract_fields(text: str) -> dict:
     """
     fields = {}
 
-    # Invoice Number 
+    # Invoice Number
     inv_pattern = re.search(
         r"(?:invoice\s*(?:no|number|#)[:\s#]*|INV[-/]?)(\w[\w\-/]*\d+)",
         text,
@@ -102,7 +105,7 @@ def extract_fields(text: str) -> dict:
     else:
         fields["invoice_number"] = {"value": None, "confidence": 0.0}
 
-    # Amount 
+    # Amount
     amount_pattern = re.search(
         r"(?:total|amount due|grand total|balance due)[^\d]*"
         r"([\$₹€£]?\s?[\d,]+(?:\.\d{1,2})?)",
@@ -150,7 +153,7 @@ def extract_fields(text: str) -> dict:
         fields["issue_date"] = {"value": None, "confidence": 0.0}
         fields["due_date"] = {"value": None, "confidence": 0.0}
 
-    # Company Names 
+    # Company Names
     seller_match = re.search(
         r"(?:from|vendor|billed?\s*by|seller)[:\s]+([A-Z][A-Za-z\s&.,]+?)(?:\n|Ltd|LLC|Inc|Pvt)",
         text,
@@ -176,8 +179,9 @@ def extract_fields(text: str) -> dict:
 
 # Main function
 
+
 def process_invoice_file(file_bytes: bytes, filename: str) -> dict:
-    
+
     try:
         extracted_text = ""
         overall_confidence = 0.0

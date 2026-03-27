@@ -2,8 +2,8 @@ from sqlalchemy.orm import Session
 from rapidfuzz import fuzz
 from ..models import Invoice, FraudFlag
 
+# Exact hash match
 
-# Exact hash match 
 
 def check_exact_duplicate(db: Session, canonical_hash: str) -> Invoice | None:
     """
@@ -13,7 +13,8 @@ def check_exact_duplicate(db: Session, canonical_hash: str) -> Invoice | None:
     return db.query(Invoice).filter(Invoice.canonical_hash == canonical_hash).first()
 
 
-# Fuzzy match 
+# Fuzzy match
+
 
 def check_fuzzy_duplicate(
     db: Session,
@@ -21,7 +22,7 @@ def check_fuzzy_duplicate(
     seller_name: str,
     client_name: str,
     amount: float,
-    threshold: int = 90,# 90% similarity = suspicious
+    threshold: int = 90,  # 90% similarity = suspicious
 ) -> Invoice | None:
     # Only check recent invoices
     recent_invoices = (
@@ -47,7 +48,7 @@ def check_fuzzy_duplicate(
         amount_similar = False
         if existing.amount and amount:
             diff_pct = abs(existing.amount - amount) / max(existing.amount, amount)
-            amount_similar = diff_pct < 0.01 
+            amount_similar = diff_pct < 0.01
 
         if inv_score >= threshold and name_score >= threshold and amount_similar:
             return existing
@@ -55,7 +56,7 @@ def check_fuzzy_duplicate(
     return None
 
 
-# Log fraud flag 
+# Log fraud flag
 def create_fraud_flag(
     db: Session,
     invoice_id: int,
@@ -86,6 +87,8 @@ def create_fraud_flag(
         "message": "Human readable explanation"
       }
     """
+
+
 def run_duplicate_detection(
     db: Session,
     canonical_hash: str,
@@ -95,7 +98,6 @@ def run_duplicate_detection(
     amount: float,
     new_invoice_id: int,
 ) -> dict:
-    
 
     # Exact hash match
     exact_match = check_exact_duplicate(db, canonical_hash)
@@ -104,8 +106,8 @@ def run_duplicate_detection(
             db=db,
             invoice_id=new_invoice_id,
             reason=f"Exact duplicate of Invoice ID {exact_match.id} "
-                   f"(Invoice #{exact_match.invoice_number}). "
-                   f"Identical keccak256 hash detected.",
+            f"(Invoice #{exact_match.invoice_number}). "
+            f"Identical keccak256 hash detected.",
             severity="HIGH",
         )
         return {
@@ -132,8 +134,8 @@ def run_duplicate_detection(
             db=db,
             invoice_id=new_invoice_id,
             reason=f"Suspected fuzzy duplicate of Invoice ID {fuzzy_match.id} "
-                   f"(Invoice #{fuzzy_match.invoice_number}). "
-                   f"High similarity in invoice number, parties, and amount.",
+            f"(Invoice #{fuzzy_match.invoice_number}). "
+            f"High similarity in invoice number, parties, and amount.",
             severity="MEDIUM",
         )
         return {

@@ -42,7 +42,10 @@ def _status_to_message(invoice: Invoice) -> tuple[str, str]:
         return (f"Invoice {invoice_no} listed on marketplace.", "neutral")
     if status == "settled":
         return (f"Invoice {invoice_no} marked as settled.", "success")
-    return (f"Invoice {invoice_no} moved to {invoice.status or 'processing'}.", "neutral")
+    return (
+        f"Invoice {invoice_no} moved to {invoice.status or 'processing'}.",
+        "neutral",
+    )
 
 
 @router.get("/summary")
@@ -130,7 +133,11 @@ def get_sme_dashboard_activity(
                 "invoice_id": inv.id,
                 "message": message,
                 "tone": tone,
-                "at": (inv.updated_at or inv.created_at).isoformat() if (inv.updated_at or inv.created_at) else None,
+                "at": (
+                    (inv.updated_at or inv.created_at).isoformat()
+                    if (inv.updated_at or inv.created_at)
+                    else None
+                ),
                 "status": inv.status,
             }
         )

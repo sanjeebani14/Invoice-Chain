@@ -6,6 +6,7 @@ from app.services.realtime import notification_hub
 
 router = APIRouter()
 
+
 @router.websocket("/ws/notifications")
 async def notifications_ws(websocket: WebSocket):
     access_token = websocket.cookies.get("access_token")
@@ -25,7 +26,7 @@ async def notifications_ws(websocket: WebSocket):
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+        user = db.query(User).filter(User.id == user_id, User.is_active).first()
     finally:
         db.close()
 
@@ -33,7 +34,9 @@ async def notifications_ws(websocket: WebSocket):
         await websocket.close(code=1008)
         return
 
-    await notification_hub.connect(websocket, user_id=user.id, role=str(user.role.value))
+    await notification_hub.connect(
+        websocket, user_id=user.id, role=str(user.role.value)
+    )
     try:
         while True:
             payload = await websocket.receive_json()
@@ -51,7 +54,9 @@ async def notifications_ws(websocket: WebSocket):
                     await websocket.send_json(
                         {
                             "event": "error",
-                            "payload": {"message": "invoice_id must be a valid integer"},
+                            "payload": {
+                                "message": "invoice_id must be a valid integer"
+                            },
                         }
                     )
                     continue

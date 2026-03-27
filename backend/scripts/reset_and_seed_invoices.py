@@ -7,7 +7,14 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models import CreditEvent, FraudFlag, Invoice, RepaymentSnapshot, User, UserRole
+from app.models import (
+    CreditEvent,
+    FraudFlag,
+    Invoice,
+    RepaymentSnapshot,
+    User,
+    UserRole,
+)
 from app.services.hashing import generate_invoice_hash
 
 
@@ -65,7 +72,9 @@ def _clear_invoice_data(db: Session) -> dict[str, int]:
     }
 
 
-def _build_invoice_row(row: dict[str, str], row_num: int, seller_id: int | None) -> Invoice:
+def _build_invoice_row(
+    row: dict[str, str], row_num: int, seller_id: int | None
+) -> Invoice:
     id_invoice = (row.get("id_invoice") or "UNK").strip()
     issued_date = (row.get("issuedDate") or "").strip() or None
     due_date = (row.get("dueDate") or "").strip() or None
@@ -134,7 +143,9 @@ def seed_invoices(dataset_path: Path, limit: int = 100) -> None:
             for idx, row in enumerate(reader, start=1):
                 if idx > limit:
                     break
-                invoices.append(_build_invoice_row(row=row, row_num=idx, seller_id=seller_id))
+                invoices.append(
+                    _build_invoice_row(row=row, row_num=idx, seller_id=seller_id)
+                )
 
         db.add_all(invoices)
         db.commit()

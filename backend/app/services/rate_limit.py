@@ -3,6 +3,7 @@ import time
 from collections import deque
 from fastapi import HTTPException, status
 
+
 class RateLimiter:
     def __init__(self):
         self._lock = threading.Lock()
@@ -36,14 +37,18 @@ class RateLimiter:
             bucket.append(now)
 
     def _cleanup_all_buckets(self, now: float):
-        stale_cutoff = now - 3600 
-        to_remove = [k for k, b in self._buckets.items() if not b or b[-1] < stale_cutoff]
+        stale_cutoff = now - 3600
+        to_remove = [
+            k for k, b in self._buckets.items() if not b or b[-1] < stale_cutoff
+        ]
         for k in to_remove:
             del self._buckets[k]
         self._last_cleanup = now
 
+
 # Global instance
 limiter = RateLimiter()
+
 
 def enforce_rate_limit(*, key: str, limit: int, window_seconds: int):
     limiter.enforce(key, limit, window_seconds)

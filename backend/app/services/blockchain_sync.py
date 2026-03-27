@@ -16,15 +16,21 @@ _worker_thread: Optional[threading.Thread] = None
 _stop_event = threading.Event()
 
 
-def _get_or_create_sync_state(db: Session, contract_address: str, current_head: int) -> BlockchainSyncState:
-    state = db.query(BlockchainSyncState).filter(
-        BlockchainSyncState.contract_address == contract_address
-    ).first()
+def _get_or_create_sync_state(
+    db: Session, contract_address: str, current_head: int
+) -> BlockchainSyncState:
+    state = (
+        db.query(BlockchainSyncState)
+        .filter(BlockchainSyncState.contract_address == contract_address)
+        .first()
+    )
 
     if state:
         return state
 
-    configured_start = os.getenv("BLOCKCHAIN_SYNC_START_BLOCK", "latest").strip().lower()
+    configured_start = (
+        os.getenv("BLOCKCHAIN_SYNC_START_BLOCK", "latest").strip().lower()
+    )
     if configured_start == "latest":
         start_block = current_head
     else:
@@ -77,13 +83,21 @@ def _ingest_invoice_minted_event(db: Session, event, tx_hash: str) -> None:
             invoice.status = "minted"
 
     if not invoice:
-        logger.warning("Blockchain sync: no invoice found for hash=%s (tx=%s)", invoice_hash, tx_hash)
+        logger.warning(
+            "Blockchain sync: no invoice found for hash=%s (tx=%s)",
+            invoice_hash,
+            tx_hash,
+        )
         return
 
-    existing = db.query(MarketplaceTransaction).filter(
-        MarketplaceTransaction.reference == tx_hash,
-        MarketplaceTransaction.tx_type == "mint",
-    ).first()
+    existing = (
+        db.query(MarketplaceTransaction)
+        .filter(
+            MarketplaceTransaction.reference == tx_hash,
+            MarketplaceTransaction.tx_type == "mint",
+        )
+        .first()
+    )
     if not existing:
         db.add(
             MarketplaceTransaction(
@@ -116,16 +130,24 @@ def _ingest_invoice_burned_event(db: Session, event, tx_hash: str) -> None:
 
     invoice = db.query(Invoice).filter(Invoice.token_id == str(token_id)).first()
     if not invoice:
-        logger.warning("Blockchain sync: no invoice found for burned token_id=%s (tx=%s)", token_id, tx_hash)
+        logger.warning(
+            "Blockchain sync: no invoice found for burned token_id=%s (tx=%s)",
+            token_id,
+            tx_hash,
+        )
         return
 
     if invoice.status not in {"settled", "sold"}:
         invoice.status = "burned"
 
-    existing = db.query(MarketplaceTransaction).filter(
-        MarketplaceTransaction.reference == tx_hash,
-        MarketplaceTransaction.tx_type == "burn",
-    ).first()
+    existing = (
+        db.query(MarketplaceTransaction)
+        .filter(
+            MarketplaceTransaction.reference == tx_hash,
+            MarketplaceTransaction.tx_type == "burn",
+        )
+        .first()
+    )
     if not existing:
         db.add(
             MarketplaceTransaction(
@@ -144,7 +166,9 @@ def _ingest_invoice_burned_event(db: Session, event, tx_hash: str) -> None:
         )
 
 
-def _sync_invoice_minted_events(db: Session, from_block: int, to_block: int, chunk_size: int = 1000) -> int:
+def _sync_invoice_minted_events(
+    db: Session, from_block: int, to_block: int, chunk_size: int = 1000
+) -> int:
     service = get_blockchain_service()
     processed = 0
 
@@ -153,7 +177,9 @@ def _sync_invoice_minted_events(db: Session, from_block: int, to_block: int, chu
 
     for start in range(from_block, to_block + 1, chunk_size):
         end = min(start + chunk_size - 1, to_block)
-        events = service.contract.events.InvoiceMinted().get_logs(from_block=start, to_block=end)
+        events = service.contract.events.InvoiceMinted().get_logs(
+            from_block=start, to_block=end
+        )
         for event in events:
             tx_hash = event.get("transactionHash")
             tx_hex = tx_hash.hex() if tx_hash else ""
@@ -163,7 +189,9 @@ def _sync_invoice_minted_events(db: Session, from_block: int, to_block: int, chu
     return processed
 
 
-def _sync_invoice_burned_events(db: Session, from_block: int, to_block: int, chunk_size: int = 1000) -> int:
+def _sync_invoice_burned_events(
+    db: Session, from_block: int, to_block: int, chunk_size: int = 1000
+) -> int:
     service = get_blockchain_service()
     processed = 0
 
@@ -172,7 +200,9 @@ def _sync_invoice_burned_events(db: Session, from_block: int, to_block: int, chu
 
     for start in range(from_block, to_block + 1, chunk_size):
         end = min(start + chunk_size - 1, to_block)
-        events = service.contract.events.InvoiceBurned().get_logs(from_block=start, to_block=end)
+        events = service.contract.events.InvoiceBurned().get_logs(
+            from_block=start, to_block=end
+        )
         for event in events:
             tx_hash = event.get("transactionHash")
             tx_hex = tx_hash.hex() if tx_hash else ""
@@ -183,7 +213,7 @@ def _sync_invoice_burned_events(db: Session, from_block: int, to_block: int, chu
 
 
 def sync_blockchain_events_once() -> None:
-    #Sync blockchain invoice lifecycle events into local invoice and ledger tables.
+    # Sync blockchain invoice lifecycle events into local invoice and ledger tables.
     service = get_blockchain_service()
     latest_block = int(service.w3.eth.block_number)
     contract_address = str(service.contract.address)
@@ -196,7 +226,11 @@ def sync_blockchain_events_once() -> None:
             state.last_synced_at = datetime.utcnow()
             state.last_error = None
             db.commit()
-            logger.info("Blockchain sync idle: head=%s, cursor=%s", latest_block, state.last_synced_block)
+            logger.info(
+                "Blockchain sync idle: head=%s, cursor=%s",
+                latest_block,
+                state.last_synced_block,
+            )
             return
 
         minted_processed = _sync_invoice_minted_events(db, start_from, latest_block)
@@ -217,9 +251,11 @@ def sync_blockchain_events_once() -> None:
     except Exception as exc:
         db.rollback()
         try:
-            state = db.query(BlockchainSyncState).filter(
-                BlockchainSyncState.contract_address == contract_address
-            ).first()
+            state = (
+                db.query(BlockchainSyncState)
+                .filter(BlockchainSyncState.contract_address == contract_address)
+                .first()
+            )
             if state:
                 state.last_error = str(exc)
                 state.last_synced_at = datetime.utcnow()
@@ -247,7 +283,9 @@ def start_blockchain_sync_worker() -> None:
 
     enabled = os.getenv("BLOCKCHAIN_SYNC_ENABLED", "false").strip().lower() == "true"
     if not enabled:
-        logger.info("Blockchain sync worker is disabled (BLOCKCHAIN_SYNC_ENABLED=false)")
+        logger.info(
+            "Blockchain sync worker is disabled (BLOCKCHAIN_SYNC_ENABLED=false)"
+        )
         return
 
     interval_seconds = int(os.getenv("BLOCKCHAIN_SYNC_INTERVAL_SECONDS", "30"))

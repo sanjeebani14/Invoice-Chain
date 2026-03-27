@@ -7,11 +7,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-#Manages Web3 interactions with InvoiceNFT contract.
+
+# Manages Web3 interactions with InvoiceNFT contract.
 class BlockchainService:
-    
+
     def __init__(self):
-        #Initialize Web3 connection and load contract details.
+        # Initialize Web3 connection and load contract details.
         self.rpc_url = os.getenv("BLOCKCHAIN_RPC_URL", "http://127.0.0.1:8545")
         self.contract_address = os.getenv("INVOICE_NFT_CONTRACT_ADDRESS")
         self.minter_private_key = os.getenv("MINTER_PRIVATE_KEY")
@@ -51,7 +52,14 @@ class BlockchainService:
 
         # Fallback: try alternate paths
         fallback_paths = [
-            os.path.join(os.getcwd(), "blockchain", "artifacts", "contracts", "InvoiceNFT.sol", "InvoiceNFT.json"),
+            os.path.join(
+                os.getcwd(),
+                "blockchain",
+                "artifacts",
+                "contracts",
+                "InvoiceNFT.sol",
+                "InvoiceNFT.json",
+            ),
             "/app/blockchain/artifacts/contracts/InvoiceNFT.sol/InvoiceNFT.json",
         ]
 
@@ -77,10 +85,10 @@ class BlockchainService:
     def is_hash_registered(self, invoice_hash: str) -> bool:
         """
         Check if an invoice hash is already registered on-chain.
-        
+
         Args:
             invoice_hash: keccak256 hash as hex string (with or without 0x prefix)
-        
+
         Returns:
             bool: True if hash is registered, False otherwise
         """
@@ -92,14 +100,12 @@ class BlockchainService:
             # Convert hex string to bytes32
             invoice_hash_bytes = bytes.fromhex(invoice_hash[2:].ljust(64, "0"))
 
-            result = self.contract.functions.isHashRegistered(
-                invoice_hash_bytes
-            ).call()
+            result = self.contract.functions.isHashRegistered(invoice_hash_bytes).call()
             return result
         except Exception as e:
             logger.error(f"Error checking hash registration: {e}")
             return False
-    
+
     """
         Mint an InvoiceNFT with fractional share support.
         Args:
@@ -112,6 +118,7 @@ class BlockchainService:
         Returns:
             Dict with transaction hash, token_id, and status
         """
+
     def mint_invoice_nft(
         self,
         recipient_address: str,
@@ -121,7 +128,7 @@ class BlockchainService:
         supply: int = 1,
         token_uri: str = "",
     ) -> Dict[str, Any]:
-        
+
         try:
             # Validate inputs
             if not self.w3.is_address(recipient_address):
@@ -173,7 +180,9 @@ class BlockchainService:
             )
 
             # Sign transaction
-            signed_tx = self.w3.eth.account.sign_transaction(tx, self.minter_private_key)
+            signed_tx = self.w3.eth.account.sign_transaction(
+                tx, self.minter_private_key
+            )
 
             # Send transaction
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
@@ -218,25 +227,26 @@ class BlockchainService:
 
     """
         Retrieve invoice details from smart contract.
-        
+
         Args:
             token_id: ERC1155 token ID
-        
+
         Returns:
             Dict with invoice metadata or None if not found
         """
+
     def get_invoice_details(self, token_id: int) -> Dict[str, any]:
-        
+
         try:
             # Note: You may need to add view functions to your contract
             # to retrieve these details. For now, this is a placeholder.
             return {
-                "face_value": self.contract.functions.invoiceFaceValue(
-                    token_id
-                ).call(),
+                "face_value": self.contract.functions.invoiceFaceValue(token_id).call(),
                 "due_date": self.contract.functions.invoiceDueDate(token_id).call(),
                 "supply": self.contract.functions.tokenSupply(token_id).call(),
-                "original_minter": self.contract.functions.originalMinter(token_id).call(),
+                "original_minter": self.contract.functions.originalMinter(
+                    token_id
+                ).call(),
                 "uri": self.contract.functions.uri(token_id).call(),
             }
         except Exception as e:

@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from jose import JWTError, jwt
+from jose import jwt
 import os
 from dotenv import load_dotenv
 
@@ -22,6 +22,7 @@ def create_access_token(user_id: int) -> str:
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
+
 def create_refresh_token(user_id: int) -> str:
     now = datetime.now(timezone.utc)
     payload = {
@@ -31,6 +32,7 @@ def create_refresh_token(user_id: int) -> str:
         "iat": now,
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
 
 def decode_token(token: str) -> dict:
     # algorithms=[ALGORITHM] prevents "none" algorithm attacks

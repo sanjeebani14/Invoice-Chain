@@ -28,21 +28,37 @@ def _ensure_credit_history_schema_compatibility() -> None:
     statements: list[str] = []
 
     if "employment_years" not in existing:
-        statements.append("ALTER TABLE credit_history ADD COLUMN employment_years DOUBLE PRECISION")
+        statements.append(
+            "ALTER TABLE credit_history ADD COLUMN employment_years DOUBLE PRECISION"
+        )
     if "debt_to_income" not in existing:
-        statements.append("ALTER TABLE credit_history ADD COLUMN debt_to_income DOUBLE PRECISION")
+        statements.append(
+            "ALTER TABLE credit_history ADD COLUMN debt_to_income DOUBLE PRECISION"
+        )
     if "core_enterprise_rating" not in existing:
-        statements.append("ALTER TABLE credit_history ADD COLUMN core_enterprise_rating INTEGER")
+        statements.append(
+            "ALTER TABLE credit_history ADD COLUMN core_enterprise_rating INTEGER"
+        )
     if "transaction_stability" not in existing:
-        statements.append("ALTER TABLE credit_history ADD COLUMN transaction_stability DOUBLE PRECISION")
+        statements.append(
+            "ALTER TABLE credit_history ADD COLUMN transaction_stability DOUBLE PRECISION"
+        )
     if "logistics_consistency" not in existing:
-        statements.append("ALTER TABLE credit_history ADD COLUMN logistics_consistency DOUBLE PRECISION")
+        statements.append(
+            "ALTER TABLE credit_history ADD COLUMN logistics_consistency DOUBLE PRECISION"
+        )
     if "esg_score" not in existing:
-        statements.append("ALTER TABLE credit_history ADD COLUMN esg_score DOUBLE PRECISION")
+        statements.append(
+            "ALTER TABLE credit_history ADD COLUMN esg_score DOUBLE PRECISION"
+        )
     if "risk_contributors" not in existing:
-        statements.append("ALTER TABLE credit_history ADD COLUMN risk_contributors JSON")
+        statements.append(
+            "ALTER TABLE credit_history ADD COLUMN risk_contributors JSON"
+        )
     if "risk_input_signature" not in existing:
-        statements.append("ALTER TABLE credit_history ADD COLUMN risk_input_signature VARCHAR")
+        statements.append(
+            "ALTER TABLE credit_history ADD COLUMN risk_input_signature VARCHAR"
+        )
 
     if not statements:
         return
@@ -76,7 +92,9 @@ def _ensure_fraud_flags_schema_compatibility() -> None:
     if "anomaly_metadata" not in existing:
         statements.append("ALTER TABLE fraud_flags ADD COLUMN anomaly_metadata JSON")
     if "resolution_action" not in existing:
-        statements.append("ALTER TABLE fraud_flags ADD COLUMN resolution_action VARCHAR")
+        statements.append(
+            "ALTER TABLE fraud_flags ADD COLUMN resolution_action VARCHAR"
+        )
 
     if not statements:
         return
@@ -147,12 +165,12 @@ def _canonical_credit_history_by_seller(
 
     def _safe_int(value: object, default: int = 0) -> int:
         try:
-            return int(value)  
+            return int(value)
         except (TypeError, ValueError):
             return default
 
     def _record_rank(rec: models.CreditHistory) -> tuple[int, int, int, int, int]:
-      
+
         return (
             1 if rec.payment_history_score is not None else 0,
             1 if rec.debt_to_income is not None else 0,
@@ -192,7 +210,7 @@ def _is_seller_like_role(role: object) -> bool:
 
 
 def _resolve_valid_seller_ids(db: Session) -> set[int]:
-    
+
     credit_history_ids = {
         int(row[0])
         for row in db.query(models.CreditHistory.seller_id)
@@ -224,19 +242,17 @@ def _resolve_valid_seller_ids(db: Session) -> set[int]:
         if _is_seller_like_role(role) or sid in invoice_seller_ids:
             valid_ids.add(sid)
 
-    
     return credit_history_ids | valid_ids
 
 
 @router.get("/score/{seller_id}")
 def get_score(seller_id: int, db: Session = Depends(get_db)):
-    
+
     seller = _canonical_credit_history_by_seller(db, {seller_id}).get(seller_id)
 
     if not seller:
         raise HTTPException(status_code=404, detail="Seller ID not found in database.")
 
-   
     if risk_engine.should_recompute(seller):
         result = risk_engine.calculate_score(db=db, seller_id=seller_id)
         db.refresh(seller)
@@ -280,7 +296,11 @@ def get_sellers(db: Session = Depends(get_db)):
 
     seller_user_rows = (
         db.query(models.User.id, models.User.email, models.User.full_name)
-        .filter(models.User.id.in_([int(s.seller_id) for s in sellers if s.seller_id is not None]))
+        .filter(
+            models.User.id.in_(
+                [int(s.seller_id) for s in sellers if s.seller_id is not None]
+            )
+        )
         .all()
     )
     seller_users = {
@@ -340,7 +360,9 @@ def get_risk_metrics(db: Session = Depends(get_db)):
     high_risk = sum(1 for s in scores if s > 70)
     medium_risk = sum(1 for s in scores if 40 < s <= 70)
     low_risk = sum(1 for s in scores if s <= 40)
-    avg_composite_score = round(sum(scores) / total_sellers, 1) if total_sellers else 0.0
+    avg_composite_score = (
+        round(sum(scores) / total_sellers, 1) if total_sellers else 0.0
+    )
 
     bins = [0] * 10
     for score in scores:
@@ -353,7 +375,9 @@ def get_risk_metrics(db: Session = Depends(get_db)):
 
     top_high_risk_sellers = [
         {"seller_id": s.seller_id, "score": s.composite_score or 0}
-        for s in sorted(sellers, key=lambda item: item.composite_score or 0, reverse=True)[:10]
+        for s in sorted(
+            sellers, key=lambda item: item.composite_score or 0, reverse=True
+        )[:10]
     ]
 
     risk_level_breakdown = [
@@ -382,7 +406,7 @@ def get_risk_metrics(db: Session = Depends(get_db)):
 
     seller_risk_trends = []
     for months_back in range(5, -1, -1):
-        month_date = (today.replace(day=1) - timedelta(days=months_back * 30))
+        month_date = today.replace(day=1) - timedelta(days=months_back * 30)
         label = month_date.strftime("%b")
         seller_risk_trends.append(
             {
@@ -409,7 +433,7 @@ def get_risk_metrics(db: Session = Depends(get_db)):
 
 @router.get("/admin/fraud-queue")
 def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db)):
-    
+
     try:
         canonical = _canonical_credit_history_by_seller(db)
         suppressed_ids = _get_suppressed_seller_ids(db)
@@ -450,7 +474,6 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
                 )
             db.commit()
 
-        
         resolved_by_seller = {
             int(flag.seller_id)
             for flag in db.query(models.FraudFlag)
@@ -473,7 +496,6 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
         if duplicate_updated:
             db.commit()
 
-
         stale_auto_flags = (
             db.query(models.FraudFlag)
             .filter(models.FraudFlag.is_resolved.is_(False))
@@ -491,7 +513,6 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
         if stale_updated:
             db.commit()
 
-        
         flagged_without_queue = (
             db.query(models.Invoice)
             .outerjoin(
@@ -504,7 +525,9 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
         )
         if flagged_without_queue:
             for inv in flagged_without_queue:
-                reason_text = "Backfilled: invoice is flagged but had no fraud queue record."
+                reason_text = (
+                    "Backfilled: invoice is flagged but had no fraud queue record."
+                )
                 severity = "MEDIUM"
                 anomaly_metadata = {
                     "source": "flagged_status_backfill",
@@ -514,21 +537,30 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
                     ],
                 }
                 try:
-                    anomaly_payload = anomaly_explainer.evaluate_invoice(db, inv).to_dict()
+                    anomaly_payload = anomaly_explainer.evaluate_invoice(
+                        db, inv
+                    ).to_dict()
                     anomaly_metadata = {
                         **anomaly_payload,
                         "source": "flagged_status_backfill",
                         "backfill_recomputed": True,
-                        "backfill_recomputed_at": datetime.now(timezone.utc).isoformat(),
+                        "backfill_recomputed_at": datetime.now(
+                            timezone.utc
+                        ).isoformat(),
                     }
                     computed_reasons = anomaly_payload.get("reasons")
                     if isinstance(computed_reasons, list) and computed_reasons:
-                        reason_text = " | ".join(
-                            str(part).strip() for part in computed_reasons if str(part).strip()
-                        ) or reason_text
+                        reason_text = (
+                            " | ".join(
+                                str(part).strip()
+                                for part in computed_reasons
+                                if str(part).strip()
+                            )
+                            or reason_text
+                        )
                     severity = str(anomaly_payload.get("severity") or severity)
                 except Exception:
-                    
+
                     pass
 
                 db.add(
@@ -548,7 +580,6 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
             query = query.filter(models.FraudFlag.seller_id == seller_id)
         flags = query.order_by(models.FraudFlag.created_at.desc()).all()
 
-       
         repair_candidates = [
             flag
             for flag in flags
@@ -559,7 +590,11 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
             and flag.invoice_id is not None
         ]
         if repair_candidates:
-            invoice_ids = {int(flag.invoice_id) for flag in repair_candidates if flag.invoice_id is not None}
+            invoice_ids = {
+                int(flag.invoice_id)
+                for flag in repair_candidates
+                if flag.invoice_id is not None
+            }
             invoices = (
                 db.query(models.Invoice)
                 .filter(models.Invoice.id.in_(invoice_ids))
@@ -569,11 +604,17 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
 
             repaired = False
             for flag in repair_candidates:
-                inv = invoice_by_id.get(int(flag.invoice_id)) if flag.invoice_id is not None else None
+                inv = (
+                    invoice_by_id.get(int(flag.invoice_id))
+                    if flag.invoice_id is not None
+                    else None
+                )
                 if inv is None:
                     continue
                 try:
-                    anomaly_payload = anomaly_explainer.evaluate_invoice(db, inv).to_dict()
+                    anomaly_payload = anomaly_explainer.evaluate_invoice(
+                        db, inv
+                    ).to_dict()
                 except Exception:
                     continue
 
@@ -586,11 +627,15 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
                 computed_reasons = anomaly_payload.get("reasons")
                 if isinstance(computed_reasons, list) and computed_reasons:
                     joined = " | ".join(
-                        str(part).strip() for part in computed_reasons if str(part).strip()
+                        str(part).strip()
+                        for part in computed_reasons
+                        if str(part).strip()
                     )
                     if joined:
                         flag.reason = joined
-                flag.severity = str(anomaly_payload.get("severity") or flag.severity or "MEDIUM")
+                flag.severity = str(
+                    anomaly_payload.get("severity") or flag.severity or "MEDIUM"
+                )
                 repaired = True
 
             if repaired:
@@ -608,8 +653,7 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
             {int(sid) for sid in seller_ids if sid is not None},
         )
         score_by_seller = {
-            sid: int(rec.composite_score or 0)
-            for sid, rec in canonical.items()
+            sid: int(rec.composite_score or 0) for sid, rec in canonical.items()
         }
 
     result = []
@@ -618,7 +662,7 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
         reasons = meta.get("reasons") if isinstance(meta.get("reasons"), list) else None
         if not reasons:
             reason_text = (f.reason or "").strip()
-            
+
             if reason_text.startswith("Auto-queued:"):
                 reasons = [
                     "Seller-level fraud flag (invoice anomaly details may be unavailable).",
@@ -637,9 +681,7 @@ def get_fraud_queue(seller_id: int | None = None, db: Session = Depends(get_db))
                 ]
             else:
                 reasons = [
-                    part.strip()
-                    for part in reason_text.split("|")
-                    if part.strip()
+                    part.strip() for part in reason_text.split("|") if part.strip()
                 ]
 
         score = score_by_seller.get(
@@ -680,7 +722,7 @@ class ManualFraudFlagRequest(BaseModel):
 
 
 class FraudReviewRequest(BaseModel):
-    action: str  
+    action: str
 
 
 @router.post("/admin/manual-fraud-flag")
@@ -716,7 +758,7 @@ def manual_fraud_flag(
 
 @router.get("/admin/invoice-anomaly-explain/{invoice_id}")
 def explain_invoice_anomaly(invoice_id: int, db: Session = Depends(get_db)):
-   
+
     invoice = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -724,7 +766,9 @@ def explain_invoice_anomaly(invoice_id: int, db: Session = Depends(get_db)):
     result = anomaly_explainer.evaluate_invoice(db, invoice)
     seller_score = None
     if invoice.seller_id is not None:
-        seller = _canonical_credit_history_by_seller(db, {int(invoice.seller_id)}).get(int(invoice.seller_id))
+        seller = _canonical_credit_history_by_seller(db, {int(invoice.seller_id)}).get(
+            int(invoice.seller_id)
+        )
         if seller is not None:
             seller_score = int(seller.composite_score or 0)
 
@@ -741,16 +785,18 @@ def explain_invoice_anomaly(invoice_id: int, db: Session = Depends(get_db)):
         "seller_composite_score": seller_score,
         "status": invoice.status,
         "anomaly": result.to_dict(),
-        "flag": {
-            "id": latest_flag.id,
-            "severity": latest_flag.severity,
-            "reason": latest_flag.reason,
-            "is_resolved": latest_flag.is_resolved,
-            "resolution_action": latest_flag.resolution_action,
-            "resolved_by": latest_flag.resolved_by,
-        }
-        if latest_flag
-        else None,
+        "flag": (
+            {
+                "id": latest_flag.id,
+                "severity": latest_flag.severity,
+                "reason": latest_flag.reason,
+                "is_resolved": latest_flag.is_resolved,
+                "resolution_action": latest_flag.resolution_action,
+                "resolved_by": latest_flag.resolved_by,
+            }
+            if latest_flag
+            else None
+        ),
     }
 
 
@@ -775,7 +821,9 @@ def review_fraud_item(
     }
     action = action_map.get(action_raw)
     if action is None:
-        raise HTTPException(status_code=400, detail="Action must be clear or confirm_fraud")
+        raise HTTPException(
+            status_code=400, detail="Action must be clear or confirm_fraud"
+        )
 
     flag.is_resolved = True
     flag.resolution_action = action
@@ -783,19 +831,22 @@ def review_fraud_item(
 
     if flag.seller_id is not None:
         db.execute(
-            text(
-                """
+            text("""
                 INSERT INTO fraud_queue_suppressions (seller_id)
                 VALUES (:seller_id)
                 ON CONFLICT (seller_id) DO NOTHING
-                """
-            ),
+                """),
             {"seller_id": int(flag.seller_id)},
         )
 
     db.commit()
 
-    return {"ok": True, "id": flag_id, "status": "Resolved", "resolution_action": action}
+    return {
+        "ok": True,
+        "id": flag_id,
+        "status": "Resolved",
+        "resolution_action": action,
+    }
 
 
 @router.delete("/admin/fraud-queue/{flag_id}")

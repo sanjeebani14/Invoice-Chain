@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from .. import models
 
 try:
-    from scipy.optimize import brentq  
-except Exception:  
+    from scipy.optimize import brentq
+except Exception:
     brentq = None
 
 
@@ -42,7 +42,10 @@ class PortfolioAnalyticsService:
             funded_amount = self._funded_amount(row)
             repaid_amount = float(row.snapshot.repayment_amount or 0.0)
 
-            if row.snapshot.repaid_at is not None or self._status(row.invoice.status) in REPAID_STATUSES:
+            if (
+                row.snapshot.repaid_at is not None
+                or self._status(row.invoice.status) in REPAID_STATUSES
+            ):
                 position_state = "repaid"
             elif self._status(row.invoice.status) in ACTIVE_STATUSES:
                 position_state = "active"
@@ -50,7 +53,11 @@ class PortfolioAnalyticsService:
                 position_state = "pending"
 
             days_to_due = (due_date - today).days if due_date else None
-            simulated_pnl = repaid_amount - funded_amount if repaid_amount > 0 else repayment_target - funded_amount
+            simulated_pnl = (
+                repaid_amount - funded_amount
+                if repaid_amount > 0
+                else repayment_target - funded_amount
+            )
 
             items.append(
                 {
@@ -67,8 +74,16 @@ class PortfolioAnalyticsService:
                     "estimated_pnl": round(simulated_pnl, 2),
                     "due_date": row.invoice.due_date,
                     "days_to_due": days_to_due,
-                    "funded_at": row.snapshot.funded_at.isoformat() if row.snapshot.funded_at else None,
-                    "repaid_at": row.snapshot.repaid_at.isoformat() if row.snapshot.repaid_at else None,
+                    "funded_at": (
+                        row.snapshot.funded_at.isoformat()
+                        if row.snapshot.funded_at
+                        else None
+                    ),
+                    "repaid_at": (
+                        row.snapshot.repaid_at.isoformat()
+                        if row.snapshot.repaid_at
+                        else None
+                    ),
                 }
             )
 
@@ -125,7 +140,9 @@ class PortfolioAnalyticsService:
             if status == "active":
                 due = self._parse_date(row.invoice.due_date)
                 if due and due > today:
-                    gross_profit = max(self._expected_repayment(row) - funded_amount, 0.0)
+                    gross_profit = max(
+                        self._expected_repayment(row) - funded_amount, 0.0
+                    )
                     impact = self._impact_multiplier(row)
                     unrealized_pnl += gross_profit * impact
 
@@ -166,7 +183,9 @@ class PortfolioAnalyticsService:
             if projection_date < today:
                 continue
 
-            grouped[projection_date] += self._expected_repayment(row) * self._impact_multiplier(row)
+            grouped[projection_date] += self._expected_repayment(
+                row
+            ) * self._impact_multiplier(row)
 
         timeline = [
             {
@@ -197,11 +216,15 @@ class PortfolioAnalyticsService:
         rows = self._platform_rows()
         return self._compute_concentration(rows, threshold_pct)
 
-    def get_investor_concentration(self, investor_id: int, threshold_pct: float = 20.0) -> dict[str, Any]:
+    def get_investor_concentration(
+        self, investor_id: int, threshold_pct: float = 20.0
+    ) -> dict[str, Any]:
         rows = self._investor_rows(investor_id)
         return self._compute_concentration(rows, threshold_pct)
 
-    def _compute_concentration(self, rows: list[InvestorRow], threshold_pct: float) -> dict[str, Any]:
+    def _compute_concentration(
+        self, rows: list[InvestorRow], threshold_pct: float
+    ) -> dict[str, Any]:
         by_seller: dict[str, float] = defaultdict(float)
         by_sector: dict[str, float] = defaultdict(float)
         by_geo: dict[str, float] = defaultdict(float)
@@ -213,7 +236,9 @@ class PortfolioAnalyticsService:
                 continue
 
             total_volume += volume
-            seller_key = str(row.snapshot.seller_id or row.invoice.seller_id or "unknown")
+            seller_key = str(
+                row.snapshot.seller_id or row.invoice.seller_id or "unknown"
+            )
             sector_key = row.snapshot.industry_sector or row.invoice.sector or "Unknown"
             geo_key = row.snapshot.geography or "Unknown"
 
@@ -230,12 +255,16 @@ class PortfolioAnalyticsService:
             for seller, vol in by_seller.items():
                 pct = (vol / total_volume) * 100
                 if pct > threshold_pct:
-                    alerts.append({"type": "seller", "key": seller, "percentage": round(pct, 2)})
+                    alerts.append(
+                        {"type": "seller", "key": seller, "percentage": round(pct, 2)}
+                    )
 
             for sector, vol in by_sector.items():
                 pct = (vol / total_volume) * 100
                 if pct > threshold_pct:
-                    alerts.append({"type": "sector", "key": sector, "percentage": round(pct, 2)})
+                    alerts.append(
+                        {"type": "sector", "key": sector, "percentage": round(pct, 2)}
+                    )
 
         top_5_share = round(sum(item["percentage"] for item in seller_breakdown[:5]), 2)
 
@@ -251,9 +280,16 @@ class PortfolioAnalyticsService:
 
     def _investor_rows(self, investor_id: int) -> list[InvestorRow]:
         rows = (
-            self.db.query(models.RepaymentSnapshot, models.Invoice, models.CreditHistory)
-            .join(models.Invoice, models.Invoice.id == models.RepaymentSnapshot.invoice_id)
-            .outerjoin(models.CreditHistory, models.CreditHistory.seller_id == models.RepaymentSnapshot.seller_id)
+            self.db.query(
+                models.RepaymentSnapshot, models.Invoice, models.CreditHistory
+            )
+            .join(
+                models.Invoice, models.Invoice.id == models.RepaymentSnapshot.invoice_id
+            )
+            .outerjoin(
+                models.CreditHistory,
+                models.CreditHistory.seller_id == models.RepaymentSnapshot.seller_id,
+            )
             .filter(models.RepaymentSnapshot.investor_id == investor_id)
             .all()
         )
@@ -261,9 +297,16 @@ class PortfolioAnalyticsService:
 
     def _platform_rows(self) -> list[InvestorRow]:
         rows = (
-            self.db.query(models.RepaymentSnapshot, models.Invoice, models.CreditHistory)
-            .join(models.Invoice, models.Invoice.id == models.RepaymentSnapshot.invoice_id)
-            .outerjoin(models.CreditHistory, models.CreditHistory.seller_id == models.RepaymentSnapshot.seller_id)
+            self.db.query(
+                models.RepaymentSnapshot, models.Invoice, models.CreditHistory
+            )
+            .join(
+                models.Invoice, models.Invoice.id == models.RepaymentSnapshot.invoice_id
+            )
+            .outerjoin(
+                models.CreditHistory,
+                models.CreditHistory.seller_id == models.RepaymentSnapshot.seller_id,
+            )
             .all()
         )
         return [InvestorRow(snapshot=s, invoice=i, credit=c) for s, i, c in rows]
@@ -276,7 +319,9 @@ class PortfolioAnalyticsService:
     def _to_breakdown(bucket: dict[str, float], total: float) -> list[dict[str, Any]]:
         ranked = sorted(bucket.items(), key=lambda kv: kv[1], reverse=True)
         if total <= 0:
-            return [{"key": k, "volume": round(v, 2), "percentage": 0.0} for k, v in ranked]
+            return [
+                {"key": k, "volume": round(v, 2), "percentage": 0.0} for k, v in ranked
+            ]
         return [
             {
                 "key": key,
@@ -296,7 +341,10 @@ class PortfolioAnalyticsService:
 
     @staticmethod
     def _expected_repayment(row: InvestorRow) -> float:
-        if row.snapshot.repayment_amount is not None and row.snapshot.repayment_amount > 0:
+        if (
+            row.snapshot.repayment_amount is not None
+            and row.snapshot.repayment_amount > 0
+        ):
             return float(row.snapshot.repayment_amount)
         return float(row.invoice.amount or 0.0)
 
@@ -350,7 +398,9 @@ class PortfolioAnalyticsService:
         return datetime.now(timezone.utc).date()
 
     @staticmethod
-    def _adjusted_due_date(due_date: str | None, weighted_average_days_late: float | None) -> date:
+    def _adjusted_due_date(
+        due_date: str | None, weighted_average_days_late: float | None
+    ) -> date:
         parsed = PortfolioAnalyticsService._parse_date(due_date)
         base = parsed or datetime.now(timezone.utc).date()
         shift_days = int(round(weighted_average_days_late or 0.0))

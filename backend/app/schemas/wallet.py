@@ -4,8 +4,10 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 from .auth import UserOut
 
+
 class RequestNonceRequest(BaseModel):
     wallet_address: str
+
 
 class RequestNonceResponse(BaseModel):
     nonce: str
@@ -13,10 +15,12 @@ class RequestNonceResponse(BaseModel):
     expires_in_seconds: int
     expires_at: datetime
 
+
 class VerifySignatureRequest(BaseModel):
     wallet_address: str
     signature: str
     nonce: str
+
 
 class VerifySignatureResponse(BaseModel):
     message: str
@@ -24,19 +28,21 @@ class VerifySignatureResponse(BaseModel):
     wallet_address: str
     user: Optional[UserOut] = None
 
+
 class LinkedWalletResponse(BaseModel):
     id: int
     wallet_address: str
     wallet_label: Optional[str] = None
     balance_wei: Optional[str] = None
-    balance_eth: Optional[str] = None  
+    balance_eth: Optional[str] = None
     network_name: str
     chain_id: int
     is_primary: bool
     is_active: bool
     created_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
+
 
 class GetBalanceResponse(BaseModel):
     wallet_address: str
@@ -44,12 +50,15 @@ class GetBalanceResponse(BaseModel):
     balance_eth: str
     last_updated: Optional[datetime] = None
 
+
 class LinkWalletResponse(BaseModel):
     message: str
     wallet: LinkedWalletResponse
 
+
 class UserWalletsResponse(BaseModel):
     wallets: List[LinkedWalletResponse]
+
 
 class DisconnectWalletResponse(BaseModel):
     message: str

@@ -54,7 +54,14 @@ def _derive_labels(data: pd.DataFrame) -> pd.Series:
 
     if "invoiceStatus" in data.columns:
         normalized = data["invoiceStatus"].map(_normalize_status)
-        known_bad = {"overdue", "disputed", "cancelled", "canceled", "fraud", "fraudulent"}
+        known_bad = {
+            "overdue",
+            "disputed",
+            "cancelled",
+            "canceled",
+            "fraud",
+            "fraudulent",
+        }
         return normalized.isin(known_bad).astype(int)
 
     return pd.Series(np.zeros(len(data), dtype=int), index=data.index)
@@ -79,26 +86,34 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     data["net_value"] = (data["total"] - data["discount"] + data["tax"]).clip(lower=0)
     data["net_delta_abs"] = (data["net_value"] - data["total"]).abs()
-    data["discount_ratio"] = (data["discount"] / (data["total"].replace(0, np.nan))).fillna(0).clip(0, 2)
-    data["tax_ratio"] = (data["tax"] / (data["total"].replace(0, np.nan))).fillna(0).clip(0, 2)
-    data["balance_ratio"] = (data["balance"] / (data["total"].replace(0, np.nan))).fillna(0).clip(0, 3)
-
-    rolling_mean = (
-        data.groupby("seller_id")["amount"]
-        .transform(lambda s: s.rolling(window=30, min_periods=3).mean().shift(1))
+    data["discount_ratio"] = (
+        (data["discount"] / (data["total"].replace(0, np.nan))).fillna(0).clip(0, 2)
     )
-    rolling_std = (
-        data.groupby("seller_id")["amount"]
-        .transform(lambda s: s.rolling(window=30, min_periods=3).std().shift(1))
+    data["tax_ratio"] = (
+        (data["tax"] / (data["total"].replace(0, np.nan))).fillna(0).clip(0, 2)
+    )
+    data["balance_ratio"] = (
+        (data["balance"] / (data["total"].replace(0, np.nan))).fillna(0).clip(0, 3)
+    )
+
+    rolling_mean = data.groupby("seller_id")["amount"].transform(
+        lambda s: s.rolling(window=30, min_periods=3).mean().shift(1)
+    )
+    rolling_std = data.groupby("seller_id")["amount"].transform(
+        lambda s: s.rolling(window=30, min_periods=3).std().shift(1)
     )
     rolling_std = rolling_std.replace(0, np.nan)
-    data["amount_velocity_zscore"] = ((data["amount"] - rolling_mean) / rolling_std).fillna(0)
+    data["amount_velocity_zscore"] = (
+        (data["amount"] - rolling_mean) / rolling_std
+    ).fillna(0)
 
     first_digits = data["amount"].apply(first_digit)
     observed = first_digits.value_counts(normalize=True).to_dict()
     data["benford_expected"] = first_digits.map(benford_prob)
     data["benford_observed"] = first_digits.map(observed).fillna(0)
-    data["benford_deviation"] = (data["benford_observed"] - data["benford_expected"]).abs()
+    data["benford_deviation"] = (
+        data["benford_observed"] - data["benford_expected"]
+    ).abs()
 
     data["issued_hour"] = data["issuedDate"].dt.hour.fillna(12).astype(float)
     data["issued_weekday"] = data["issuedDate"].dt.weekday.fillna(0).astype(float)
@@ -107,19 +122,33 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     data["weekday_sin"] = np.sin(2 * np.pi * data["issued_weekday"] / 7.0)
     data["weekday_cos"] = np.cos(2 * np.pi * data["issued_weekday"] / 7.0)
 
-    due_days = ((data["dueDate"] - data["issuedDate"]).dt.total_seconds() / 86400.0).fillna(30.0)
+    due_days = (
+        (data["dueDate"] - data["issuedDate"]).dt.total_seconds() / 86400.0
+    ).fillna(30.0)
     data["days_to_due"] = due_days.clip(lower=0, upper=365)
 
-    data["invoice_status_norm"] = data.get("invoiceStatus", "unknown").map(_normalize_status)
-    data["country_norm"] = data.get("country", "unknown").astype(str).str.strip().str.lower()
-    data["service_norm"] = data.get("service", "unknown").astype(str).str.strip().str.lower()
+    data["invoice_status_norm"] = data.get("invoiceStatus", "unknown").map(
+        _normalize_status
+    )
+    data["country_norm"] = (
+        data.get("country", "unknown").astype(str).str.strip().str.lower()
+    )
+    data["service_norm"] = (
+        data.get("service", "unknown").astype(str).str.strip().str.lower()
+    )
 
-    status_dummies = pd.get_dummies(data["invoice_status_norm"], prefix="status", dtype=int)
+    status_dummies = pd.get_dummies(
+        data["invoice_status_norm"], prefix="status", dtype=int
+    )
     country_dummies = pd.get_dummies(data["country_norm"], prefix="country", dtype=int)
     service_dummies = pd.get_dummies(data["service_norm"], prefix="service", dtype=int)
 
-    top_country_cols = list(country_dummies.sum().sort_values(ascending=False).head(20).index)
-    top_service_cols = list(service_dummies.sum().sort_values(ascending=False).head(20).index)
+    top_country_cols = list(
+        country_dummies.sum().sort_values(ascending=False).head(20).index
+    )
+    top_service_cols = list(
+        service_dummies.sum().sort_values(ascending=False).head(20).index
+    )
     data = pd.concat(
         [
             data,
@@ -130,31 +159,37 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         axis=1,
     )
 
-    feature_cols = [
-        "amount",
-        "log_amount",
-        "net_value",
-        "net_delta_abs",
-        "discount_ratio",
-        "tax_ratio",
-        "balance_ratio",
-        "days_to_due",
-        "amount_velocity_zscore",
-        "benford_deviation",
-        "hour_sin",
-        "hour_cos",
-        "weekday_sin",
-        "weekday_cos",
-    ] + list(status_dummies.columns) + top_country_cols + top_service_cols
+    feature_cols = (
+        [
+            "amount",
+            "log_amount",
+            "net_value",
+            "net_delta_abs",
+            "discount_ratio",
+            "tax_ratio",
+            "balance_ratio",
+            "days_to_due",
+            "amount_velocity_zscore",
+            "benford_deviation",
+            "hour_sin",
+            "hour_cos",
+            "weekday_sin",
+            "weekday_cos",
+        ]
+        + list(status_dummies.columns)
+        + top_country_cols
+        + top_service_cols
+    )
 
     return data[feature_cols].astype(float)
 
 
-def train_model(df: pd.DataFrame, contamination: float) -> tuple[IsolationForest, pd.DataFrame, pd.Series]:
+def train_model(
+    df: pd.DataFrame, contamination: float
+) -> tuple[IsolationForest, pd.DataFrame, pd.Series]:
     feature_df = build_features(df)
     labels = _derive_labels(df)
 
-    
     model = IsolationForest(
         n_estimators=300,
         contamination=contamination,
@@ -170,11 +205,10 @@ def train_supervised_classifier(
     df: pd.DataFrame,
     minority_target_fraction: float = 0.05,
 ) -> tuple[XGBClassifier, pd.DataFrame, pd.Series, dict[str, float]]:
-   
+
     feature_df = build_features(df)
     y = _derive_labels(df)
 
-    
     pos_frac = float(y.mean())
     if pos_frac <= 0 or y.sum() < 10:
         baseline = {
@@ -211,15 +245,22 @@ def train_supervised_classifier(
     )
     clf.fit(x_res, y_res)
 
-    return clf, feature_df, y, {
-        "pos_fraction": pos_frac,
-        "used_smote": used_smote,
-        "rows_original": int(len(df)),
-        "rows_after_smote": int(len(x_res)),
-    }
+    return (
+        clf,
+        feature_df,
+        y,
+        {
+            "pos_fraction": pos_frac,
+            "used_smote": used_smote,
+            "rows_original": int(len(df)),
+            "rows_after_smote": int(len(x_res)),
+        },
+    )
 
 
-def evaluate_model(model: IsolationForest, x: pd.DataFrame, y: pd.Series) -> dict[str, float]:
+def evaluate_model(
+    model: IsolationForest, x: pd.DataFrame, y: pd.Series
+) -> dict[str, float]:
     pred = model.predict(x)
     pred_binary = (pred == -1).astype(int)
     raw_score = -model.decision_function(x)
@@ -236,7 +277,9 @@ def evaluate_model(model: IsolationForest, x: pd.DataFrame, y: pd.Series) -> dic
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train InvoiceChain anomaly model from invoice dataset")
+    parser = argparse.ArgumentParser(
+        description="Train InvoiceChain anomaly model from invoice dataset"
+    )
     parser.add_argument(
         "--dataset",
         type=str,
@@ -285,7 +328,12 @@ def main() -> None:
     df = pd.read_csv(dataset_path)
     labels = _derive_labels(df)
     bad_rate = float(labels.mean()) if len(labels) else 0.0
-    tuned_contamination = min(0.35, max(args.contamination, bad_rate * 1.15 if bad_rate > 0 else args.contamination))
+    tuned_contamination = min(
+        0.35,
+        max(
+            args.contamination, bad_rate * 1.15 if bad_rate > 0 else args.contamination
+        ),
+    )
 
     model, x, y = train_model(df, contamination=tuned_contamination)
     metrics = evaluate_model(model, x, y)

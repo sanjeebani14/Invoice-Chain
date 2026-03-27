@@ -8,9 +8,13 @@ from sqlalchemy.orm import Session
 from ..auth.dependencies import get_current_user, require_admin
 from ..database import get_db
 from ..models import KycSubmission, KycStatus, KycDocType, User
-from ..schemas.kyc import KycAdminListResponse, KycMeResponse, KycRejectRequest, KycSubmissionOut
+from ..schemas.kyc import (
+    KycAdminListResponse,
+    KycMeResponse,
+    KycRejectRequest,
+    KycSubmissionOut,
+)
 from ..services.storage_s3 import upload_kyc_document
-
 
 router = APIRouter()
 admin_router = APIRouter()
@@ -101,12 +105,7 @@ def admin_list_submissions(
         q = q.filter(KycSubmission.status == status_enum)
 
     total = q.count()
-    rows = (
-        q.order_by(KycSubmission.submitted_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    rows = q.order_by(KycSubmission.submitted_at.desc()).offset(skip).limit(limit).all()
 
     return {
         "submissions": [KycSubmissionOut.from_orm(r) for r in rows],
@@ -151,4 +150,3 @@ def admin_reject(
     db.commit()
     db.refresh(sub)
     return KycSubmissionOut.from_orm(sub)
-
