@@ -31,6 +31,11 @@ The traditional invoice factoring process involves a financial intermediary (a '
 
   This entire process can take 7-21 days, defeating the purpose of 'fast liquidity'.
 
+<p align="center">
+  <img src="frontend\invoice-factoring\invoice_factoring_today.png" width="80%" />
+</p>
+
+
 ## How InvoiceChain does it
 
 - Permissionless Access via Wallet Authentication - Instead of credit applications, financial statements, and eligibility checks:
@@ -61,7 +66,9 @@ The traditional invoice factoring process involves a financial intermediary (a '
   - Auction mechanism: price discovery through competitive bidding — no more take-it-or-leave-it factor rates.
   - Fractional shares: an invoice can be split into shares - retail accessible.
 
-
+<p align="center">
+  <img src="frontend\invoice-factoring\InvoiceChain.png" width="80%" />
+</p>
 
 ## Folder Structure
 
@@ -123,6 +130,9 @@ Invoice-Chain/
 - Network: Base Sepolia (Testnet)
 - Token Standard: ERC-721 (Invoice NFTs)
 
+
+Git-based feature branch workflow was followed throughout the development lifecycle, with each member working on dedicated feature branches and merging via pull requests to the main branch. GitHub served as the central collaboration hub - GitHub Issues were used to track tasks and bugs, GitHub Project Boards were used for planning and progress tracking.
+
 ## Prerequisites
 
 Install the following before setup:
@@ -132,6 +142,7 @@ Install the following before setup:
 - **Docker Desktop** (for Redis/MinIO)
 - **PostgreSQL** 15+ (cloud DB - Neon recommended,Database URL we used is provided in .env.example)
 - **MetaMask** (for wallet-based features)
+- **Tesseract**
 
 ---
 
@@ -292,6 +303,21 @@ npm run dev
 ## UI Previews
 
 ### SME
+#### Seller Dashboard
+<p align="center">
+  <img src="frontend/ui-previews/seller_dashboard.png" width="80%" />
+</p>
+
+#### Current Invoices Status Page
+<p align="center">
+  <img src="frontend/ui-previews/current_invoices_status.png" width="80%" />
+</p>
+
+#### Invoice Upload Gateway
+<p align="center">
+  <img src="frontend/ui-previews/invoice_upload.png" width="80%" />
+</p>
+
 ### Investor
 ### Admin
 #### Admin Dashboard
@@ -313,3 +339,4 @@ npm run dev
 </p>
 
 
+## Demo Video
