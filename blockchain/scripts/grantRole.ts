@@ -12,6 +12,13 @@ const accountAddress = cleanedArgs[1] || process.env.ACCOUNT;
 
 const INVOICE_NFT_ADDRESS = process.env.INVOICE_NFT_CONTRACT_ADDRESS;
 
+function redactAddress(value: string | undefined | null): string {
+  if (!value) return "<redacted>";
+  const str = String(value);
+  if (str.length <= 10) return "<redacted>";
+  return `${str.slice(0, 6)}...${str.slice(-4)}`;
+}
+
 if (!INVOICE_NFT_ADDRESS) {
   throw new Error("INVOICE_NFT_CONTRACT_ADDRESS not set");
 }
@@ -29,7 +36,7 @@ async function main() {
 
   console.log(`\nGranting ${roleType.toUpperCase()}_ROLE`);
   console.log(`  Contract:  ${INVOICE_NFT_ADDRESS}`);
-  console.log(`  Account:   ${accountAddress}`);
+  console.log(`  Account:   ${redactAddress(accountAddress)}`);
   console.log(`  Deployer:  ${deployer.account.address}\n`);
 
   const invoiceNFT = await viem.getContractAt(
