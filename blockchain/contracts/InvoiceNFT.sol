@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.25;
 
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
@@ -68,8 +68,6 @@ contract InvoiceNFT is ERC1155, AccessControl, ReentrancyGuard, Pausable {
         uint256 timestamp
     );
 
-    event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);
-    event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);
 
     // constructor
     constructor(address admin) ERC1155("") {

@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit manually
-// Generated at: 2026-03-28T18:54:21.084Z
+// Copied from blockchain/deployments/addresses.ts
 
 export const CONTRACT_ADDRESSES = {
   InvoiceNFT: "0x81ff3a847c8dd39f276ac3b9d6b9c2256a7f7b9b" as const,

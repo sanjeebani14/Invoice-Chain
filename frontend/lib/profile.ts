@@ -5,6 +5,9 @@ import type { User, ProfileMeResponse, RiskOnboardingStatus, SellerRiskOnboardin
  * USER ACCOUNT SERVICES
  */
 
+// Re-export types for convenience
+export type { SellerRiskOnboardingPayload };
+
 // Get full profile including KYC status
 export const getMyProfile = async (): Promise<ProfileMeResponse> => {
   const { data } = await api.get<ProfileMeResponse>("/profile/me");

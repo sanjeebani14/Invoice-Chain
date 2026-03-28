@@ -9,6 +9,7 @@ describe("Auction", async function () {
     const { viem } = await network.connect();
     const [admin, seller, investor1, investor2, investor3, feeWallet] = await viem.getWalletClients();
     const publicClient = await viem.getPublicClient();
+    const testClient = await viem.getTestClient();
 
     const invoiceNFT = await viem.deployContract("InvoiceNFT", [admin.account.address]);
     const auction = await viem.deployContract("Auction", [invoiceNFT.address, feeWallet.account.address]);
@@ -38,6 +39,7 @@ describe("Auction", async function () {
       investor3,
       feeWallet,
       publicClient,
+      testClient,
       thirtyDaysFromNow,
       tokenId: 1n,
       faceValue,
@@ -61,14 +63,14 @@ describe("Auction", async function () {
 
       const auctionData = await auction.read.getAuction([auctionId]);
 
-      assert.equal(auctionData.auctionId, auctionId);
-      assert.equal(auctionData.tokenId, tokenId);
-      assert.equal(auctionData.seller, getAddress(seller.account.address));
-      assert.equal(auctionData.sharesOnAuction, 50n);
-      assert.equal(auctionData.startingPrice, startPrice);
-      assert.equal(auctionData.highestBid, 0n);
-      assert.equal(auctionData.highestBidder, "0x0000000000000000000000000000000000000000");
-      assert.equal(auctionData.status, 0n); // Active
+      assert.strictEqual(auctionData.auctionId, auctionId);
+      assert.strictEqual(auctionData.tokenId, tokenId);
+      assert.strictEqual(getAddress(auctionData.seller), getAddress(seller.account.address));
+      assert.strictEqual(auctionData.sharesOnAuction, 50n);
+      assert.strictEqual(auctionData.startingPrice, startPrice);
+      assert.strictEqual(auctionData.highestBid, 0n);
+      assert.strictEqual(auctionData.highestBidder, "0x0000000000000000000000000000000000000000");
+      assert.strictEqual(BigInt(auctionData.status), 0n); // Active
     });
 
     it("transfers shares into contract escrow on creation", async () => {
@@ -154,6 +156,9 @@ describe("Auction", async function () {
       );
 
       const tokenId = 2n;
+
+      // Revoke approval for this test
+      await invoiceNFT.write.setApprovalForAll([auction.address, false], { account: seller.account });
 
       await assert.rejects(
         () =>
@@ -259,7 +264,7 @@ describe("Auction", async function () {
       await auction.write.placeBid([1n], { account: investor2.account, value: parseEther("105") });
 
       // Claim refund
-      await auction.write.claimRefund([], { account: investor1.account });
+      await auction.write.claimRefund({ account: investor1.account });
 
       const pendingRefund = await auction.read.getPendingRefund([investor1.account.address]);
       assert.equal(pendingRefund, 0n);
@@ -305,10 +310,10 @@ describe("Auction", async function () {
 
   describe("Settlement", () => {
     it("settles auction with winner and transfers funds", async () => {
-      const { viem, auction, invoiceNFT, seller, investor1, feeWallet, tokenId, publicClient } =
+      const { auction, invoiceNFT, seller, investor1, feeWallet, tokenId, testClient } =
         await deployAuctionFixture();
 
-      const duration = 2n; // 2 seconds for quick test
+      const duration = BigInt(1 * 60 * 60); // 1 hour minimum
       await auction.write.createAuction(
         [tokenId, 50n, parseEther("100"), duration],
         { account: seller.account }
@@ -318,53 +323,53 @@ describe("Auction", async function () {
       await auction.write.placeBid([1n], { account: investor1.account, value: bidAmount });
 
       // Wait for auction to end
-      await publicClient.waitForBlockChange();
-      await publicClient.waitForBlockChange();
+      await testClient.increaseTime({ seconds: 3601 });
+      await testClient.mine({ blocks: 1 });
 
       // Settle
       await auction.write.settleAuction([1n]);
 
       const auctionData = await auction.read.getAuction([1n]);
-      assert.equal(auctionData.status, 1n); // Settled
+      assert.strictEqual(BigInt(auctionData.status), 1n); // Settled
 
       // Winner should have shares
       const winnerBalance = await invoiceNFT.read.balanceOf([investor1.account.address, tokenId]);
-      assert.equal(winnerBalance, 50n);
+      assert.strictEqual(winnerBalance, 50n);
 
       // Check settlement record
       const settlement = await auction.read.getSettlement([1n]);
-      assert.equal(settlement.winner, getAddress(investor1.account.address));
-      assert.equal(settlement.settledPrice, bidAmount);
+      assert.strictEqual(getAddress(settlement.winner), getAddress(investor1.account.address));
+      assert.strictEqual(settlement.settledPrice, bidAmount);
     });
 
     it("returns shares to seller if no bids", async () => {
-      const { auction, invoiceNFT, seller, tokenId, publicClient } = await deployAuctionFixture();
+      const { auction, invoiceNFT, seller, tokenId, testClient } = await deployAuctionFixture();
 
-      const duration = 2n;
+      const duration = BigInt(1 * 60 * 60); // 1 hour minimum
       await auction.write.createAuction(
         [tokenId, 50n, parseEther("100"), duration],
         { account: seller.account }
       );
 
       // Wait for end
-      await publicClient.waitForBlockChange();
-      await publicClient.waitForBlockChange();
+      await testClient.increaseTime({ seconds: 3601 });
+      await testClient.mine({ blocks: 1 });
 
       // Settle
       await auction.write.settleAuction([1n]);
 
       const auctionData = await auction.read.getAuction([1n]);
-      assert.equal(auctionData.status, 1n); // Settled
+      assert.strictEqual(BigInt(auctionData.status), 1n); // Settled
 
       // Seller should have all shares back
       const sellerBalance = await invoiceNFT.read.balanceOf([seller.account.address, tokenId]);
-      assert.equal(sellerBalance, 100n); // 100 - 50 locked + 50 returned
+      assert.strictEqual(sellerBalance, 100n); // 100 - 50 locked + 50 returned
     });
 
     it("calculates and deducts platform fee on settlement", async () => {
-      const { auction, seller, investor1, feeWallet, tokenId, publicClient } = await deployAuctionFixture();
+      const { auction, seller, investor1, feeWallet, tokenId, testClient } = await deployAuctionFixture();
 
-      const duration = 2n;
+      const duration = BigInt(1 * 60 * 60); // 1 hour minimum
       await auction.write.createAuction(
         [tokenId, 50n, parseEther("100"), duration],
         { account: seller.account }
@@ -373,8 +378,8 @@ describe("Auction", async function () {
       const bidAmount = parseEther("1000");
       await auction.write.placeBid([1n], { account: investor1.account, value: bidAmount });
 
-      await publicClient.waitForBlockChange();
-      await publicClient.waitForBlockChange();
+      await testClient.increaseTime({ seconds: 3601 });
+      await testClient.mine({ blocks: 1 });
 
       await auction.write.settleAuction([1n]);
 
@@ -384,8 +389,8 @@ describe("Auction", async function () {
       const expectedFee = (bidAmount * 250n) / 10000n;
       const expectedSellerProceeds = bidAmount - expectedFee;
 
-      assert.equal(settlement.platformFee, expectedFee);
-      assert.equal(settlement.sellerProceeds, expectedSellerProceeds);
+      assert.strictEqual(settlement.platformFee, expectedFee);
+      assert.strictEqual(settlement.sellerProceeds, expectedSellerProceeds);
     });
 
     it("rejects settlement before auction ends", async () => {
@@ -404,22 +409,22 @@ describe("Auction", async function () {
     });
 
     it("allows anyone to settle (not just seller)", async () => {
-      const { auction, investor2, tokenId, publicClient } = await deployAuctionFixture();
+      const { auction, investor2, tokenId, testClient } = await deployAuctionFixture();
 
-      const duration = 2n;
+      const duration = BigInt(1 * 60 * 60); // 1 hour minimum
       await auction.write.createAuction(
         [tokenId, 50n, parseEther("100"), duration],
         { account: (await (await network.connect()).viem.getWalletClients())[1].account }
       );
 
-      await publicClient.waitForBlockChange();
-      await publicClient.waitForBlockChange();
+      await testClient.increaseTime({ seconds: 3601 });
+      await testClient.mine({ blocks: 1 });
 
       // Investor2 settles (not seller)
       await auction.write.settleAuction([1n], { account: investor2.account });
 
       const auctionData = await auction.read.getAuction([1n]);
-      assert.equal(auctionData.status, 1n); // Settled
+      assert.strictEqual(BigInt(auctionData.status), 1n); // Settled
     });
   });
 
@@ -438,11 +443,11 @@ describe("Auction", async function () {
       await auction.write.cancelAuction([1n, "test cancellation"], { account: seller.account });
 
       const auctionData = await auction.read.getAuction([1n]);
-      assert.equal(auctionData.status, 2n); // Cancelled
+      assert.strictEqual(BigInt(auctionData.status), 2n); // Cancelled
 
       // Shares returned to seller
       const balance = await invoiceNFT.read.balanceOf([seller.account.address, tokenId]);
-      assert.equal(balance, 100n);
+      assert.strictEqual(balance, 100n);
     });
 
     it("rejects cancel from non-seller", async () => {
@@ -513,7 +518,7 @@ describe("Auction", async function () {
     it("admin can pause/unpause", async () => {
       const { auction, admin, seller, tokenId } = await deployAuctionFixture();
 
-      await auction.write.pause([], { account: admin.account });
+      await auction.write.pause({ account: admin.account });
 
       const duration = BigInt(7 * 24 * 60 * 60);
 
@@ -526,7 +531,7 @@ describe("Auction", async function () {
         /EnforcedPause/
       );
 
-      await auction.write.unpause([], { account: admin.account });
+      await auction.write.unpause({ account: admin.account });
 
       await auction.write.createAuction(
         [tokenId, 50n, parseEther("100"), duration],

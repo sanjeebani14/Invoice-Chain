@@ -185,7 +185,55 @@ cd ..
 
 ### 1. Environment Variables
 
+#### For Team Collaboration:
+- **Copy the example file**: `cp backend/.env.example backend/.env`
+- **Never commit `.env` files** (they contain secrets)
+- **Share sensitive values securely** (team password manager, or generate individual keys)
+- **Update `.env.example`** when adding new required variables
+
 #### backend/.env (**create this file**)
+
+```env
+# Db
+# Here is the Neon cloud DB link already in use
+DATABASE_URL=postgresql://neondb_owner:npg_N21JFZAhatLz@ep-withered-heart-a4ilecpb-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+
+# Redis Config
+REDIS_URL="redis://localhost:6379/0"
+
+# Security
+JWT_SECRET="your_super_secret_jwt_string_here"
+ALGORITHM="HS256"
+
+# Blockchain
+INVOICE_NFT_CONTRACT_ADDRESS="0x81ff3a847c8dd39f276ac3b9d6b9c2256a7f7b9b"
+MINTER_PRIVATE_KEY="0xYourMinterWalletPrivateKeyHere"
+BLOCKCHAIN_SYNC_ENABLED=true
+
+# Note: Generate MINTER_PRIVATE_KEY with:
+# python -c "from eth_account import Account; a = Account.create(); print(f'Address: {a.address}'); print(f'Private Key: {a.key.hex()}')"
+
+# Uploads (S3 or local MinIO)
+S3_BUCKET="invoicechain-uploads"
+S3_ENDPOINT_URL="http://127.0.0.1:9000"
+S3_REGION="us-east-1"
+AWS_ACCESS_KEY_ID="your_aws_or_minio_access_key"
+AWS_SECRET_ACCESS_KEY="your_aws_or_minio_secret_key"
+AWS_EC2_METADATA_DISABLED=true
+INVOICE_STORAGE_MODE="s3"
+
+# OCR (Tesseract) - Update paths based on your local OS environment
+TESSERACT_CMD="Add the path"
+TESSDATA_PREFIX="Add the path"
+
+# Email Service
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=invoicechain0@gmail.com
+SMTP_PASSWORD=ceze hfxu chjx tqrv
+SENDER_EMAIL=noreply@invoicechain.com
+EMAIL_VERIFICATION_EXPIRY_HOURS=24
+```
 
 Copy `backend/.env.example` to `backend/.env`, then update the values for your environment.
 
