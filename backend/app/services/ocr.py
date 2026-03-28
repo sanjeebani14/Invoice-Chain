@@ -2,6 +2,12 @@ import re
 import io
 import cv2
 import numpy as np
+# Patch pkgutil.find_loader for Python 3.14 compatibility with pytesseract
+import pkgutil
+if not hasattr(pkgutil, 'find_loader'):
+    import importlib.util
+    pkgutil.find_loader = importlib.util.find_spec
+
 import pytesseract
 import pdfplumber
 from PIL import Image
