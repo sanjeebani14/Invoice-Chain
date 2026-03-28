@@ -183,6 +183,12 @@ cd ..
 
 ### 1. Environment Variables
 
+#### For Team Collaboration:
+- **Copy the example file**: `cp backend/.env.example backend/.env`
+- **Never commit `.env` files** (they contain secrets)
+- **Share sensitive values securely** (team password manager, or generate individual keys)
+- **Update `.env.example`** when adding new required variables
+
 #### backend/.env (**create this file**)
 
 ```env
@@ -198,9 +204,12 @@ JWT_SECRET="your_super_secret_jwt_string_here"
 ALGORITHM="HS256"
 
 # Blockchain
-INVOICE_NFT_CONTRACT_ADDRESS="0xYourContractAddressHere"
+INVOICE_NFT_CONTRACT_ADDRESS="0x81ff3a847c8dd39f276ac3b9d6b9c2256a7f7b9b"
 MINTER_PRIVATE_KEY="0xYourMinterWalletPrivateKeyHere"
 BLOCKCHAIN_SYNC_ENABLED=true
+
+# Note: Generate MINTER_PRIVATE_KEY with:
+# python -c "from eth_account import Account; a = Account.create(); print(f'Address: {a.address}'); print(f'Private Key: {a.key.hex()}')"
 
 # Uploads (S3 or local MinIO)
 S3_BUCKET="invoicechain-uploads"
