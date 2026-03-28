@@ -7,18 +7,19 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app import main as main_app
+import main as main_app
 from app.auth.hashing import hash_password, verify_password
 from app.auth.tokens import create_access_token
 from app.database import get_db
 from app.models import Base, PasswordResetToken, RefreshToken, User, UserRole
 from app.routers import auth as auth_router
 from app.services import email as email_service
+from app.services import auth_service
 from app.services.realtime import notification_hub
 
 TEST_DB_URL = "sqlite:///./test_auth_wallet_realtime.db"
 engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
 
 
 def override_get_db():
@@ -82,10 +83,10 @@ def test_password_reset_wallet_and_realtime_smoke_flow():
     user = _seed_user(email="investor-smoke@test.com", password="old_password_123")
 
     original_send_reset_email = email_service.send_password_reset_email
-    original_generate_reset = auth_router._generate_password_reset_token
+    original_token_hex = auth_service.secrets.token_hex
 
     email_service.send_password_reset_email = lambda *_args, **_kwargs: True
-    auth_router._generate_password_reset_token = lambda: "smoke-reset-token"
+    auth_service.secrets.token_hex = lambda *args, **kwargs: "smoke-reset-token"
 
     try:
         forgot = client.post(
@@ -182,4 +183,4 @@ def test_password_reset_wallet_and_realtime_smoke_flow():
             assert unsubscribed["payload"]["invoice_id"] == 501
     finally:
         email_service.send_password_reset_email = original_send_reset_email
-        auth_router._generate_password_reset_token = original_generate_reset
+        auth_service.secrets.token_hex = original_token_hex
