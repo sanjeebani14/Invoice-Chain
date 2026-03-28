@@ -3,28 +3,29 @@ import numpy as np
 from app.database import SessionLocal
 from app.models import CreditHistory
 
+
 def seed_from_csv():
     db = SessionLocal()
     df = pd.read_csv("data/Loan_approval_data_2025.csv")
-    
-    for _, row in df.head(1000).iterrows():
-        
-        norm_credit = int(((row['credit_score'] - 300) / 550) * 100)
-        track = 100 if row['loan_status'] == 1 else 40
-        if row['defaults_on_file'] > 0: track -= 30
 
-        seller_id = int(row['customer_id'].replace('CUST', ''))
+    for _, row in df.head(1000).iterrows():
+
+        norm_credit = int(((row["credit_score"] - 300) / 550) * 100)
+        track = 100 if row["loan_status"] == 1 else 40
+        if row["defaults_on_file"] > 0:
+            track -= 30
+
+        seller_id = int(row["customer_id"].replace("CUST", ""))
         payment_history = norm_credit
         track_record = max(0, track)
-        client_reputation = np.random.randint(60, 95) 
-        employment_years = float(row['years_employed'])
-        debt_to_income = float(row['debt_to_income_ratio'])
+        client_reputation = np.random.randint(60, 95)
+        employment_years = float(row["years_employed"])
+        debt_to_income = float(row["debt_to_income_ratio"])
 
-
-        core_enterprise_rating = np.random.randint(65, 95)  
+        core_enterprise_rating = np.random.randint(65, 95)
         relationship_years = np.random.uniform(1.0, 7.0)
         logistics_consistency = np.random.uniform(80.0, 100.0)
-        
+
         esg_score = np.random.normal(loc=6.0, scale=1.0)
 
         history = CreditHistory(
@@ -40,9 +41,10 @@ def seed_from_csv():
             esg_score=float(max(0.0, min(10.0, esg_score))),
         )
         db.add(history)
-    
+
     db.commit()
     print("Seeded 1000 records from Loan CSV into CreditHistory table.")
+
 
 if __name__ == "__main__":
     seed_from_csv()

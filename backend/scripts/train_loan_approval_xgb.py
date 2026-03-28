@@ -5,17 +5,14 @@ from sklearn.model_selection import train_test_split
 
 
 def main() -> None:
-   
+
     df = pd.read_csv("data/Loan_approval_data_2025.csv")
 
-  
     x = df.drop(columns=["customer_id", "loan_status"])
     y = df["loan_status"]
 
-    
     x = pd.get_dummies(x)
 
-  
     x_train, x_test, y_train, y_test = train_test_split(
         x,
         y,
@@ -23,7 +20,6 @@ def main() -> None:
         random_state=42,
     )
 
-   
     model = xgb.XGBClassifier(
         n_estimators=100,
         max_depth=6,
@@ -39,7 +35,6 @@ def main() -> None:
     print("\nClassification Report:")
     print(classification_report(y_test, y_pred))
 
-  
     model.save_model("model.json")
     print("\nSuccess: 'model.json' has been generated.")
 

@@ -16,7 +16,6 @@ from app.routers import auth as auth_router
 from app.services import email as email_service
 from app.services.realtime import notification_hub
 
-
 TEST_DB_URL = "sqlite:///./test_auth_wallet_realtime.db"
 engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -97,7 +96,11 @@ def test_password_reset_wallet_and_realtime_smoke_flow():
 
         db = TestingSessionLocal()
         try:
-            token_row = db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).first()
+            token_row = (
+                db.query(PasswordResetToken)
+                .filter(PasswordResetToken.user_id == user.id)
+                .first()
+            )
             assert token_row is not None
             assert token_row.is_used is False
         finally:
@@ -116,7 +119,9 @@ def test_password_reset_wallet_and_realtime_smoke_flow():
             assert verify_password("new_password_123", refreshed_user.password_hash)
             assert not verify_password("old_password_123", refreshed_user.password_hash)
 
-            refresh_tokens = db.query(RefreshToken).filter(RefreshToken.user_id == user.id).all()
+            refresh_tokens = (
+                db.query(RefreshToken).filter(RefreshToken.user_id == user.id).all()
+            )
             assert refresh_tokens
             assert all(token.is_revoked for token in refresh_tokens)
         finally:
@@ -139,7 +144,10 @@ def test_password_reset_wallet_and_realtime_smoke_flow():
             json={"wallet_address": "0x1234567890abcdef1234567890abcdef12345678"},
         )
         assert wallet_ok.status_code == 200
-        assert wallet_ok.json().get("wallet_address") == "0x1234567890abcdef1234567890abcdef12345678"
+        assert (
+            wallet_ok.json().get("wallet_address")
+            == "0x1234567890abcdef1234567890abcdef12345678"
+        )
 
         wallet_bad = client.patch(
             "/api/v1/profile/me",

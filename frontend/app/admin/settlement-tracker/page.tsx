@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   confirmSettlement,
-  getSettlementTracker,
   getSettlementHistory,
-  settleInvoice,
+  getSettlementTracker,
   type AdminSettlementItem,
   type SettlementHistoryItem,
 } from "@/lib/api";
@@ -18,11 +17,23 @@ function money(value?: number | null) {
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+function compact(value?: string | null) {
+  if (!value) return "-";
+  if (value.length <= 16) return value;
+  return `${value.slice(0, 10)}...${value.slice(-6)}`;
+}
+
+function statusTone(status: string, isOverdue: boolean) {
+  if (status === "settled") return "bg-green-100 text-green-700";
+  if (status === "repayment_processing") return "bg-amber-100 text-amber-800";
+  if (isOverdue) return "bg-red-100 text-red-700";
+  return "bg-blue-100 text-blue-700";
+}
+
 export default function SettlementTrackerPage() {
   const [rows, setRows] = useState<AdminSettlementItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [workingId, setWorkingId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [historyRows, setHistoryRows] = useState<SettlementHistoryItem[]>([]);
   const [confirmingInvoiceId, setConfirmingInvoiceId] = useState<number | null>(null);
@@ -54,8 +65,8 @@ export default function SettlementTrackerPage() {
   }, []);
 
   useEffect(() => {
-    load();
-    loadHistory();
+    void load();
+    void loadHistory();
   }, [load, loadHistory]);
 
   useEffect(() => {
@@ -63,17 +74,21 @@ export default function SettlementTrackerPage() {
       if (
         msg.event === "invoice_funded" ||
         msg.event === "auction_closed" ||
+        msg.event === "invoice_repayment_initiated" ||
         msg.event === "invoice_settled"
       ) {
         void load();
         void loadHistory();
       }
 
+      if (msg.event === "invoice_repayment_initiated") {
+        const invoiceId = msg.payload?.invoice_id;
+        toast.info(`Invoice #${invoiceId ?? "-"} is awaiting repayment confirmation.`);
+      }
+
       if (msg.event === "invoice_settled") {
         const invoiceId = msg.payload?.invoice_id;
-        toast.success(
-          `Invoice #${invoiceId ?? "-"} settled. Escrow released.`,
-        );
+        toast.success(`Invoice #${invoiceId ?? "-"} settled.`);
       }
     });
 
@@ -110,62 +125,23 @@ export default function SettlementTrackerPage() {
     [rows],
   );
 
-  const dueTodayCount = useMemo(
-    () =>
-      rows.filter((row) => row.days_to_due === 0 && row.status !== "settled")
-        .length,
+  const awaitingConfirmationCount = useMemo(
+    () => rows.filter((row) => row.can_confirm).length,
     [rows],
   );
-
-  const triggerSettle = async (row: AdminSettlementItem) => {
-    const amountInput = window.prompt(
-      `Repayment amount for invoice #${row.id} (leave blank to use invoice amount):`,
-      row.amount ? String(row.amount) : "",
-    );
-    if (amountInput === null) return;
-
-    const notes =
-      window.prompt(
-        "Settlement notes (optional):",
-        "Off-chain payment confirmed",
-      ) || undefined;
-
-    let repaymentAmount: number | undefined;
-    if (amountInput.trim()) {
-      const parsed = Number(amountInput);
-      if (!Number.isFinite(parsed) || parsed <= 0) {
-        setError("Repayment amount must be a positive number.");
-        return;
-      }
-      repaymentAmount = parsed;
-    }
-
-    try {
-      setWorkingId(row.id);
-      await settleInvoice(row.id, {
-        repayment_amount: repaymentAmount,
-        notes,
-      });
-      await load();
-      await loadHistory();
-    } catch {
-      setError(`Failed to settle invoice #${row.id}.`);
-    } finally {
-      setWorkingId(null);
-    }
-  };
 
   const triggerConfirmSettlement = async (row: AdminSettlementItem) => {
     const notes =
       window.prompt(
         `Optional confirmation note for invoice #${row.id}:`,
-        "Settlement evidence verified by admin",
+        "Repayment evidence verified by admin",
       ) || undefined;
 
     try {
       setConfirmingInvoiceId(row.id);
       await confirmSettlement(row.id, { notes });
-      toast.success(`Settlement confirmed for invoice #${row.id}.`);
+      toast.success(`Repayment confirmed for invoice #${row.id}.`);
+      await load();
       await loadHistory();
     } catch {
       setError(`Failed to confirm settlement for invoice #${row.id}.`);
@@ -180,8 +156,7 @@ export default function SettlementTrackerPage() {
         <div>
           <h1 className="text-2xl font-semibold">Settlement Tracker</h1>
           <p className="text-sm text-gray-600">
-            Monitor maturity countdown, overdue repayments, and trigger
-            settlement.
+            Monitor funded invoices and confirm seller-initiated repayments.
           </p>
         </div>
 
@@ -189,15 +164,16 @@ export default function SettlementTrackerPage() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded border border-gray-300 bg-white px-3 py-2 text-sm"
+            className="rounded border border-gray-300 bg-white px-3 py-2 text-sm text-black"
           >
             <option value="all">All</option>
             <option value="funded">Funded</option>
             <option value="active">Active</option>
+            <option value="repayment_processing">Repayment Processing</option>
             <option value="settled">Settled</option>
           </select>
           <button
-            onClick={load}
+            onClick={() => void load()}
             className="rounded border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
           >
             Refresh
@@ -216,18 +192,18 @@ export default function SettlementTrackerPage() {
         </div>
         <div className="rounded border border-amber-200 bg-amber-50 p-3">
           <p className="text-xs uppercase tracking-wide text-amber-700">
-            Overdue
+            Awaiting confirmation
           </p>
           <p className="mt-1 text-xl font-semibold text-amber-900">
-            {overdueCount}
+            {awaitingConfirmationCount}
           </p>
         </div>
-        <div className="rounded border border-blue-200 bg-blue-50 p-3">
-          <p className="text-xs uppercase tracking-wide text-blue-700">
-            Due today
+        <div className="rounded border border-red-200 bg-red-50 p-3">
+          <p className="text-xs uppercase tracking-wide text-red-700">
+            Overdue
           </p>
-          <p className="mt-1 text-xl font-semibold text-blue-900">
-            {dueTodayCount}
+          <p className="mt-1 text-xl font-semibold text-red-900">
+            {overdueCount}
           </p>
         </div>
       </div>
@@ -246,8 +222,8 @@ export default function SettlementTrackerPage() {
               <th className="px-4 py-3 font-medium">Seller</th>
               <th className="px-4 py-3 font-medium">Amount</th>
               <th className="px-4 py-3 font-medium">Due</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Escrow</th>
+              <th className="px-4 py-3 font-medium">State</th>
+              <th className="px-4 py-3 font-medium">Repayment Evidence</th>
               <th className="px-4 py-3 font-medium">Action</th>
             </tr>
           </thead>
@@ -266,7 +242,7 @@ export default function SettlementTrackerPage() {
               </tr>
             ) : (
               rows.map((row) => (
-                <tr key={row.id} className="border-t">
+                <tr key={row.id} className="border-t align-top">
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">
                       #{row.id} {row.invoice_number || ""}
@@ -279,7 +255,12 @@ export default function SettlementTrackerPage() {
                     {row.seller_name || row.seller_id || "-"}
                   </td>
                   <td className="px-4 py-3 text-gray-700">
-                    {money(row.amount)}
+                    <div>{money(row.amount)}</div>
+                    {row.funded_amount ? (
+                      <div className="text-xs text-gray-500">
+                        Funded: {money(row.funded_amount)}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3">
                     <p className="text-gray-700">{row.due_date || "-"}</p>
@@ -294,47 +275,50 @@ export default function SettlementTrackerPage() {
                     </p>
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`rounded px-2 py-1 text-xs font-medium ${
-                        row.status === "settled"
-                          ? "bg-green-100 text-green-700"
-                          : row.is_overdue
-                            ? "bg-red-100 text-red-700"
-                            : "bg-blue-100 text-blue-700"
-                      }`}
-                    >
-                      {row.status.toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="text-xs font-semibold text-gray-700">
-                      {(row.escrow_status || "not_applicable").toUpperCase()}
-                    </p>
-                    {row.escrow_reference ? (
-                      <p className="text-[11px] text-gray-500">{row.escrow_reference}</p>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        disabled={!row.can_settle || workingId === row.id}
-                        onClick={() => triggerSettle(row)}
-                        className="rounded bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    <div className="space-y-2">
+                      <span
+                        className={`inline-flex rounded px-2 py-1 text-xs font-medium ${statusTone(
+                          row.status,
+                          row.is_overdue,
+                        )}`}
                       >
-                        {workingId === row.id
-                          ? "Settling..."
-                          : row.can_settle
-                            ? "Settle"
-                            : "Settled"}
-                      </button>
-                      <button
-                        disabled={confirmingInvoiceId === row.id}
-                        onClick={() => triggerConfirmSettlement(row)}
-                        className="rounded border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {confirmingInvoiceId === row.id ? "Confirming..." : "Confirm"}
-                      </button>
+                        {row.status.replace(/_/g, " ").toUpperCase()}
+                      </span>
+                      <div className="text-xs text-gray-500">
+                        Settlement: {(row.settlement_status || "none").replace(/_/g, " ")}
+                      </div>
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="space-y-1 text-xs text-gray-600">
+                      <div>
+                        Escrow: {(row.escrow_status || "not_applicable").toUpperCase()}
+                      </div>
+                      <div>Ref: {compact(row.escrow_reference)}</div>
+                      <div>Wallet: {compact(row.seller_wallet_address)}</div>
+                      <div>Tx: {compact(row.repayment_tx_hash)}</div>
+                      <div>
+                        Initiated:{" "}
+                        {row.repayment_initiated_at
+                          ? new Date(row.repayment_initiated_at).toLocaleString()
+                          : "-"}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      disabled={!row.can_confirm || confirmingInvoiceId === row.id}
+                      onClick={() => void triggerConfirmSettlement(row)}
+                      className="rounded border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {confirmingInvoiceId === row.id
+                        ? "Confirming..."
+                        : row.status === "settled"
+                          ? "Confirmed"
+                          : row.can_confirm
+                            ? "Confirm Repayment"
+                            : "Awaiting SME"}
+                    </button>
                   </td>
                 </tr>
               ))
@@ -345,7 +329,9 @@ export default function SettlementTrackerPage() {
 
       <div className="overflow-hidden rounded border border-gray-200 bg-white">
         <div className="border-b border-gray-100 px-4 py-3">
-          <h2 className="text-sm font-semibold text-gray-900">Settlement History (Latest 25)</h2>
+          <h2 className="text-sm font-semibold text-gray-900">
+            Settlement History (Latest 25)
+          </h2>
         </div>
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left text-gray-600">
@@ -353,6 +339,7 @@ export default function SettlementTrackerPage() {
               <th className="px-4 py-3 font-medium">Record</th>
               <th className="px-4 py-3 font-medium">Invoice</th>
               <th className="px-4 py-3 font-medium">Amount</th>
+              <th className="px-4 py-3 font-medium">Tx</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Confirmed At</th>
             </tr>
@@ -360,7 +347,7 @@ export default function SettlementTrackerPage() {
           <tbody>
             {historyRows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
                   No settlement history available.
                 </td>
               </tr>
@@ -370,6 +357,7 @@ export default function SettlementTrackerPage() {
                   <td className="px-4 py-3 font-medium text-gray-900">#{row.id}</td>
                   <td className="px-4 py-3 text-gray-700">#{row.invoice_id}</td>
                   <td className="px-4 py-3 text-gray-700">{money(row.amount)}</td>
+                  <td className="px-4 py-3 text-gray-600">{compact(row.repayment_tx_hash)}</td>
                   <td className="px-4 py-3">
                     <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
                       {(row.status || "pending").toUpperCase()}

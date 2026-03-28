@@ -14,12 +14,9 @@ from sklearn.neighbors import LocalOutlierFactor
 from sqlalchemy.orm import Session
 import xgboost as xgb
 
-from app.models import CreditHistory, Invoice
+from app.models import Invoice
 
-
-BENFORD_PROBS: dict[int, float] = {
-    d: np.log10(1 + 1 / d) for d in range(1, 10)
-}
+BENFORD_PROBS: dict[int, float] = {d: np.log10(1 + 1 / d) for d in range(1, 10)}
 
 
 @dataclass
@@ -48,6 +45,7 @@ class InvoiceAnomalyResult:
             "net_delta_abs": self.net_delta_abs,
             "reasons": self.reasons,
         }
+
 
 # Anomaly detector using Isolation Forest + LOF.
 class InvoiceAnomalyService:
@@ -183,7 +181,9 @@ class InvoiceAnomalyService:
         if self._global_iforest is not None:
             try:
                 global_x = self._align_feature_columns(target_df)
-                global_anomaly_score = float(-self._global_iforest.decision_function(global_x)[0])
+                global_anomaly_score = float(
+                    -self._global_iforest.decision_function(global_x)[0]
+                )
             except Exception:
                 global_anomaly_score = None
 
@@ -191,7 +191,9 @@ class InvoiceAnomalyService:
         if self._global_xgb is not None:
             try:
                 global_x = self._align_feature_columns(target_df)
-                dmat = xgb.DMatrix(global_x.values, feature_names=list(global_x.columns))
+                dmat = xgb.DMatrix(
+                    global_x.values, feature_names=list(global_x.columns)
+                )
                 pred = self._global_xgb.predict(dmat)
                 supervised_prob = float(pred[0]) if len(pred) > 0 else None
             except Exception:
@@ -236,7 +238,9 @@ class InvoiceAnomalyService:
             reasons=reasons,
         )
 
-    def _build_feature_matrix(self, history: list[Invoice], current: Invoice) -> pd.DataFrame:
+    def _build_feature_matrix(
+        self, history: list[Invoice], current: Invoice
+    ) -> pd.DataFrame:
         rows = [self._invoice_to_row(inv) for inv in history]
         rows.append(self._invoice_to_row(current))
         df = pd.DataFrame(rows)
@@ -249,9 +253,15 @@ class InvoiceAnomalyService:
 
         df["net_value"] = (df["amount"] - df["discount"] + df["tax"]).clip(lower=0)
         df["net_delta_abs"] = (df["net_value"] - df["amount"]).abs()
-        df["discount_ratio"] = (df["discount"] / (df["amount"].replace(0, np.nan))).fillna(0).clip(0, 2)
-        df["tax_ratio"] = (df["tax"] / (df["amount"].replace(0, np.nan))).fillna(0).clip(0, 2)
-        df["balance_ratio"] = (df["balance"] / (df["amount"].replace(0, np.nan))).fillna(0).clip(0, 3)
+        df["discount_ratio"] = (
+            (df["discount"] / (df["amount"].replace(0, np.nan))).fillna(0).clip(0, 2)
+        )
+        df["tax_ratio"] = (
+            (df["tax"] / (df["amount"].replace(0, np.nan))).fillna(0).clip(0, 2)
+        )
+        df["balance_ratio"] = (
+            (df["balance"] / (df["amount"].replace(0, np.nan))).fillna(0).clip(0, 3)
+        )
 
         rolling_mean = df["amount"].rolling(window=30, min_periods=3).mean().shift(1)
         rolling_std = df["amount"].rolling(window=30, min_periods=3).std().shift(1)
@@ -263,11 +273,15 @@ class InvoiceAnomalyService:
         observed_freq = first_digits.value_counts(normalize=True).to_dict()
         df["benford_expected"] = first_digits.map(BENFORD_PROBS).fillna(0.0)
         df["benford_observed"] = first_digits.map(observed_freq).fillna(0.0)
-        df["benford_deviation"] = (df["benford_observed"] - df["benford_expected"]).abs()
+        df["benford_deviation"] = (
+            df["benford_observed"] - df["benford_expected"]
+        ).abs()
 
         df["days_to_due"] = (
-            (df["due_dt"] - df["issue_dt"]).dt.total_seconds() / 86400.0
-        ).clip(lower=0, upper=365).fillna(30.0)
+            ((df["due_dt"] - df["issue_dt"]).dt.total_seconds() / 86400.0)
+            .clip(lower=0, upper=365)
+            .fillna(30.0)
+        )
 
         df["issued_hour"] = df["issue_dt"].dt.hour.fillna(12).astype(float)
         df["issued_weekday"] = df["issue_dt"].dt.weekday.fillna(0).astype(float)
@@ -280,34 +294,49 @@ class InvoiceAnomalyService:
         df["country_norm"] = df["country"].map(self._normalize_category)
         df["service_norm"] = df["service"].map(self._normalize_category)
 
-        status_dummies = pd.get_dummies(df["invoice_status_norm"], prefix="status", dtype=int)
-        country_dummies = pd.get_dummies(df["country_norm"], prefix="country", dtype=int)
-        service_dummies = pd.get_dummies(df["service_norm"], prefix="service", dtype=int)
+        status_dummies = pd.get_dummies(
+            df["invoice_status_norm"], prefix="status", dtype=int
+        )
+        country_dummies = pd.get_dummies(
+            df["country_norm"], prefix="country", dtype=int
+        )
+        service_dummies = pd.get_dummies(
+            df["service_norm"], prefix="service", dtype=int
+        )
         df = pd.concat([df, status_dummies, country_dummies, service_dummies], axis=1)
 
-        feature_cols = [
-            "amount",
-            "log_amount",
-            "net_value",
-            "net_delta_abs",
-            "discount_ratio",
-            "tax_ratio",
-            "balance_ratio",
-            "days_to_due",
-            "amount_velocity_zscore",
-            "benford_deviation",
-            "issued_hour",
-            "issued_weekday",
-            "hour_sin",
-            "hour_cos",
-            "weekday_sin",
-            "weekday_cos",
-        ] + list(status_dummies.columns) + list(country_dummies.columns) + list(service_dummies.columns)
+        feature_cols = (
+            [
+                "amount",
+                "log_amount",
+                "net_value",
+                "net_delta_abs",
+                "discount_ratio",
+                "tax_ratio",
+                "balance_ratio",
+                "days_to_due",
+                "amount_velocity_zscore",
+                "benford_deviation",
+                "issued_hour",
+                "issued_weekday",
+                "hour_sin",
+                "hour_cos",
+                "weekday_sin",
+                "weekday_cos",
+            ]
+            + list(status_dummies.columns)
+            + list(country_dummies.columns)
+            + list(service_dummies.columns)
+        )
 
         return df[feature_cols].astype(float)
 
     def _invoice_to_row(self, invoice: Invoice) -> dict[str, Any]:
-        issue_dt = self._parse_date(invoice.issue_date) or invoice.created_at or datetime.utcnow()
+        issue_dt = (
+            self._parse_date(invoice.issue_date)
+            or invoice.created_at
+            or datetime.utcnow()
+        )
         due_dt = self._parse_date(invoice.due_date)
         if due_dt is None:
             due_dt = issue_dt
@@ -321,7 +350,9 @@ class InvoiceAnomalyService:
             "discount": float(discount_val),
             "tax": float(tax_val),
             "balance": float(balance_val),
-            "invoice_status": self._extract_meta_text(invoice, "invoiceStatus", fallback=invoice.status),
+            "invoice_status": self._extract_meta_text(
+                invoice, "invoiceStatus", fallback=invoice.status
+            ),
             "country": self._extract_meta_text(invoice, "country"),
             "service": self._extract_meta_text(invoice, "service"),
             "issue_dt": issue_dt,
@@ -329,7 +360,9 @@ class InvoiceAnomalyService:
         }
 
     def _extract_meta_numeric(self, invoice: Invoice, key: str) -> float:
-        payload = invoice.ocr_confidence if isinstance(invoice.ocr_confidence, dict) else {}
+        payload = (
+            invoice.ocr_confidence if isinstance(invoice.ocr_confidence, dict) else {}
+        )
         raw = payload.get(key)
         if isinstance(raw, dict):
             raw = raw.get("value")
@@ -338,8 +371,12 @@ class InvoiceAnomalyService:
         except (TypeError, ValueError):
             return 0.0
 
-    def _extract_meta_text(self, invoice: Invoice, key: str, fallback: str | None = None) -> str:
-        payload = invoice.ocr_confidence if isinstance(invoice.ocr_confidence, dict) else {}
+    def _extract_meta_text(
+        self, invoice: Invoice, key: str, fallback: str | None = None
+    ) -> str:
+        payload = (
+            invoice.ocr_confidence if isinstance(invoice.ocr_confidence, dict) else {}
+        )
         raw = payload.get(key)
         if isinstance(raw, dict):
             raw = raw.get("value")
@@ -457,6 +494,8 @@ class InvoiceAnomalyService:
             )
 
         if len(reasons) == 1:
-            reasons.append("No strong single-driver indicator; flagged by multivariate behavior pattern.")
+            reasons.append(
+                "No strong single-driver indicator; flagged by multivariate behavior pattern."
+            )
 
         return reasons

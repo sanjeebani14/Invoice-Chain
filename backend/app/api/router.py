@@ -22,12 +22,18 @@ api_router.include_router(kyc_router, prefix="/kyc", tags=["KYC"])
 api_router.include_router(profile_router, prefix="/profile", tags=["Profile"])
 
 # Admin management
-api_router.include_router(admin_users_router, prefix="/admin/users", tags=["Admin Users"])
-api_router.include_router(admin_stats_router, prefix="/admin/stats", tags=["Admin Stats"])
+api_router.include_router(
+    admin_users_router, prefix="/admin/users", tags=["Admin Users"]
+)
+api_router.include_router(
+    admin_stats_router, prefix="/admin/stats", tags=["Admin Stats"]
+)
 api_router.include_router(admin_kyc_router, prefix="/admin/kyc", tags=["Admin KYC"])
 
 # Invoice processing, risk, and analytics
-api_router.include_router(invoice_router, prefix="/invoice", tags=["Invoice Processing"])
+api_router.include_router(
+    invoice_router, prefix="/invoice", tags=["Invoice Processing"]
+)
 api_router.include_router(risk_router, prefix="/risk", tags=["Risk & Fraud"])
 api_router.include_router(analytics_router, prefix="/analytics", tags=["Analytics"])
 api_router.include_router(sme_dashboard_router)

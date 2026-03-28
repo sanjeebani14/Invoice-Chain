@@ -1,11 +1,13 @@
 "use client";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 interface RiskBadgeProps {
   level: "LOW" | "MEDIUM" | "HIGH";
+  className?: string;
 }
 
-export function RiskBadge({ level }: RiskBadgeProps) {
+export function RiskBadge({ level, className }: RiskBadgeProps) {
   // Apply Tailwind colors directly so the badge is styled consistently.
   // (We don't rely on external CSS classes like `risk-badge-high`.)
   const cls =
@@ -16,7 +18,7 @@ export function RiskBadge({ level }: RiskBadgeProps) {
         : "border-red-600 bg-red-50 text-red-800";
 
   return (
-    <Badge variant="outline" className={cls}>
+    <Badge variant="outline" className={cn(cls, className)}>
       {level}
     </Badge>
   );

@@ -28,7 +28,7 @@ def _quote_ident(identifier: str) -> str:
 
 
 def _cleanup_user_foreign_keys(db: Session, user_id: int) -> None:
-    
+
     inspector = inspect(db.bind)
     nullify_column_names = {
         "reviewed_by",
@@ -49,7 +49,11 @@ def _cleanup_user_foreign_keys(db: Session, user_id: int) -> None:
             referred_table = fk.get("referred_table")
             referred_columns = fk.get("referred_columns") or []
             constrained_columns = fk.get("constrained_columns") or []
-            if referred_table != "users" or referred_columns != ["id"] or len(constrained_columns) != 1:
+            if (
+                referred_table != "users"
+                or referred_columns != ["id"]
+                or len(constrained_columns) != 1
+            ):
                 continue
 
             fk_column = constrained_columns[0]
@@ -61,7 +65,9 @@ def _cleanup_user_foreign_keys(db: Session, user_id: int) -> None:
 
             if is_nullable and fk_column in nullify_column_names:
                 db.execute(
-                    text(f"UPDATE {table_sql} SET {column_sql} = NULL WHERE {column_sql} = :user_id"),
+                    text(
+                        f"UPDATE {table_sql} SET {column_sql} = NULL WHERE {column_sql} = :user_id"
+                    ),
                     {"user_id": user_id},
                 )
             else:
@@ -79,10 +85,15 @@ def create_user(
 ):
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
+        )
 
     if len(payload.password) < 8:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 8 characters")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters",
+        )
 
     new_user = User(
         email=payload.email,
@@ -126,10 +137,14 @@ def update_user(
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
 
     if payload.role is None and payload.is_active is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No updates provided")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No updates provided"
+        )
 
     if payload.role is not None:
         user.role = payload.role
@@ -163,7 +178,9 @@ def delete_user(
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
 
     if current_admin.id == user.id:
         raise HTTPException(
@@ -172,11 +189,17 @@ def delete_user(
         )
 
     # Remove dependent rows first to satisfy FK constraints.
-    db.query(RefreshToken).filter(RefreshToken.user_id == user_id).delete(synchronize_session=False)
-    db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user_id).delete(synchronize_session=False)
+    db.query(RefreshToken).filter(RefreshToken.user_id == user_id).delete(
+        synchronize_session=False
+    )
+    db.query(EmailVerificationToken).filter(
+        EmailVerificationToken.user_id == user_id
+    ).delete(synchronize_session=False)
 
     # KYC submissions owned by this user can be removed.
-    db.query(KycSubmission).filter(KycSubmission.user_id == user_id).delete(synchronize_session=False)
+    db.query(KycSubmission).filter(KycSubmission.user_id == user_id).delete(
+        synchronize_session=False
+    )
 
     # If this user acted as reviewer, keep submissions but clear reviewer reference.
     db.query(KycSubmission).filter(KycSubmission.reviewed_by == user_id).update(
@@ -184,7 +207,6 @@ def delete_user(
         synchronize_session=False,
     )
 
-    
     _cleanup_user_foreign_keys(db, user_id)
 
     db.delete(user)
@@ -196,7 +218,9 @@ def delete_user(
         constraint_name = getattr(getattr(exc, "orig", None), "diag", None)
         constraint_name = getattr(constraint_name, "constraint_name", None)
         if constraint_name:
-            detail = f"Cannot delete user due to foreign key constraint: {constraint_name}"
+            detail = (
+                f"Cannot delete user due to foreign key constraint: {constraint_name}"
+            )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=detail,

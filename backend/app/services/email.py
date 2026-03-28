@@ -1,7 +1,6 @@
 import os
 import logging
 from dotenv import load_dotenv
-import requests
 import smtplib
 
 SMTP_TIMEOUT = 30
@@ -49,6 +48,7 @@ def _send_email(to_email: str, subject: str, html_body: str) -> bool:
             return False
 
         from email.mime.text import MIMEText
+
         msg = MIMEText(html_body, "html")
         msg["Subject"] = subject
         msg["From"] = SENDER_EMAIL
@@ -77,14 +77,14 @@ def _get_email_header() -> str:
 
 
 def _get_email_footer() -> str:
-    
+
     return """
         </div>
         <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #ddd; font-size: 12px; color: #666;">
             <p style="margin: 0;">© 2026 InvoiceChain. All rights reserved.</p>
             <p style="margin: 5px 0 0 0;">
-                <a href="https://invoicechain.com" style="color: #007bff; text-decoration: none;">Website</a> | 
-                <a href="https://invoicechain.com/privacy" style="color: #007bff; text-decoration: none;">Privacy</a> | 
+                <a href="https://invoicechain.com" style="color: #007bff; text-decoration: none;">Website</a> |
+                <a href="https://invoicechain.com/privacy" style="color: #007bff; text-decoration: none;">Privacy</a> |
                 <a href="https://invoicechain.com/terms" style="color: #007bff; text-decoration: none;">Terms</a>
             </p>
         </div>
@@ -93,15 +93,15 @@ def _get_email_footer() -> str:
 
 
 def send_verification_email(user_email: str, verification_token: str) -> bool:
-    
+
     try:
         # Build verification link pointing to backend so cookies can be set server-side
-        verification_link = f"{BACKEND_URL}/api/v1/auth/verify-email?token={verification_token}"
-        
+        verification_link = (
+            f"{BACKEND_URL}/api/v1/auth/verify-email?token={verification_token}"
+        )
+
         # Build HTML body
-        html_body = (
-            _get_email_header()
-            + f"""
+        html_body = _get_email_header() + f"""
             <h2 style="color: #003d82; margin-top: 0;">Verify Your Email</h2>
             <p style="color: #333; line-height: 1.6;">
                 Welcome to InvoiceChain! We're excited to have you on board.
@@ -110,9 +110,9 @@ def send_verification_email(user_email: str, verification_token: str) -> bool:
                 Please verify your email address by clicking the button below:
             </p>
             <div style="text-align: center; margin: 30px 0;">
-                <a href="{verification_link}" 
-                   style="background-color: #007bff; color: white; padding: 12px 30px; 
-                           text-decoration: none; border-radius: 5px; display: inline-block; 
+                <a href="{verification_link}"
+                   style="background-color: #007bff; color: white; padding: 12px 30px;
+                           text-decoration: none; border-radius: 5px; display: inline-block;
                            font-weight: bold;">
                     Verify Email
                 </a>
@@ -129,31 +129,23 @@ def send_verification_email(user_email: str, verification_token: str) -> bool:
             <p style="color: #999; font-size: 11px; margin-top: 30px;">
                 If you didn't create this account, please ignore this email.
             </p>
-            """
-            + _get_email_footer()
-        )
-        
-        return _send_email(
-            user_email,
-            "Verify Your InvoiceChain Email",
-            html_body
-        )
-        
+            """ + _get_email_footer()
+
+        return _send_email(user_email, "Verify Your InvoiceChain Email", html_body)
+
     except Exception as e:
         logger.error(f"Error preparing verification email for {user_email}: {str(e)}")
         return False
 
 
 def send_password_reset_email(user_email: str, reset_token: str) -> bool:
-   
+
     try:
         # Build reset link
         reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
-        
+
         # Build HTML body
-        html_body = (
-            _get_email_header()
-            + f"""
+        html_body = _get_email_header() + f"""
             <h2 style="color: #003d82; margin-top: 0;">Reset Your Password</h2>
             <p style="color: #333; line-height: 1.6;">
                 We received a request to reset your InvoiceChain password.
@@ -162,9 +154,9 @@ def send_password_reset_email(user_email: str, reset_token: str) -> bool:
                 Click the button below to create a new password:
             </p>
             <div style="text-align: center; margin: 30px 0;">
-                <a href="{reset_link}" 
-                   style="background-color: #007bff; color: white; padding: 12px 30px; 
-                           text-decoration: none; border-radius: 5px; display: inline-block; 
+                <a href="{reset_link}"
+                   style="background-color: #007bff; color: white; padding: 12px 30px;
+                           text-decoration: none; border-radius: 5px; display: inline-block;
                            font-weight: bold;">
                     Reset Password
                 </a>
@@ -181,16 +173,10 @@ def send_password_reset_email(user_email: str, reset_token: str) -> bool:
             <p style="color: #999; font-size: 11px; margin-top: 30px;">
                 If you didn't request a password reset, please ignore this email or contact support.
             </p>
-            """
-            + _get_email_footer()
-        )
-        
-        return _send_email(
-            user_email,
-            "Reset Your InvoiceChain Password",
-            html_body
-        )
-        
+            """ + _get_email_footer()
+
+        return _send_email(user_email, "Reset Your InvoiceChain Password", html_body)
+
     except Exception as e:
         logger.error(f"Error preparing password reset email for {user_email}: {str(e)}")
         return False

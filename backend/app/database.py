@@ -13,10 +13,10 @@ from sqlalchemy.orm import sessionmaker
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-#Use the DATABASE_URL env variable (Online Neon DB)
+# Use the DATABASE_URL env variable (Online Neon DB)
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
-#Otherwise,Use Local Postgres Config 
+# Otherwise,Use Local Postgres Config
 if not SQLALCHEMY_DATABASE_URL:
     postgres_user = os.getenv("POSTGRES_USER", "postgres")
     postgres_password = quote_plus(os.getenv("POSTGRES_PASSWORD", ""))
@@ -65,7 +65,6 @@ def _ensure_sslmode_if_needed(url: str) -> str:
 normalized_database_url = _ensure_sslmode_if_needed(SQLALCHEMY_DATABASE_URL)
 
 engine_kwargs: dict[str, Any] = {
-   
     "pool_pre_ping": True,
     "pool_recycle": int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800")),
     "pool_size": int(os.getenv("DB_POOL_SIZE", "5")),
@@ -74,7 +73,7 @@ engine_kwargs: dict[str, Any] = {
 }
 
 if not _is_local_postgres(normalized_database_url):
-    
+
     engine_kwargs["connect_args"] = {
         "keepalives": 1,
         "keepalives_idle": int(os.getenv("DB_KEEPALIVES_IDLE", "30")),
@@ -86,6 +85,7 @@ engine = create_engine(normalized_database_url, **engine_kwargs)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
 
 def get_db():
     db = SessionLocal()

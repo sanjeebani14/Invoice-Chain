@@ -3,12 +3,12 @@
 ## Project summary
 
 InvoiceChain is a decentralized marketplace that enables Small and Medium Enterprises (SMEs) to tokenize their outstanding invoices as ERC-1155 multi-token assets on blockchain, providing immediate liquidity while offering investors fractional ownership opportunities in revenue-generating receivables.
- 
+
 Traditional invoice factoring is slow and dominated by large financial intermediaries who charge high fees. InvoiceChain puts the entire workflow on-chain : from invoice minting to trading, settlement, and escrow - making the process transparent, automated, and accessible to any business regardless of size.
 
 ## Problem statement and existing challenges
 
-Invoice factoring - the practice of selling outstanding invoices at a discount in exchange for immediate cash has a huge market. Yet the process remains fundamentally broken for the businesses that need it most: small and medium enterprises. 
+Invoice factoring - the practice of selling outstanding invoices at a discount in exchange for immediate cash has a huge market. Yet the process remains fundamentally broken for the businesses that need it most: small and medium enterprises.
 The traditional invoice factoring process involves a financial intermediary (a 'factor') who purchases the invoice from the SME at a discount, advances cash immediately, and then collects the full amount from the buyer when it is due. On paper, this sounds ideal. In practice, it has a number of inefficiencies:
 
 - SMEs apply to banks or factoring companies. This requires credit history, financial statements and audited accounts.
@@ -19,9 +19,9 @@ The traditional invoice factoring process involves a financial intermediary (a '
   - Processing fees, due diligence fees, legal fees can add another 1–3%.
   - For a razor-thin margin business, this can eliminate the entire profit from a transaction.
 - Buyer pays the factor directly. This process is not transparent, SME has no visibility into collection status.
--  Invoice fraud is a massive and growing problem in the factoring industry:
-  - Duplicate invoice fraud: the same invoice submitted to multiple lenders or factors simultaneously.
-  - Ghost invoice fraud: entirely fabricated invoices with no underlying transaction.
+- Invoice fraud is a massive and growing problem in the factoring industry:
+- Duplicate invoice fraud: the same invoice submitted to multiple lenders or factors simultaneously.
+- Ghost invoice fraud: entirely fabricated invoices with no underlying transaction.
 - A typical invoice factoring transaction involves:
   - Physical or scanned document submission
   - Manual data entry and verification by the factor's team
@@ -34,7 +34,6 @@ The traditional invoice factoring process involves a financial intermediary (a '
 <p align="center">
   <img src="frontend\invoice-factoring\invoice_factoring_today.png" width="80%" />
 </p>
-
 
 ## How InvoiceChain does it
 
@@ -49,9 +48,9 @@ The traditional invoice factoring process involves a financial intermediary (a '
   - Confidence scoring flags low-quality extractions for manual correction.
   - Total processing time: under 2 minutes vs. 7-21 days in traditional factoring.
 - On-Chain Fraud Prevention (keccak256 Hash Registry)
-  -  After OCR, fields are canonicalized (normalized, lowercased, deduplicated).
-  -  A keccak256 hash of the canonical string is generated - a unique fingerprint of the invoice.
-  -  Before minting, the smart contract checks: has this hash ever been registered?
+  - After OCR, fields are canonicalized (normalized, lowercased, deduplicated).
+  - A keccak256 hash of the canonical string is generated - a unique fingerprint of the invoice.
+  - Before minting, the smart contract checks: has this hash ever been registered?
   - If yes: transaction reverts with 'Duplicate invoice'.
   - If no: hash recorded on-chain permanently - no future system can accept this invoice again.
 - Transparent Marketplace with Risk Scoring
@@ -72,7 +71,7 @@ The traditional invoice factoring process involves a financial intermediary (a '
 
 ## Folder Structure
 
-``` bash
+```bash
 Invoice-Chain/
 ├── backend/                    # FastAPI backend (Python)
 │   ├── app/                   # Core application code
@@ -107,29 +106,32 @@ Invoice-Chain/
 
 ## Technology Stack
 
-### Frontend 
+### Frontend
+
 - Framework: Next.js (App Router)
 - Library: React
 - Language: TypeScript
 - Styling: Tailwind CSS
 
-### Backend 
+### Backend
+
 - Framework: FastAPI (Python)
 - Database: PostgreSQL (Neon Serverless)
 - Authentication: JWT (JSON Web Tokens)
 
-### AI & Machine Learning 
+### AI & Machine Learning
+
 - Anomaly Detection: Scikit-Learn (Isolation Forest)
 - Risk Scoring: XGBoost
 - Document Processing: Tesseract OCR (Optical Character Recognition)
 
 ### Blockchain & Web3
+
 - Smart Contracts: Solidity
 - Development Environment: Hardhat
 - Client Library: Ethers.js / Viem
 - Network: Base Sepolia (Testnet)
 - Token Standard: ERC-721 (Invoice NFTs)
-
 
 Git-based feature branch workflow was followed throughout the development lifecycle, with each member working on dedicated feature branches and merging via pull requests to the main branch. GitHub served as the central collaboration hub - GitHub Issues were used to track tasks and bugs, GitHub Project Boards were used for planning and progress tracking.
 
@@ -140,7 +142,7 @@ Install the following before setup:
 - **Node.js** 22+ and npm
 - **Python** 3.11+ (3.13 is also supported for most packages)
 - **Docker Desktop** (for Redis/MinIO)
-- **PostgreSQL** 15+ (cloud DB - Neon recommended,Database URL we used is provided in .env.example)
+- **PostgreSQL** 15+ (cloud DB - Neon recommended; see `backend/.env.example` for the sample `DATABASE_URL`)
 - **MetaMask** (for wallet-based features)
 - **Tesseract**
 
@@ -233,6 +235,7 @@ SENDER_EMAIL=noreply@invoicechain.com
 EMAIL_VERIFICATION_EXPIRY_HOURS=24
 ```
 
+Copy `backend/.env.example` to `backend/.env`, then update the values for your environment.
 
 ---
 
@@ -259,8 +262,6 @@ Default MinIO credentials (from compose):
 
 **PostgreSQL:**
 We used a cloud Postgres URL via `DATABASE_URL` (Neon).
-
-
 
 ### 2. Blockchain Setup
 
@@ -289,10 +290,6 @@ Use deployed values to populate backend env fields, especially:
 - `INVOICE_NFT_CONTRACT_ADDRESS`
 - `MINTER_PRIVATE_KEY`
 
-
-
-
-
 ### 3. Run the Backend
 
 From `backend/`:
@@ -312,40 +309,48 @@ npm run dev
 ## UI Previews
 
 ### SME
+
 #### Seller Dashboard
+
 <p align="center">
   <img src="frontend/ui-previews/seller_dashboard.png" width="80%" />
 </p>
 
 #### Current Invoices Status Page
+
 <p align="center">
   <img src="frontend/ui-previews/current_invoices_status.png" width="80%" />
 </p>
 
 #### Invoice Upload Gateway
+
 <p align="center">
   <img src="frontend/ui-previews/invoice_upload.png" width="80%" />
 </p>
 
 ### Investor
+
 ### Admin
+
 #### Admin Dashboard
+
 <p align="center">
   <img src="frontend/ui-previews/admin_dashboard.png" width="80%" />
 </p>
 
 #### Fraud Review Queue
+
 <p align="center">
   <img src="frontend/ui-previews/fraud_review_queue.png" width="80%" />
 </p>
 
 #### Platform Statistics and Analytics
+
 <p align="center">
   <img src="frontend\ui-previews\platform_statistics.png" width="80%" />
 </p>
 <p align="center">
   <img src="frontend\ui-previews\risk_analytics.png" width="80%" />
 </p>
-
 
 ## Demo Video

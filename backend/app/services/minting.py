@@ -7,15 +7,15 @@ import math
 
 from ..models import Invoice
 from .blockchain import get_blockchain_service
-from .hashing import generate_invoice_hash
 
 logger = logging.getLogger(__name__)
 
-#Service for minting invoices as NFTs with fractional share support.
+
+# Service for minting invoices as NFTs with fractional share support.
 class InvoiceMintingService:
-    
+
     def __init__(self):
-        
+
         self.blockchain_service = get_blockchain_service()
 
     def prepare_invoice_for_minting(
@@ -23,7 +23,7 @@ class InvoiceMintingService:
         db: Session,
         invoice_id: int,
     ) -> Tuple[bool, Optional[str], Optional[Dict]]:
-        
+
         try:
             invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
 
@@ -32,7 +32,11 @@ class InvoiceMintingService:
 
             # Validate invoice status
             if invoice.status not in ["approved", "pending_mint"]:
-                return False, f"Invoice status '{invoice.status}' not eligible for minting", None
+                return (
+                    False,
+                    f"Invoice status '{invoice.status}' not eligible for minting",
+                    None,
+                )
 
             # Check if already minted
             if invoice.token_id is not None:
@@ -51,9 +55,11 @@ class InvoiceMintingService:
             if not invoice.seller_id:
                 return False, "Invoice missing seller_id", None
 
-            # Parse due date 
+            # Parse due date
             try:
-                due_date_obj = datetime.fromisoformat(invoice.due_date.replace("Z", "+00:00"))
+                due_date_obj = datetime.fromisoformat(
+                    invoice.due_date.replace("Z", "+00:00")
+                )
                 due_date_unix = int(due_date_obj.timestamp())
             except Exception as e:
                 return False, f"Could not parse due_date: {e}", None
@@ -85,11 +91,13 @@ class InvoiceMintingService:
             return True, None, prepared_data
 
         except Exception as e:
-            logger.error(f"Error preparing invoice {invoice_id} for minting: {e}", exc_info=True)
+            logger.error(
+                f"Error preparing invoice {invoice_id} for minting: {e}", exc_info=True
+            )
             return False, f"Preparation error: {str(e)}", None
 
     # Mint an invoice as an NFT with optional fractional shares.
-    
+
     def mint_invoice(
         self,
         db: Session,
@@ -98,7 +106,7 @@ class InvoiceMintingService:
         ipfs_uri: str = "",
         supply: Optional[int] = None,
     ) -> Dict[str, Any]:
-        
+
         try:
             # Validate recipient address
             if not Web3.is_address(recipient_address):
@@ -109,7 +117,9 @@ class InvoiceMintingService:
                 }
 
             # Prepare invoice
-            success, error_msg, prepared_data = self.prepare_invoice_for_minting(db, invoice_id)
+            success, error_msg, prepared_data = self.prepare_invoice_for_minting(
+                db, invoice_id
+            )
             if not success:
                 return {
                     "success": False,
@@ -149,7 +159,9 @@ class InvoiceMintingService:
             )
 
             if not mint_result["success"]:
-                logger.error(f"Blockchain mint failed for invoice {invoice_id}: {mint_result['error']}")
+                logger.error(
+                    f"Blockchain mint failed for invoice {invoice_id}: {mint_result['error']}"
+                )
                 return {
                     "success": False,
                     "error": mint_result["error"],
@@ -185,7 +197,7 @@ class InvoiceMintingService:
                 "error": f"Minting error: {str(e)}",
                 "token_id": None,
             }
-    
+
     # Validate fractional invoice configuration.
     def validate_fractional_config(
         self,
@@ -202,7 +214,6 @@ class InvoiceMintingService:
 
             if share_price <= 0:
                 return False, "share_price must be positive for fractional invoices"
-
 
             calculated_total = share_price * num_shares
             if not math.isclose(calculated_total, amount, rel_tol=0.01):

@@ -27,7 +27,12 @@ from ..services.storage_s3 import (
     generate_presigned_get_url,
 )
 from ..services.rate_limit import enforce_rate_limit
-from ..auth.dependencies import get_current_user, require_seller, require_admin, require_kyc_approved
+from ..auth.dependencies import (
+    get_current_user,
+    require_seller,
+    require_admin,
+    require_kyc_approved,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -117,7 +122,9 @@ def _upsert_listing_for_invoice(
 
     listing.listing_type = listing_type
     listing.ask_price = ask_price if ask_price is not None else invoice.ask_price
-    listing.share_price = share_price if share_price is not None else invoice.share_price
+    listing.share_price = (
+        share_price if share_price is not None else invoice.share_price
+    )
     listing.total_shares = total_shares if total_shares is not None else invoice.supply
     if listing.available_shares is None:
         listing.available_shares = listing.total_shares
@@ -125,7 +132,9 @@ def _upsert_listing_for_invoice(
     return listing
 
 
-def _open_or_create_auction(db: Session, invoice: Invoice, listing: models.MarketplaceListing) -> models.MarketplaceAuction:
+def _open_or_create_auction(
+    db: Session, invoice: Invoice, listing: models.MarketplaceListing
+) -> models.MarketplaceAuction:
     auction = (
         db.query(models.MarketplaceAuction)
         .filter(
@@ -174,9 +183,11 @@ class ValidateFractionalPayload(BaseModel):
     num_shares: int
 
 
-class SettleInvoicePayload(BaseModel):
+class RepayInvoicePayload(BaseModel):
     repayment_amount: Optional[float] = None
     notes: Optional[str] = None
+    wallet_address: Optional[str] = None
+    tx_hash: Optional[str] = None
 
 
 class FundInvoicePayload(BaseModel):
@@ -212,7 +223,6 @@ class SettlementConfirmPayload(BaseModel):
     notes: Optional[str] = None
 
 
-
 @router.post("/upload")
 async def upload_invoice(
     request: Request,
@@ -227,7 +237,7 @@ async def upload_invoice(
         window_seconds=int(os.getenv("RL_UPLOAD_WINDOW_SECONDS", "300")),
     )
 
-    # Validate file type 
+    # Validate file type
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -235,7 +245,7 @@ async def upload_invoice(
             detail=f"Invalid file type '{file_ext}'. Allowed: PDF, PNG, JPG",
         )
 
-    # Read & validate file size 
+    # Read & validate file size
     file_bytes = await file.read()
     size_mb = len(file_bytes) / (1024 * 1024)
     if size_mb > MAX_FILE_SIZE_MB:
@@ -262,7 +272,7 @@ async def upload_invoice(
             detail=f"Upload blocked by malware scanner: {scan_result.get('threat')}",
         )
 
-    # Persist file to configured storage 
+    # Persist file to configured storage
     storage_mode = os.getenv("INVOICE_STORAGE_MODE", "local").strip().lower()
     file_path: str
     if storage_mode == "s3":
@@ -275,14 +285,16 @@ async def upload_invoice(
             )
             file_path = build_s3_uri(upload_result["bucket"], upload_result["key"])
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Invoice storage upload failed: {exc}")
+            raise HTTPException(
+                status_code=500, detail=f"Invoice storage upload failed: {exc}"
+            )
     else:
         safe_filename = f"{os.urandom(8).hex()}_{file.filename}"
         file_path = os.path.join(UPLOAD_DIR, safe_filename)
         with open(file_path, "wb") as f:
             f.write(file_bytes)
 
-    # Run OCR 
+    # Run OCR
     ocr_result = process_invoice_file(file_bytes, file.filename)
     if not ocr_result["success"]:
         raise HTTPException(
@@ -298,7 +310,7 @@ async def upload_invoice(
     def get_conf(field_name):
         return fields.get(field_name, {}).get("confidence", 0.0)
 
-    # Generate hash 
+    # Generate hash
     hash_result = generate_invoice_hash(
         invoice_number=get_val("invoice_number") or "",
         seller_name=get_val("seller_name") or "",
@@ -308,7 +320,7 @@ async def upload_invoice(
         currency=get_val("currency") or "INR",
     )
 
-    # Save to DB 
+    # Save to DB
     invoice = Invoice(
         original_filename=file.filename,
         file_path=file_path,
@@ -383,27 +395,47 @@ async def upload_invoice(
         .first()
     )
 
-    return JSONResponse(status_code=200, content={
-        "invoice_id": invoice.id,
-        "filename": file.filename,
-        "ocr_fields": {
-            "invoice_number": {"value": get_val("invoice_number"), "confidence": get_conf("invoice_number")},
-            "seller_name":    {"value": get_val("seller_name"),    "confidence": get_conf("seller_name")},
-            "client_name":    {"value": get_val("client_name"),    "confidence": get_conf("client_name")},
-            "amount":         {"value": get_val("amount"),         "confidence": get_conf("amount")},
-            "currency":       {"value": get_val("currency"),       "confidence": get_conf("currency")},
-            "due_date":       {"value": get_val("due_date"),       "confidence": get_conf("due_date")},
+    return JSONResponse(
+        status_code=200,
+        content={
+            "invoice_id": invoice.id,
+            "filename": file.filename,
+            "ocr_fields": {
+                "invoice_number": {
+                    "value": get_val("invoice_number"),
+                    "confidence": get_conf("invoice_number"),
+                },
+                "seller_name": {
+                    "value": get_val("seller_name"),
+                    "confidence": get_conf("seller_name"),
+                },
+                "client_name": {
+                    "value": get_val("client_name"),
+                    "confidence": get_conf("client_name"),
+                },
+                "amount": {
+                    "value": get_val("amount"),
+                    "confidence": get_conf("amount"),
+                },
+                "currency": {
+                    "value": get_val("currency"),
+                    "confidence": get_conf("currency"),
+                },
+                "due_date": {
+                    "value": get_val("due_date"),
+                    "confidence": get_conf("due_date"),
+                },
+            },
+            "hash": hash_result["hash"],
+            "canonical_string": hash_result["canonical_string"],
+            "overall_ocr_confidence": ocr_result["overall_confidence"],
+            "malware_scan": scan_result,
+            "duplicate_check": duplicate_result,
+            "status": invoice.status,
+            "anomaly": latest_flag.anomaly_metadata if latest_flag else None,
+            "uploaded_by": current_user.email,
         },
-        "hash": hash_result["hash"],
-        "canonical_string": hash_result["canonical_string"],
-        "overall_ocr_confidence": ocr_result["overall_confidence"],
-        "malware_scan": scan_result,
-        "duplicate_check": duplicate_result,
-        "status": invoice.status,
-        "anomaly": latest_flag.anomaly_metadata if latest_flag else None,
-        "uploaded_by": current_user.email,
-    })
-
+    )
 
 
 @router.get("/")
@@ -412,7 +444,7 @@ def list_invoices(
     skip: int = 0,
     limit: int = 20,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),   
+    current_user: User = Depends(get_current_user),
 ):
     """
     SMEs see only their own invoices.
@@ -427,7 +459,10 @@ def list_invoices(
         query = query.filter(Invoice.status == status)
 
     invoices = query.order_by(Invoice.created_at.desc()).offset(skip).limit(limit).all()
-    return {"invoices": [_invoice_to_dict(inv, db) for inv in invoices], "total": query.count()}
+    return {
+        "invoices": [_invoice_to_dict(inv, db) for inv in invoices],
+        "total": query.count(),
+    }
 
 
 @router.get("/marketplace")
@@ -437,9 +472,11 @@ def list_marketplace_invoices(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    
+
     if current_user.role not in {UserRole.INVESTOR, UserRole.ADMIN}:
-        raise HTTPException(status_code=403, detail="Only investors can access marketplace invoices")
+        raise HTTPException(
+            status_code=403, detail="Only investors can access marketplace invoices"
+        )
 
     listed_statuses = ["approved", "listed", "minted"]
     query = (
@@ -449,7 +486,10 @@ def list_marketplace_invoices(
     )
 
     invoices = query.offset(skip).limit(limit).all()
-    return {"invoices": [_invoice_to_dict(inv, db) for inv in invoices], "total": query.count()}
+    return {
+        "invoices": [_invoice_to_dict(inv, db) for inv in invoices],
+        "total": query.count(),
+    }
 
 
 @router.post("/listings")
@@ -463,11 +503,15 @@ def create_listing(
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
     if invoice.seller_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorised to list this invoice")
+        raise HTTPException(
+            status_code=403, detail="Not authorised to list this invoice"
+        )
 
     normalized_type = (payload.listing_type or "fixed").lower()
     if normalized_type not in {"fixed", "auction", "fractional"}:
-        raise HTTPException(status_code=400, detail="listing_type must be fixed, auction, or fractional")
+        raise HTTPException(
+            status_code=400, detail="listing_type must be fixed, auction, or fractional"
+        )
 
     invoice.financing_type = normalized_type
     if payload.ask_price is not None:
@@ -506,7 +550,9 @@ def create_listing(
             "share_price": listing.share_price,
             "total_shares": listing.total_shares,
             "available_shares": listing.available_shares,
-            "created_at": listing.created_at.isoformat() if listing.created_at else None,
+            "created_at": (
+                listing.created_at.isoformat() if listing.created_at else None
+            ),
             "auction_id": auction.id if auction else None,
         },
     }
@@ -526,7 +572,12 @@ def list_listings(
     if status:
         query = query.filter(models.MarketplaceListing.status == status)
 
-    rows = query.order_by(models.MarketplaceListing.created_at.desc()).offset(skip).limit(limit).all()
+    rows = (
+        query.order_by(models.MarketplaceListing.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return {
         "items": [
             {
@@ -555,11 +606,17 @@ def update_listing(
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_kyc_approved),
 ):
-    listing = db.query(models.MarketplaceListing).filter(models.MarketplaceListing.id == listing_id).first()
+    listing = (
+        db.query(models.MarketplaceListing)
+        .filter(models.MarketplaceListing.id == listing_id)
+        .first()
+    )
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     if current_user.role != UserRole.ADMIN and listing.seller_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorised to update this listing")
+        raise HTTPException(
+            status_code=403, detail="Not authorised to update this listing"
+        )
 
     if payload.status is not None:
         normalized = payload.status.lower()
@@ -581,7 +638,11 @@ def update_listing(
             invoice.share_price = payload.share_price
 
     db.commit()
-    return {"message": "Listing updated", "listing_id": listing.id, "status": listing.status}
+    return {
+        "message": "Listing updated",
+        "listing_id": listing.id,
+        "status": listing.status,
+    }
 
 
 @router.delete("/listings/{listing_id:int}")
@@ -591,11 +652,17 @@ def delete_listing(
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_kyc_approved),
 ):
-    listing = db.query(models.MarketplaceListing).filter(models.MarketplaceListing.id == listing_id).first()
+    listing = (
+        db.query(models.MarketplaceListing)
+        .filter(models.MarketplaceListing.id == listing_id)
+        .first()
+    )
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
     if current_user.role != UserRole.ADMIN and listing.seller_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorised to delete this listing")
+        raise HTTPException(
+            status_code=403, detail="Not authorised to delete this listing"
+        )
 
     listing.status = "canceled"
     invoice = db.query(Invoice).filter(Invoice.id == listing.invoice_id).first()
@@ -620,7 +687,12 @@ def settlement_history(
             | (models.SettlementRecord.investor_id == current_user.id)
         )
 
-    rows = query.order_by(models.SettlementRecord.created_at.desc()).offset(skip).limit(limit).all()
+    rows = (
+        query.order_by(models.SettlementRecord.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return {
         "items": [
             {
@@ -631,8 +703,15 @@ def settlement_history(
                 "amount": row.amount,
                 "status": row.status,
                 "escrow_reference": row.escrow_reference,
+                "seller_wallet_address": row.seller_wallet_address,
+                "repayment_tx_hash": row.repayment_tx_hash,
+                "initiated_at": (
+                    row.initiated_at.isoformat() if row.initiated_at else None
+                ),
                 "confirmed_by": row.confirmed_by,
-                "confirmed_at": row.confirmed_at.isoformat() if row.confirmed_at else None,
+                "confirmed_at": (
+                    row.confirmed_at.isoformat() if row.confirmed_at else None
+                ),
                 "notes": row.notes,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
             }
@@ -649,6 +728,10 @@ def confirm_settlement(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
     record = (
         db.query(models.SettlementRecord)
         .filter(models.SettlementRecord.invoice_id == invoice_id)
@@ -658,33 +741,78 @@ def confirm_settlement(
     if not record:
         raise HTTPException(status_code=404, detail="No settlement record found")
 
-    record.status = "confirmed"
-    record.confirmed_by = current_user.id
-    record.confirmed_at = datetime.now(timezone.utc)
-    if payload.notes is not None:
-        record.notes = payload.notes
+    if record.status == "confirmed" or invoice.status == "settled":
+        raise HTTPException(status_code=400, detail="Invoice already settled")
+
+    if record.status not in {"processing", "pending"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Settlement record in status '{record.status}' cannot be confirmed",
+        )
+
+    if invoice.status not in {"funded", "active", "repayment_processing"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invoice status '{invoice.status}' cannot be confirmed. "
+                "Expected funded, active, or repayment_processing."
+            ),
+        )
+
+    settlement_result = _complete_invoice_settlement(
+        db,
+        invoice,
+        record,
+        recorded_by=current_user.id,
+        confirmation_note=payload.notes,
+    )
 
     db.commit()
-    return {"message": "Settlement confirmed", "settlement_id": record.id, "status": record.status}
-
-
+    snapshot = settlement_result["snapshot"]
+    notification_hub.broadcast_from_sync(
+        "invoice_settled",
+        {
+            "invoice_id": invoice.id,
+            "status": invoice.status,
+            "days_late": settlement_result["days_late"],
+            "event_type": settlement_result["event_type"],
+            "settled_amount": settlement_result["settled_amount"],
+            "escrow_status": invoice.escrow_status,
+            "escrow_reference": invoice.escrow_reference,
+            "settled_by": current_user.id,
+        },
+        roles={"admin"},
+        user_ids={
+            uid
+            for uid in [invoice.seller_id, snapshot.investor_id if snapshot else None]
+            if uid is not None
+        },
+        invoice_id=invoice.id,
+    )
+    return {
+        "message": "Settlement confirmed",
+        "settlement_id": record.id,
+        "status": record.status,
+        "invoice_status": invoice.status,
+    }
 
 
 @router.get("/{invoice_id:int}")
 def get_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),   # must be logged in
+    current_user: User = Depends(get_current_user),  # must be logged in
 ):
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     if invoice.seller_id != current_user.id and current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=403, detail="Not authorised to view this invoice")
+        raise HTTPException(
+            status_code=403, detail="Not authorised to view this invoice"
+        )
 
     return _invoice_to_dict(invoice, db)
-
 
 
 @router.put("/{invoice_id:int}")
@@ -692,15 +820,16 @@ def update_invoice_fields(
     invoice_id: int,
     payload: InvoiceUpdatePayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_seller),        # seller only
+    current_user: User = Depends(require_seller),  # seller only
 ):
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-   
     if invoice.seller_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorised to edit this invoice")
+        raise HTTPException(
+            status_code=403, detail="Not authorised to edit this invoice"
+        )
 
     if payload.invoice_number is not None:
         invoice.invoice_number = payload.invoice_number
@@ -748,8 +877,6 @@ def update_invoice_fields(
     }
 
 
-
-
 @router.put("/{invoice_id:int}/review")
 def review_invoice(
     invoice_id: int,
@@ -757,7 +884,7 @@ def review_invoice(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    
+
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -768,7 +895,9 @@ def review_invoice(
         if anomaly_result.should_flag:
             invoice.status = "flagged"
             invoice.is_duplicate = False
-            _create_or_update_fraud_flag_from_anomaly(db, invoice, anomaly_result.to_dict())
+            _create_or_update_fraud_flag_from_anomaly(
+                db, invoice, anomaly_result.to_dict()
+            )
             db.commit()
             return {
                 "message": "Invoice flagged by anomaly model for manual review.",
@@ -791,7 +920,9 @@ def review_invoice(
     elif action == "reject":
         invoice.status = "rejected"
     else:
-        raise HTTPException(status_code=400, detail="Action must be 'approve' or 'reject'")
+        raise HTTPException(
+            status_code=400, detail="Action must be 'approve' or 'reject'"
+        )
 
     db.commit()
     return {"message": f"Invoice {action}d", "status": invoice.status}
@@ -858,6 +989,152 @@ def _settlement_event_type(days_late: int) -> str:
     return "LATE_90_PLUS"
 
 
+def _resolve_repayment_amount(
+    invoice: Invoice, requested_amount: Optional[float] = None
+) -> float:
+    if requested_amount is not None:
+        if requested_amount <= 0:
+            raise HTTPException(
+                status_code=400, detail="repayment_amount must be greater than 0"
+            )
+        return float(requested_amount)
+
+    for candidate in (invoice.amount, invoice.ask_price):
+        if candidate is not None and float(candidate) > 0:
+            return float(candidate)
+
+    raise HTTPException(
+        status_code=400,
+        detail="Repayment amount is unavailable for this invoice",
+    )
+
+
+def _append_notes(existing: Optional[str], new_note: Optional[str]) -> Optional[str]:
+    clean_existing = (existing or "").strip()
+    clean_new = (new_note or "").strip()
+
+    if clean_existing and clean_new:
+        return f"{clean_existing}\n{clean_new}"
+    return clean_new or clean_existing or None
+
+
+def _latest_repayment_snapshot(
+    db: Session, invoice_id: int
+) -> Optional[models.RepaymentSnapshot]:
+    return (
+        db.query(models.RepaymentSnapshot)
+        .filter(models.RepaymentSnapshot.invoice_id == invoice_id)
+        .order_by(models.RepaymentSnapshot.created_at.desc())
+        .first()
+    )
+
+
+def _complete_invoice_settlement(
+    db: Session,
+    invoice: Invoice,
+    record: models.SettlementRecord,
+    *,
+    recorded_by: int,
+    confirmation_note: Optional[str] = None,
+) -> dict:
+    now = datetime.now(timezone.utc)
+    due_dt = _parse_date(invoice.due_date)
+    days_late = max((now.date() - due_dt).days, 0) if due_dt else 0
+    event_type = _settlement_event_type(days_late)
+    snapshot = _latest_repayment_snapshot(db, invoice.id)
+    settled_amount = _resolve_repayment_amount(invoice, record.amount)
+
+    if snapshot is not None:
+        snapshot.repaid_at = now
+        snapshot.repayment_amount = settled_amount
+        snapshot.weighted_average_days_late = float(days_late)
+        snapshot.impact_score = float(max(0, min(100, 100 - (days_late * 1.5))))
+
+    credit_event = models.CreditEvent(
+        invoice_id=invoice.id,
+        seller_id=invoice.seller_id,
+        investor_id=snapshot.investor_id if snapshot else None,
+        event_type=event_type,
+        days_late=days_late,
+        amount=float(settled_amount),
+        notes=record.notes,
+        recorded_by=recorded_by,
+    )
+    db.add(credit_event)
+
+    if invoice.seller_id is not None:
+        credit = (
+            db.query(models.CreditHistory)
+            .filter(models.CreditHistory.seller_id == invoice.seller_id)
+            .first()
+        )
+        if credit is not None:
+            delta = (
+                -2
+                if days_late <= 0
+                else 5 if days_late <= 30 else 10 if days_late <= 60 else 15
+            )
+            current_score = int(credit.composite_score or 0)
+            next_score = max(0, min(100, current_score + delta))
+            credit.composite_score = next_score
+
+            current_track = int(credit.seller_track_record or 50)
+            track_delta = (
+                2
+                if days_late <= 0
+                else -5 if days_late <= 30 else -10 if days_late <= 60 else -15
+            )
+            credit.seller_track_record = max(0, min(100, current_track + track_delta))
+
+            contributors = (
+                credit.risk_contributors
+                if isinstance(credit.risk_contributors, dict)
+                else {}
+            )
+            contributors["repayment_velocity_delta"] = float(delta)
+            contributors["settlement_impact_score"] = float(
+                max(0, min(100, 100 - (days_late * 1.5)))
+            )
+            credit.risk_contributors = contributors
+
+    invoice.status = "settled"
+    invoice.escrow_status = "released"
+    invoice.escrow_released_at = now
+
+    record.amount = float(settled_amount)
+    record.status = "confirmed"
+    record.confirmed_by = recorded_by
+    record.confirmed_at = now
+    record.initiated_at = record.initiated_at or now
+    record.notes = _append_notes(record.notes, confirmation_note)
+
+    db.add(
+        models.MarketplaceTransaction(
+            invoice_id=invoice.id,
+            buyer_id=snapshot.investor_id if snapshot else None,
+            seller_id=invoice.seller_id,
+            tx_type="settle",
+            amount=float(settled_amount),
+            status="completed",
+            reference=record.repayment_tx_hash or invoice.escrow_reference,
+            tx_metadata={
+                "event_type": event_type,
+                "days_late": days_late,
+                "repayment_tx_hash": record.repayment_tx_hash,
+                "seller_wallet_address": record.seller_wallet_address,
+            },
+        )
+    )
+
+    return {
+        "snapshot": snapshot,
+        "credit_event": credit_event,
+        "days_late": days_late,
+        "event_type": event_type,
+        "settled_amount": settled_amount,
+    }
+
+
 @router.get("/admin/pending-review")
 def list_pending_invoices_for_admin(
     skip: int = 0,
@@ -873,7 +1150,7 @@ def list_pending_invoices_for_admin(
     )
     try:
         _ = current_user
-        
+
         limit = min(max(int(limit), 1), 100)
         query = (
             db.query(Invoice)
@@ -885,7 +1162,7 @@ def list_pending_invoices_for_admin(
         invoice_numbers = {inv.invoice_number for inv in invoices if inv.invoice_number}
         duplicate_count_by_number: dict[str, int] = {}
         if invoice_numbers:
-            
+
             counts = (
                 db.query(Invoice.invoice_number, func.count(Invoice.id))
                 .filter(Invoice.invoice_number.in_(invoice_numbers))
@@ -902,7 +1179,7 @@ def list_pending_invoices_for_admin(
                 if inv.invoice_number
                 else 0
             )
-            
+
             duplicate_count = max(0, total_same_number - 1)
 
             conf = inv.ocr_confidence if isinstance(inv.ocr_confidence, dict) else {}
@@ -967,7 +1244,7 @@ def settlement_tracker(
     current_user: User = Depends(require_admin),
 ):
     _ = current_user
-    statuses = ["funded", "active", "settled"]
+    statuses = ["funded", "active", "repayment_processing", "settled"]
 
     query = db.query(Invoice).filter(Invoice.status.in_(statuses))
     if status:
@@ -989,12 +1266,26 @@ def settlement_tracker(
         if snapshot.invoice_id not in snapshot_by_invoice:
             snapshot_by_invoice[snapshot.invoice_id] = snapshot
 
+    settlement_records = (
+        db.query(models.SettlementRecord)
+        .filter(models.SettlementRecord.invoice_id.in_([inv.id for inv in invoices]))
+        .order_by(models.SettlementRecord.created_at.desc())
+        .all()
+        if invoices
+        else []
+    )
+    settlement_by_invoice: dict[int, models.SettlementRecord] = {}
+    for record in settlement_records:
+        if record.invoice_id not in settlement_by_invoice:
+            settlement_by_invoice[record.invoice_id] = record
+
     items = []
     for inv in invoices:
         due_date = _parse_date(inv.due_date)
         days_to_due = (due_date - now).days if due_date else None
         is_overdue = bool(due_date and due_date < now and inv.status != "settled")
         snapshot = snapshot_by_invoice.get(inv.id)
+        settlement = settlement_by_invoice.get(inv.id)
 
         items.append(
             {
@@ -1012,19 +1303,52 @@ def settlement_tracker(
                 "countdown_label": (
                     f"Overdue by {abs(days_to_due)} days"
                     if days_to_due is not None and days_to_due < 0
-                    else "Due Today"
-                    if days_to_due == 0
-                    else f"Due in {days_to_due} days"
-                    if days_to_due is not None
-                    else "Due date unavailable"
+                    else (
+                        "Due Today"
+                        if days_to_due == 0
+                        else (
+                            f"Due in {days_to_due} days"
+                            if days_to_due is not None
+                            else "Due date unavailable"
+                        )
+                    )
                 ),
-                "can_settle": inv.status != "settled",
                 "escrow_status": inv.escrow_status,
                 "escrow_reference": inv.escrow_reference,
-                "escrow_held_at": inv.escrow_held_at.isoformat() if inv.escrow_held_at else None,
-                "escrow_released_at": inv.escrow_released_at.isoformat() if inv.escrow_released_at else None,
+                "escrow_held_at": (
+                    inv.escrow_held_at.isoformat() if inv.escrow_held_at else None
+                ),
+                "escrow_released_at": (
+                    inv.escrow_released_at.isoformat()
+                    if inv.escrow_released_at
+                    else None
+                ),
                 "investor_id": snapshot.investor_id if snapshot else None,
                 "funded_amount": snapshot.funded_amount if snapshot else inv.ask_price,
+                "settlement_id": settlement.id if settlement else None,
+                "settlement_status": settlement.status if settlement else None,
+                "can_confirm": bool(
+                    settlement
+                    and settlement.status in {"processing", "pending"}
+                    and inv.status == "repayment_processing"
+                ),
+                "seller_wallet_address": (
+                    settlement.seller_wallet_address if settlement else None
+                ),
+                "repayment_tx_hash": (
+                    settlement.repayment_tx_hash if settlement else None
+                ),
+                "repayment_initiated_at": (
+                    settlement.initiated_at.isoformat()
+                    if settlement and settlement.initiated_at
+                    else None
+                ),
+                "confirmed_at": (
+                    settlement.confirmed_at.isoformat()
+                    if settlement and settlement.confirmed_at
+                    else None
+                ),
+                "repayment_notes": settlement.notes if settlement else None,
                 "created_at": str(inv.created_at),
             }
         )
@@ -1038,146 +1362,91 @@ def settlement_tracker(
     return {"items": items, "total": query.count()}
 
 
-@router.post("/{invoice_id:int}/settle")
-def settle_invoice(
+@router.post("/{invoice_id:int}/repay")
+def repay_invoice(
     invoice_id: int,
-    payload: SettleInvoicePayload,
+    payload: RepayInvoicePayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_seller),
 ):
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    if invoice.status not in ["funded", "active", "settled"]:
+    if invoice.seller_id != current_user.id:
+        raise HTTPException(
+            status_code=403, detail="Not authorised to repay this invoice"
+        )
+
+    if invoice.status in {"repayment_processing"}:
         raise HTTPException(
             status_code=400,
-            detail=f"Invoice status '{invoice.status}' cannot be settled. Expected funded/active.",
+            detail="Repayment already initiated and awaiting admin confirmation",
         )
 
-    if invoice.status == "settled":
-        raise HTTPException(status_code=400, detail="Invoice already settled")
+    if invoice.status not in {"funded", "active"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invoice status '{invoice.status}' cannot enter repayment processing. "
+                "Expected funded/active."
+            ),
+        )
 
     now = datetime.now(timezone.utc)
-    due_dt = _parse_date(invoice.due_date)
-    days_late = max((now.date() - due_dt).days, 0) if due_dt else 0
-    event_type = _settlement_event_type(days_late)
+    snapshot = _latest_repayment_snapshot(db, invoice_id)
+    repayment_amount = _resolve_repayment_amount(invoice, payload.repayment_amount)
 
-    snapshot = (
-        db.query(models.RepaymentSnapshot)
-        .filter(models.RepaymentSnapshot.invoice_id == invoice_id)
-        .order_by(models.RepaymentSnapshot.created_at.desc())
-        .first()
-    )
-
-    settled_amount = (
-        payload.repayment_amount
-        if payload.repayment_amount is not None and payload.repayment_amount > 0
-        else invoice.amount
-        if invoice.amount is not None and invoice.amount > 0
-        else invoice.ask_price
-        if invoice.ask_price is not None and invoice.ask_price > 0
-        else 0.0
-    )
-
-    if snapshot is not None:
-        snapshot.repaid_at = now
-        snapshot.repayment_amount = settled_amount
-        snapshot.weighted_average_days_late = float(days_late)
-        snapshot.impact_score = float(max(0, min(100, 100 - (days_late * 1.5))))
-
-    credit_event = models.CreditEvent(
+    invoice.status = "repayment_processing"
+    record = models.SettlementRecord(
         invoice_id=invoice.id,
-        seller_id=invoice.seller_id,
         investor_id=snapshot.investor_id if snapshot else None,
-        event_type=event_type,
-        days_late=days_late,
-        amount=float(settled_amount or 0.0),
+        seller_id=invoice.seller_id,
+        amount=float(repayment_amount),
+        status="processing",
+        escrow_reference=invoice.escrow_reference,
+        seller_wallet_address=payload.wallet_address,
+        repayment_tx_hash=payload.tx_hash,
+        initiated_at=now,
         notes=payload.notes,
-        recorded_by=current_user.id,
     )
-    db.add(credit_event)
-
-    if invoice.seller_id is not None:
-        credit = (
-            db.query(models.CreditHistory)
-            .filter(models.CreditHistory.seller_id == invoice.seller_id)
-            .first()
-        )
-        if credit is not None:
-            delta = -2 if days_late <= 0 else 5 if days_late <= 30 else 10 if days_late <= 60 else 15
-            current_score = int(credit.composite_score or 0)
-            next_score = max(0, min(100, current_score + delta))
-            credit.composite_score = next_score
-
-            current_track = int(credit.seller_track_record or 50)
-            track_delta = 2 if days_late <= 0 else -5 if days_late <= 30 else -10 if days_late <= 60 else -15
-            credit.seller_track_record = max(0, min(100, current_track + track_delta))
-
-            contributors = credit.risk_contributors if isinstance(credit.risk_contributors, dict) else {}
-            contributors["repayment_velocity_delta"] = float(delta)
-            contributors["settlement_impact_score"] = float(max(0, min(100, 100 - (days_late * 1.5))))
-            credit.risk_contributors = contributors
-
-    invoice.status = "settled"
-    invoice.escrow_status = "released"
-    invoice.escrow_released_at = now
-
-    db.add(
-        models.SettlementRecord(
-            invoice_id=invoice.id,
-            investor_id=snapshot.investor_id if snapshot else None,
-            seller_id=invoice.seller_id,
-            amount=float(settled_amount or 0.0),
-            status="pending",
-            escrow_reference=invoice.escrow_reference,
-            notes=payload.notes,
-        )
-    )
-    db.add(
-        models.MarketplaceTransaction(
-            invoice_id=invoice.id,
-            buyer_id=snapshot.investor_id if snapshot else None,
-            seller_id=invoice.seller_id,
-            tx_type="settle",
-            amount=float(settled_amount or 0.0),
-            status="completed",
-            reference=invoice.escrow_reference,
-            tx_metadata={"event_type": event_type, "days_late": days_late},
-        )
-    )
+    db.add(record)
     db.commit()
+    db.refresh(record)
 
     notification_hub.broadcast_from_sync(
-        "invoice_settled",
+        "invoice_repayment_initiated",
         {
             "invoice_id": invoice.id,
             "status": invoice.status,
-            "days_late": days_late,
-            "event_type": event_type,
-            "settled_amount": settled_amount,
+            "repayment_amount": repayment_amount,
             "escrow_status": invoice.escrow_status,
             "escrow_reference": invoice.escrow_reference,
-            "settled_by": current_user.id,
+            "settlement_id": record.id,
+            "seller_wallet_address": record.seller_wallet_address,
+            "repayment_tx_hash": record.repayment_tx_hash,
+            "initiated_by": current_user.id,
         },
         roles={"admin"},
-        user_ids={uid for uid in [invoice.seller_id, snapshot.investor_id if snapshot else None] if uid is not None},
+        user_ids={
+            uid
+            for uid in [invoice.seller_id, snapshot.investor_id if snapshot else None]
+            if uid is not None
+        },
         invoice_id=invoice.id,
     )
 
     return {
-        "message": "Invoice settled successfully",
+        "message": "Repayment submitted and awaiting admin confirmation",
         "invoice_id": invoice.id,
         "status": invoice.status,
-        "days_late": days_late,
-        "event_type": event_type,
-        "settled_amount": settled_amount,
-        "credit_event_id": credit_event.id,
+        "settlement_id": record.id,
+        "repayment_amount": repayment_amount,
         "escrow_status": invoice.escrow_status,
         "escrow_reference": invoice.escrow_reference,
+        "seller_wallet_address": record.seller_wallet_address,
+        "repayment_tx_hash": record.repayment_tx_hash,
     }
-
-
 
 
 @router.post("/{invoice_id:int}/mint")
@@ -1187,21 +1456,23 @@ def mint_invoice_nft(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    
+
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     # Authorization: must be admin or the seller
     if current_user.role != UserRole.ADMIN and invoice.seller_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to mint this invoice")
+        raise HTTPException(
+            status_code=403, detail="Not authorized to mint this invoice"
+        )
 
     # Validation: must be approved
     if invoice.status not in ["approved", "pending_mint"]:
         raise HTTPException(
             status_code=400,
             detail=f"Invoice status '{invoice.status}' is not eligible for minting. "
-                   "Must be 'approved' or 'pending_mint'.",
+            "Must be 'approved' or 'pending_mint'.",
         )
 
     # Validation: cannot mint same invoice twice
@@ -1240,7 +1511,7 @@ def fund_invoice(
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_kyc_approved),
 ):
-   
+
     if current_user.role not in {UserRole.INVESTOR, UserRole.ADMIN}:
         raise HTTPException(status_code=403, detail="Only investors can fund invoices")
 
@@ -1309,9 +1580,10 @@ def fund_invoice(
     else:
         funded_amount = float(payload.investment_amount or remaining_amount)
         if funded_amount <= 0:
-            raise HTTPException(status_code=400, detail="investment_amount must be greater than 0")
+            raise HTTPException(
+                status_code=400, detail="investment_amount must be greater than 0"
+            )
 
-       
         if abs(funded_amount - remaining_amount) > 0.01:
             raise HTTPException(
                 status_code=400,
@@ -1385,7 +1657,9 @@ def fund_invoice(
             "investor_id": current_user.id,
         },
         roles={"admin", "investor"},
-        user_ids={uid for uid in [invoice.seller_id, current_user.id] if uid is not None},
+        user_ids={
+            uid for uid in [invoice.seller_id, current_user.id] if uid is not None
+        },
         invoice_id=invoice.id,
     )
     return {
@@ -1434,7 +1708,11 @@ def list_invoice_bids(
         "invoice_id": invoice_id,
         "highest_bid": float(highest_active.amount) if highest_active else None,
         "next_min_bid": round(next_min, 2),
-        "my_active_bid_id": highest_active.id if highest_active and highest_active.bidder_id == current_user.id else None,
+        "my_active_bid_id": (
+            highest_active.id
+            if highest_active and highest_active.bidder_id == current_user.id
+            else None
+        ),
         "bids": [
             {
                 "id": bid.id,
@@ -1466,7 +1744,9 @@ def place_invoice_bid(
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     if (invoice.financing_type or "").lower() != "auction":
-        raise HTTPException(status_code=400, detail="This invoice is not configured for auction bidding")
+        raise HTTPException(
+            status_code=400, detail="This invoice is not configured for auction bidding"
+        )
 
     if invoice.status not in {"approved", "listed", "minted"}:
         raise HTTPException(
@@ -1558,7 +1838,9 @@ def place_invoice_bid(
             "status": new_bid.status,
         },
         roles={"admin", "investor"},
-        user_ids={uid for uid in [invoice.seller_id, current_user.id] if uid is not None},
+        user_ids={
+            uid for uid in [invoice.seller_id, current_user.id] if uid is not None
+        },
         invoice_id=invoice.id,
     )
 
@@ -1570,7 +1852,9 @@ def place_invoice_bid(
             "bidder_id": new_bid.bidder_id,
             "amount": float(new_bid.amount),
             "status": new_bid.status,
-            "created_at": new_bid.created_at.isoformat() if new_bid.created_at else None,
+            "created_at": (
+                new_bid.created_at.isoformat() if new_bid.created_at else None
+            ),
         },
     }
 
@@ -1590,10 +1874,14 @@ def cancel_my_active_bid(
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     if (invoice.financing_type or "").lower() != "auction":
-        raise HTTPException(status_code=400, detail="This invoice is not configured for auction bidding")
+        raise HTTPException(
+            status_code=400, detail="This invoice is not configured for auction bidding"
+        )
 
     if invoice.status in {"funded", "active", "settled", "defaulted"}:
-        raise HTTPException(status_code=400, detail="Auction is already closed for this invoice")
+        raise HTTPException(
+            status_code=400, detail="Auction is already closed for this invoice"
+        )
 
     my_active_bid = (
         db.query(models.AuctionBid)
@@ -1612,7 +1900,6 @@ def cancel_my_active_bid(
     my_active_bid.status = "canceled"
     my_active_bid.canceled_at = datetime.now(timezone.utc)
 
-    
     candidate_bids = (
         db.query(models.AuctionBid)
         .filter(
@@ -1630,7 +1917,9 @@ def cancel_my_active_bid(
 
     db.commit()
 
-    highest_active = next((bid for bid in candidate_bids if bid.status == "active"), None)
+    highest_active = next(
+        (bid for bid in candidate_bids if bid.status == "active"), None
+    )
     min_increment = float(invoice.min_bid_increment or 100.0)
     base_price = float(invoice.ask_price or invoice.amount or 0.0)
     next_min = (
@@ -1649,7 +1938,9 @@ def cancel_my_active_bid(
             "next_min_bid": round(next_min, 2),
         },
         roles={"admin", "investor"},
-        user_ids={uid for uid in [invoice.seller_id, current_user.id] if uid is not None},
+        user_ids={
+            uid for uid in [invoice.seller_id, current_user.id] if uid is not None
+        },
         invoice_id=invoice.id,
     )
 
@@ -1677,7 +1968,10 @@ def close_invoice_auction(
         raise HTTPException(status_code=400, detail="Invoice is not an auction listing")
 
     if invoice.status in {"funded", "active", "settled", "defaulted"}:
-        raise HTTPException(status_code=400, detail=f"Invoice status '{invoice.status}' cannot be auction-closed")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invoice status '{invoice.status}' cannot be auction-closed",
+        )
 
     winner = (
         db.query(models.AuctionBid)
@@ -1690,7 +1984,9 @@ def close_invoice_auction(
     )
 
     if winner is None:
-        raise HTTPException(status_code=400, detail="Cannot close auction without active bids")
+        raise HTTPException(
+            status_code=400, detail="Cannot close auction without active bids"
+        )
 
     winner_user = db.query(User).filter(User.id == winner.bidder_id).first()
 
@@ -1761,7 +2057,9 @@ def close_invoice_auction(
             "closed_at": closed_at.isoformat(),
         },
         roles={"admin", "investor"},
-        user_ids={uid for uid in [invoice.seller_id, winner.bidder_id] if uid is not None},
+        user_ids={
+            uid for uid in [invoice.seller_id, winner.bidder_id] if uid is not None
+        },
         invoice_id=invoice.id,
     )
     return {
@@ -1773,7 +2071,9 @@ def close_invoice_auction(
         "winner_bidder_id": winner.bidder_id,
         "winner_name": winner_user.full_name if winner_user else None,
         "winner_email": winner_user.email if winner_user else None,
-        "winner_created_at": winner.created_at.isoformat() if winner.created_at else None,
+        "winner_created_at": (
+            winner.created_at.isoformat() if winner.created_at else None
+        ),
         "repayment_snapshot_id": snapshot.id,
         "simulated_transaction_id": simulated_tx_id,
         "escrow_status": invoice.escrow_status,
@@ -1782,7 +2082,6 @@ def close_invoice_auction(
         "closed_by": current_user.id,
         "notes": payload.notes,
     }
-
 
 
 @router.post("/mint/validate-fractional")
@@ -1812,8 +2111,6 @@ def validate_fractional_config(
     }
 
 
-
-
 @router.get("/admin/flagged")
 def get_flagged_invoices(
     db: Session = Depends(get_db),
@@ -1821,13 +2118,11 @@ def get_flagged_invoices(
 ):
     flagged = (
         db.query(Invoice)
-        .filter((Invoice.is_duplicate == True) | (Invoice.status == "flagged"))
+        .filter((Invoice.is_duplicate) | (Invoice.status == "flagged"))
         .order_by(Invoice.created_at.desc())
         .all()
     )
     return {"flagged_invoices": [_invoice_to_dict(inv, db) for inv in flagged]}
-
-
 
 
 def _invoice_to_dict(invoice: Invoice, db: Session | None = None) -> dict:
@@ -1864,19 +2159,27 @@ def _invoice_to_dict(invoice: Invoice, db: Session | None = None) -> dict:
         "seller_id": invoice.seller_id,
         "escrow_status": invoice.escrow_status,
         "escrow_reference": invoice.escrow_reference,
-        "escrow_held_at": invoice.escrow_held_at.isoformat() if invoice.escrow_held_at else None,
-        "escrow_released_at": invoice.escrow_released_at.isoformat() if invoice.escrow_released_at else None,
+        "escrow_held_at": (
+            invoice.escrow_held_at.isoformat() if invoice.escrow_held_at else None
+        ),
+        "escrow_released_at": (
+            invoice.escrow_released_at.isoformat()
+            if invoice.escrow_released_at
+            else None
+        ),
         "anomaly": latest_flag.anomaly_metadata if latest_flag else None,
-        "fraud_flag": {
-            "id": latest_flag.id,
-            "severity": latest_flag.severity,
-            "reason": latest_flag.reason,
-            "is_resolved": latest_flag.is_resolved,
-            "resolution_action": latest_flag.resolution_action,
-            "resolved_by": latest_flag.resolved_by,
-        }
-        if latest_flag
-        else None,
+        "fraud_flag": (
+            {
+                "id": latest_flag.id,
+                "severity": latest_flag.severity,
+                "reason": latest_flag.reason,
+                "is_resolved": latest_flag.is_resolved,
+                "resolution_action": latest_flag.resolution_action,
+                "resolved_by": latest_flag.resolved_by,
+            }
+            if latest_flag
+            else None
+        ),
         "upload_url": _to_upload_url(invoice.file_path),
         "created_at": str(invoice.created_at),
     }

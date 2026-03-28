@@ -8,7 +8,8 @@ import type {
   InvoiceBidItem,
   InvestorSummary,
   InvestorCashFlow,
-  InvestorInvestmentsResponse
+  InvestorInvestmentsResponse,
+  SellerInvoiceItem,
 } from "./types";
 
 /**
@@ -18,6 +19,14 @@ import type {
 export const getMarketplaceInvoices = async (params?: { skip?: number; limit?: number }) => {
   const { data } = await invoiceApi.get<{ invoices: MarketplaceInvoiceItem[]; total: number }>(
     "/marketplace", 
+    { params }
+  );
+  return data;
+};
+
+export const getSellerInvoices = async (params?: { status?: string; skip?: number; limit?: number }) => {
+  const { data } = await invoiceApi.get<{ invoices: SellerInvoiceItem[]; total: number }>(
+    "/", 
     { params }
   );
   return data;
@@ -110,11 +119,16 @@ export const getSettlementTracker = async (params?: {
   return data;
 };
 
-export const settleInvoice = async (
+export const repayInvoice = async (
   invoiceId: number,
-  payload?: { repayment_amount?: number; notes?: string },
+  payload?: {
+    repayment_amount?: number;
+    notes?: string;
+    wallet_address?: string;
+    tx_hash?: string;
+  },
 ) => {
-  const { data } = await invoiceApi.post(`/${invoiceId}/settle`, payload ?? {});
+  const { data } = await invoiceApi.post(`/${invoiceId}/repay`, payload ?? {});
   return data;
 };
 

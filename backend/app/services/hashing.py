@@ -34,7 +34,8 @@ def normalize_date(date_str: str) -> str:
     return normalize_text(date_str)
 
 
-# Build canonical string 
+# Build canonical string
+
 
 def build_canonical_string(
     invoice_number: str,
@@ -59,7 +60,8 @@ def build_canonical_string(
     return "|".join(parts)
 
 
-# Hash with keccak256 (pycryptodome) 
+# Hash with keccak256 (pycryptodome)
+
 
 def compute_keccak256(canonical_string: str) -> str:
     """
@@ -72,6 +74,7 @@ def compute_keccak256(canonical_string: str) -> str:
 
 
 # Main function
+
 
 def generate_invoice_hash(
     invoice_number: str,

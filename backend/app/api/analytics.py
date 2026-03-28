@@ -1,10 +1,15 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from ..auth.dependencies import require_admin, require_investor
+from ..auth.dependencies import (
+    get_current_admin_or_investor,
+    require_admin,
+    require_investor,
+)
 from ..database import get_db
 from ..models import User
 from ..services.portfolio_service import PortfolioAnalyticsService
+from ..services.platform_stats import PlatformStatsService
 
 router = APIRouter()
 
@@ -46,3 +51,12 @@ def get_platform_concentration(
 ):
     service = PortfolioAnalyticsService(db)
     return service.get_platform_concentration(threshold_pct=threshold_pct)
+
+
+@router.get("/platform/summary")
+def get_platform_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_or_investor),
+):
+    _ = current_user
+    return PlatformStatsService.aggregate_stats(db, use_cache=False)

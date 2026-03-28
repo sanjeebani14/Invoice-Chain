@@ -50,14 +50,33 @@ def get_admin_overview(
         .scalar()
         or 0
     )
-    funded_live = db.query(func.count(Invoice.id)).filter(Invoice.status.in_(["funded", "active"])).scalar() or 0
-    settled_count = db.query(func.count(Invoice.id)).filter(Invoice.status == "settled").scalar() or 0
-    pending_kyc = db.query(func.count(KycSubmission.id)).filter(KycSubmission.status == "pending").scalar() or 0
-    unresolved_fraud = db.query(func.count(FraudFlag.id)).filter(FraudFlag.is_resolved == False).scalar() or 0
+    funded_live = (
+        db.query(func.count(Invoice.id))
+        .filter(Invoice.status.in_(["funded", "active", "repayment_processing"]))
+        .scalar()
+        or 0
+    )
+    settled_count = (
+        db.query(func.count(Invoice.id)).filter(Invoice.status == "settled").scalar()
+        or 0
+    )
+    pending_kyc = (
+        db.query(func.count(KycSubmission.id))
+        .filter(KycSubmission.status == "pending")
+        .scalar()
+        or 0
+    )
+    unresolved_fraud = (
+        db.query(func.count(FraudFlag.id))
+        .filter(FraudFlag.is_resolved == False)
+        .scalar()
+        or 0
+    )
 
-    investors_count = db.query(func.count(User.id)).filter(User.role == "investor").scalar() or 0
+    investors_count = (
+        db.query(func.count(User.id)).filter(User.role == "investor").scalar() or 0
+    )
 
-   
     sellers_count = (
         db.query(func.count(func.distinct(CreditHistory.seller_id)))
         .join(User, User.id == CreditHistory.seller_id)
@@ -67,7 +86,11 @@ def get_admin_overview(
         or 0
     )
 
-    live_invoices = db.query(Invoice).filter(Invoice.status.in_(["funded", "active"])).all()
+    live_invoices = (
+        db.query(Invoice)
+        .filter(Invoice.status.in_(["funded", "active", "repayment_processing"]))
+        .all()
+    )
     today = datetime.utcnow().date()
     overdue_live = 0
     due_today = 0
@@ -107,7 +130,7 @@ def get_admin_overview(
                 "type": "settlement",
                 "priority": "high",
                 "title": "Overdue settlements",
-                "description": f"{overdue_live} funded invoices are past due and still unsettled.",
+                "description": f"{overdue_live} live invoices are past due and still awaiting settlement confirmation.",
                 "cta_path": "/admin/settlement-tracker",
             }
         )
@@ -140,13 +163,17 @@ def get_admin_overview(
 
 @router.get("/summary")
 def get_platform_summary(
-    period: Optional[str] = Query(None, description="Period in format YYYY-MM or YYYY-Q1 or YYYY"),
-    period_type: Optional[str] = Query("monthly", description="monthly, quarterly, or yearly"),
+    period: Optional[str] = Query(
+        None, description="Period in format YYYY-MM or YYYY-Q1 or YYYY"
+    ),
+    period_type: Optional[str] = Query(
+        "monthly", description="monthly, quarterly, or yearly"
+    ),
     use_cache: bool = Query(True, description="Use cached results if available"),
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    
+
     try:
         stats = PlatformStatsService.aggregate_stats(
             db, period=period, period_type=period_type, use_cache=use_cache
@@ -157,7 +184,7 @@ def get_platform_summary(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error calculating statistics: {str(e)}"
+            detail=f"Error calculating statistics: {str(e)}",
         )
 
 
@@ -168,7 +195,7 @@ def get_platform_timeseries(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-   
+
     try:
         timeseries = PlatformStatsService.get_time_series(
             db, months=months, use_cache=use_cache
@@ -177,13 +204,15 @@ def get_platform_timeseries(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error calculating time series: {str(e)}"
+            detail=f"Error calculating time series: {str(e)}",
         )
 
 
 @router.post("/refresh")
 def refresh_platform_stats(
-    period: Optional[str] = Query(None, description="Specific period to refresh or None for current month"),
+    period: Optional[str] = Query(
+        None, description="Specific period to refresh or None for current month"
+    ),
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
@@ -192,12 +221,12 @@ def refresh_platform_stats(
         return {
             "status": "success",
             "message": f"Platform statistics refreshed for period: {period or 'current'}",
-            "period": period
+            "period": period,
         }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error refreshing statistics: {str(e)}"
+            detail=f"Error refreshing statistics: {str(e)}",
         )
 
 
@@ -206,11 +235,11 @@ def get_health_metrics(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_or_investor),
 ):
-    
+
     try:
         _ = current_user
         stats = PlatformStatsService.aggregate_stats(db, use_cache=False)
-        
+
         # Curate for dashboard display
         health_metrics = {
             "gmv": stats["total_funded_volume"],
@@ -225,12 +254,12 @@ def get_health_metrics(
             "top_sector": stats["sector_exposure"]["top_sector"],
             "sector_concentration": stats["sector_exposure"]["concentration_ratio"],
         }
-        
+
         return health_metrics
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving health metrics: {str(e)}"
+            detail=f"Error retrieving health metrics: {str(e)}",
         )
 
 
@@ -251,7 +280,9 @@ def get_blockchain_sync_status(
             {
                 "contract_address": item.contract_address,
                 "last_synced_block": int(item.last_synced_block or 0),
-                "last_synced_at": item.last_synced_at.isoformat() if item.last_synced_at else None,
+                "last_synced_at": (
+                    item.last_synced_at.isoformat() if item.last_synced_at else None
+                ),
                 "last_error": item.last_error,
                 "updated_at": item.updated_at.isoformat() if item.updated_at else None,
             }
@@ -265,12 +296,12 @@ def get_risk_heatmap(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    
+
     try:
         stats = PlatformStatsService.aggregate_stats(db, use_cache=False)
         sector_exp = stats["sector_exposure"]
         risk_dist = stats["risk_distribution"]
-        
+
         heatmap_data = {
             "sector_exposure": sector_exp["sectors"],
             "top_sector": sector_exp["top_sector"],
@@ -282,10 +313,10 @@ def get_risk_heatmap(
             },
             "avg_score": risk_dist["avg_score"],
         }
-        
+
         return heatmap_data
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating risk heatmap: {str(e)}"
+            detail=f"Error generating risk heatmap: {str(e)}",
         )

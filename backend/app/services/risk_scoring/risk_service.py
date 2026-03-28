@@ -15,9 +15,10 @@ from app import models
 
 logger = logging.getLogger(__name__)
 
- #ML risk engine built around XGBoost with z-score-based explanations
+
+# ML risk engine built around XGBoost with z-score-based explanations
 class RiskScoringEngine:
-    
+
     def __init__(self, model_path: str | None = None) -> None:
         self.model: Optional[xgb.Booster] = None
         base_dir = os.path.dirname(__file__)
@@ -32,9 +33,7 @@ class RiskScoringEngine:
             booster.load_model(self.model_path)
             self.model = booster
         except FileNotFoundError as e:
-            logger.warning(
-                f"Will fall back to z-score scoring. Error: {e}"
-            )
+            logger.warning(f"Will fall back to z-score scoring. Error: {e}")
             self.model = None
         except Exception as e:
             logger.error(
@@ -42,7 +41,6 @@ class RiskScoringEngine:
             )
             self.model = None
 
-    
     def calculate_score(
         self,
         db: Session,
@@ -76,7 +74,9 @@ class RiskScoringEngine:
             and getattr(seller, "risk_input_signature", None) == current_signature
         ):
             score_int = int(seller.composite_score or 0)
-            risk_level = "High" if score_int > 70 else "Medium" if score_int > 40 else "Low"
+            risk_level = (
+                "High" if score_int > 70 else "Medium" if score_int > 40 else "Low"
+            )
             return {
                 "composite_score": score_int,
                 "risk_level": risk_level,
@@ -84,7 +84,9 @@ class RiskScoringEngine:
                 "scoring_method": "cached",
                 "model_used": False,
                 "fallback_used": False,
-                "breakdown": self._build_breakdown(seller, features_df.iloc[0].to_dict()),
+                "breakdown": self._build_breakdown(
+                    seller, features_df.iloc[0].to_dict()
+                ),
             }
 
         if self.model is not None:
@@ -178,7 +180,7 @@ class RiskScoringEngine:
         seller: models.CreditHistory,
         invoice_data: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        
+
         if seller.composite_score is None:
             return True
 
@@ -218,7 +220,7 @@ class RiskScoringEngine:
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    # Feature engineering 
+    # Feature engineering
     def _extract_numeric(
         self,
         payload: Dict[str, Any],
@@ -264,15 +266,19 @@ class RiskScoringEngine:
         seller: models.CreditHistory,
         invoice_data: Optional[Dict[str, Any]] = None,
     ) -> pd.DataFrame:
-       
-        #Constructs the feature vector
+
+        # Constructs the feature vector
         invoice_data = invoice_data or {}
         normalised_invoice_data: Dict[str, Any] = {}
         for k, v in invoice_data.items():
             if isinstance(k, str):
                 normalised_invoice_data[self._normalise_feature_name(k)] = v
 
-        expected = list(getattr(self.model, "feature_names", None) or []) if self.model is not None else []
+        expected = (
+            list(getattr(self.model, "feature_names", None) or [])
+            if self.model is not None
+            else []
+        )
         if expected:
             years_employed = self._extract_numeric(
                 normalised_invoice_data,
@@ -363,7 +369,11 @@ class RiskScoringEngine:
                 "payment_to_income_ratio": self._extract_numeric(
                     normalised_invoice_data,
                     ["payment_to_income_ratio", "pti"],
-                    ((loan_amount / 12.0) / annual_income) if annual_income > 0 else 0.0,
+                    (
+                        ((loan_amount / 12.0) / annual_income)
+                        if annual_income > 0
+                        else 0.0
+                    ),
                 ),
             }
 
@@ -385,16 +395,25 @@ class RiskScoringEngine:
 
             for name in expected:
                 if name.startswith("occupation_status_"):
-                    mapped[name] = 1.0 if occupation_status == name.split("occupation_status_", 1)[1] else 0.0
+                    mapped[name] = (
+                        1.0
+                        if occupation_status == name.split("occupation_status_", 1)[1]
+                        else 0.0
+                    )
                 elif name.startswith("product_type_"):
-                    mapped[name] = 1.0 if product_type == name.split("product_type_", 1)[1] else 0.0
+                    mapped[name] = (
+                        1.0
+                        if product_type == name.split("product_type_", 1)[1]
+                        else 0.0
+                    )
                 elif name.startswith("loan_intent_"):
-                    mapped[name] = 1.0 if loan_intent == name.split("loan_intent_", 1)[1] else 0.0
+                    mapped[name] = (
+                        1.0 if loan_intent == name.split("loan_intent_", 1)[1] else 0.0
+                    )
 
             row = {k: float(mapped.get(k, 0.0)) for k in expected}
             return pd.DataFrame([row], columns=expected)
 
-        
         core_rating = seller.core_enterprise_rating or 70
         relationship_years = float(seller.transaction_stability or 1.0)
         logistics_score = float(seller.logistics_consistency or 80.0)
@@ -419,7 +438,7 @@ class RiskScoringEngine:
 
     # XGBoost scoring
     def _align_features_for_model(self, features: pd.DataFrame) -> pd.DataFrame:
-        
+
         if self.model is None:
             return features
 
@@ -444,10 +463,9 @@ class RiskScoringEngine:
     ) -> tuple[float, List[str], Dict[str, float]]:
         aligned_features = self._align_features_for_model(features)
         dmat = xgb.DMatrix(aligned_features)
-        
+
         prob_default = float(self.model.predict(dmat)[0])
 
-        
         score = prob_default * 100.0
         _, contributors = self._zscore_algorithm(aligned_features.iloc[0].to_dict())
 

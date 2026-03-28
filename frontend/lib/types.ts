@@ -230,6 +230,35 @@ export interface MarketplaceInvoiceItem {
   ocr_confidence?: { overall?: number } | null;
 }
 
+export interface SellerInvoiceItem {
+  id: number;
+  invoice_number?: string | null;
+  seller_name?: string | null;
+  client_name?: string | null;
+  amount?: number | null;
+  currency?: string | null;
+  issue_date?: string | null;
+  due_date?: string | null;
+  sector?: string | null;
+  financing_type?: FinancingType | null;
+  ask_price?: number | null;
+  share_price?: number | null;
+  min_bid_increment?: number | null;
+  supply?: number | null;
+  token_id?: string | null;
+  canonical_hash?: string | null;
+  is_duplicate?: boolean;
+  status: string;
+  ocr_confidence?: { overall?: number } | null;
+  seller_id?: number | null;
+  escrow_status?: string | null;
+  escrow_reference?: string | null;
+  escrow_held_at?: string | null;
+  escrow_released_at?: string | null;
+  upload_url?: string | null;
+  created_at: string;
+}
+
 export interface MarketplaceListingItem {
   id: number;
   invoice_id: number;
@@ -447,6 +476,9 @@ export interface SettlementHistoryItem {
   amount: number;
   status: string;
   escrow_reference?: string | null;
+  seller_wallet_address?: string | null;
+  repayment_tx_hash?: string | null;
+  initiated_at?: string | null;
   confirmed_by?: number | null;
   confirmed_at?: string | null;
   notes?: string | null;
@@ -499,13 +531,20 @@ export interface AdminSettlementItem {
   days_to_due?: number | null;
   is_overdue: boolean;
   countdown_label: string;
-  can_settle: boolean;
   escrow_status?: string | null;
   escrow_reference?: string | null;
   escrow_held_at?: string | null;
   escrow_released_at?: string | null;
   investor_id?: number | null;
   funded_amount?: number | null;
+  settlement_id?: number | null;
+  settlement_status?: string | null;
+  can_confirm: boolean;
+  seller_wallet_address?: string | null;
+  repayment_tx_hash?: string | null;
+  repayment_initiated_at?: string | null;
+  confirmed_at?: string | null;
+  repayment_notes?: string | null;
   created_at: string;
 }
 

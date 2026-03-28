@@ -5,15 +5,22 @@ from typing import Dict, Optional, List
 from sqlalchemy import func, and_
 from sqlalchemy.orm import Session
 
-from ..models import Invoice, PlatformStats, User, UserRole, CreditHistory, FraudFlag
+from ..models import Invoice, PlatformStats, User, UserRole, CreditHistory
 
-FINANCED_STATUSES = ["funded", "active", "settled", "defaulted", "repaid"]
+FINANCED_STATUSES = [
+    "funded",
+    "active",
+    "repayment_processing",
+    "settled",
+    "defaulted",
+    "repaid",
+]
 
 # Redis configuration
 REDIS_HOST = "localhost"
 REDIS_PORT = 6379
 REDIS_DB = 0
-CACHE_TTL = 3600  
+CACHE_TTL = 3600
 
 try:
     redis_client = redis.Redis(
@@ -21,27 +28,27 @@ try:
         port=REDIS_PORT,
         db=REDIS_DB,
         decode_responses=True,
-        socket_connect_timeout=5
+        socket_connect_timeout=5,
     )
     redis_client.ping()
 except (redis.ConnectionError, Exception) as e:
     print(f"Warning: Redis connection failed: {e}. Caching will be disabled.")
     redis_client = None
 
-#Service for aggregating platform-level statistics.
+
+# Service for aggregating platform-level statistics.
 class PlatformStatsService:
-    
 
     @staticmethod
     def _get_cache_key(cache_type: str, period: Optional[str] = None) -> str:
-        
+
         if period:
             return f"platform_stats:{cache_type}:{period}"
         return f"platform_stats:{cache_type}"
 
     @staticmethod
     def _cache_set(key: str, value: Dict, ttl: int = CACHE_TTL) -> None:
-        
+
         if not redis_client:
             return
         try:
@@ -51,7 +58,7 @@ class PlatformStatsService:
 
     @staticmethod
     def _cache_get(key: str) -> Optional[Dict]:
-       
+
         if not redis_client:
             return None
         try:
@@ -63,7 +70,7 @@ class PlatformStatsService:
 
     @staticmethod
     def _get_period_string(date_obj: datetime, period_type: str = "monthly") -> str:
-        
+
         if period_type == "monthly":
             return date_obj.strftime("%Y-%m")
         elif period_type == "quarterly":
@@ -79,7 +86,7 @@ class PlatformStatsService:
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None,
     ) -> float:
-        
+
         query = db.query(Invoice).filter(Invoice.status.in_(FINANCED_STATUSES))
         if period_start:
             query = query.filter(Invoice.created_at >= period_start)
@@ -103,16 +110,16 @@ class PlatformStatsService:
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None,
     ) -> Dict[str, float]:
-        
+
         query = db.query(Invoice).filter(Invoice.status.in_(FINANCED_STATUSES))
-        
+
         if period_start:
             query = query.filter(Invoice.created_at >= period_start)
         if period_end:
             query = query.filter(Invoice.created_at < period_end)
-        
+
         invoices = query.all()
-        
+
         if not invoices:
             return {
                 "total_funded": 0,
@@ -121,16 +128,20 @@ class PlatformStatsService:
                 "repayment_rate": 0.0,
                 "default_rate": 0.0,
             }
-        
+
         # Count invoices by status
         funded_count = len(invoices)
         repaid_count = sum(1 for inv in invoices if inv.status in ["settled", "repaid"])
         defaulted_count = sum(1 for inv in invoices if inv.status == "defaulted")
-        
+
         # Calculate rates
-        repayment_rate = (repaid_count / funded_count * 100) if funded_count > 0 else 0.0
-        default_rate = (defaulted_count / funded_count * 100) if funded_count > 0 else 0.0
-        
+        repayment_rate = (
+            (repaid_count / funded_count * 100) if funded_count > 0 else 0.0
+        )
+        default_rate = (
+            (defaulted_count / funded_count * 100) if funded_count > 0 else 0.0
+        )
+
         return {
             "total_funded": funded_count,
             "total_repaid": repaid_count,
@@ -146,7 +157,7 @@ class PlatformStatsService:
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None,
     ) -> float:
-        
+
         query = db.query(Invoice).filter(Invoice.status.in_(FINANCED_STATUSES))
         if period_start:
             query = query.filter(Invoice.created_at >= period_start)
@@ -172,33 +183,33 @@ class PlatformStatsService:
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None,
     ) -> float:
-        
-        #For settled invoices, yield = (amount - ask_price) / ask_price.
-        
+
+        # For settled invoices, yield = (amount - ask_price) / ask_price.
+
         query = db.query(Invoice).filter(Invoice.status == "settled")
-        
+
         if period_start:
             query = query.filter(Invoice.created_at >= period_start)
         if period_end:
             query = query.filter(Invoice.created_at < period_end)
-        
+
         settled_invoices = query.all()
-        
+
         if not settled_invoices:
             return 0.0
-        
+
         total_yield = 0.0
         for inv in settled_invoices:
             if inv.ask_price and inv.amount:
                 yield_pct = ((inv.amount - inv.ask_price) / inv.ask_price) * 100
                 total_yield += yield_pct
-        
+
         avg_yield = total_yield / len(settled_invoices)
         return round(avg_yield, 2)
 
     @staticmethod
     def calculate_risk_distribution(db: Session) -> Dict:
-       
+
         records = (
             db.query(CreditHistory)
             .order_by(CreditHistory.seller_id.asc(), CreditHistory.id.asc())
@@ -216,12 +227,12 @@ class PlatformStatsService:
 
         if not scores:
             return {"high": 0, "medium": 0, "low": 0, "avg_score": 0.0}
-        
+
         high_risk = sum(1 for s in scores if s >= 70)
         medium_risk = sum(1 for s in scores if 40 <= s < 70)
         low_risk = sum(1 for s in scores if s < 40)
         avg_score = sum(scores) / len(scores)
-        
+
         return {
             "high": high_risk,
             "medium": medium_risk,
@@ -235,22 +246,22 @@ class PlatformStatsService:
         period_start: Optional[datetime] = None,
         period_end: Optional[datetime] = None,
     ) -> Dict:
-        
+
         query = db.query(Invoice).filter(
             Invoice.sector.isnot(None),
             Invoice.status.in_(FINANCED_STATUSES),
         )
-        
+
         if period_start:
             query = query.filter(Invoice.created_at >= period_start)
         if period_end:
             query = query.filter(Invoice.created_at < period_end)
-        
+
         invoices = query.all()
-        
+
         if not invoices:
             return {"sectors": {}, "top_sector": None, "concentration_ratio": 0.0}
-        
+
         def _invoice_volume(inv: Invoice) -> float:
             if inv.ask_price and inv.ask_price > 0:
                 return float(inv.ask_price)
@@ -260,24 +271,29 @@ class PlatformStatsService:
 
         total_volume = sum(_invoice_volume(inv) for inv in invoices)
         sector_volumes = {}
-        
+
         for inv in invoices:
             sector = inv.sector or "Unknown"
-            sector_volumes[sector] = sector_volumes.get(sector, 0) + _invoice_volume(inv)
-        
-        
+            sector_volumes[sector] = sector_volumes.get(sector, 0) + _invoice_volume(
+                inv
+            )
+
         sector_percentages = {
             sector: round((volume / total_volume) * 100, 2)
-            for sector, volume in sorted(sector_volumes.items(), key=lambda x: x[1], reverse=True)
+            for sector, volume in sorted(
+                sector_volumes.items(), key=lambda x: x[1], reverse=True
+            )
         }
-        
+
         # Top 3 sectors
         sorted_sector_volumes = sorted(sector_volumes.values(), reverse=True)
         top_3_volume = sum(sorted_sector_volumes[:3])
         concentration_ratio = round((top_3_volume / total_volume) * 100, 2)
-        
-        top_sector = max(sector_volumes, key=sector_volumes.get) if sector_volumes else None
-        
+
+        top_sector = (
+            max(sector_volumes, key=sector_volumes.get) if sector_volumes else None
+        )
+
         return {
             "sectors": sector_percentages,
             "top_sector": top_sector,
@@ -287,25 +303,37 @@ class PlatformStatsService:
     @staticmethod
     def calculate_user_metrics(db: Session) -> Dict[str, int]:
         """Calculate active user counts with seller coverage from risk records."""
-        active_seller_users = db.query(func.count(User.id)).filter(
-            User.role.in_([UserRole.SELLER, UserRole.SME]),
-            User.is_active == True,
-            User.email_verified == True
-        ).scalar() or 0
+        active_seller_users = (
+            db.query(func.count(User.id))
+            .filter(
+                User.role.in_([UserRole.SELLER, UserRole.SME]),
+                User.is_active,
+                User.email_verified,
+            )
+            .scalar()
+            or 0
+        )
 
-        
-        sellers_in_credit_history = db.query(
-            func.count(func.distinct(CreditHistory.seller_id))
-        ).filter(CreditHistory.seller_id.isnot(None)).scalar() or 0
+        sellers_in_credit_history = (
+            db.query(func.count(func.distinct(CreditHistory.seller_id)))
+            .filter(CreditHistory.seller_id.isnot(None))
+            .scalar()
+            or 0
+        )
 
         active_sellers = max(int(active_seller_users), int(sellers_in_credit_history))
-        
-        active_investors = db.query(func.count(User.id)).filter(
-            User.role == UserRole.INVESTOR,
-            User.is_active == True,
-            User.email_verified == True
-        ).scalar() or 0
-        
+
+        active_investors = (
+            db.query(func.count(User.id))
+            .filter(
+                User.role == UserRole.INVESTOR,
+                User.is_active,
+                User.email_verified,
+            )
+            .scalar()
+            or 0
+        )
+
         return {"sellers": active_sellers, "investors": active_investors}
 
     @staticmethod
@@ -313,17 +341,16 @@ class PlatformStatsService:
         db: Session,
         period: Optional[str] = None,
         period_type: str = "monthly",
-        use_cache: bool = True
+        use_cache: bool = True,
     ) -> Dict:
-        
+
         cache_key = PlatformStatsService._get_cache_key("summary", period)
-        
-        
+
         if use_cache:
             cached_data = PlatformStatsService._cache_get(cache_key)
             if cached_data:
                 return cached_data
-        
+
         period_start = None
         period_end = None
         if period and period_type == "monthly":
@@ -342,7 +369,6 @@ class PlatformStatsService:
         elif period and period_type == "yearly":
             period_start = datetime(int(period), 1, 1)
             period_end = datetime(int(period) + 1, 1, 1)
-        
 
         funded_volume = PlatformStatsService.calculate_total_funded_volume(
             db, period_start=period_start, period_end=period_end
@@ -361,18 +387,20 @@ class PlatformStatsService:
             db, period_start=period_start, period_end=period_end
         )
         user_metrics = PlatformStatsService.calculate_user_metrics(db)
-        
-      
+
         result = {
             "period": period or "all-time",
             "period_type": period_type,
             "total_funded_volume": funded_volume,
-            "total_invoices_created": db.query(func.count(Invoice.id)).filter(
+            "total_invoices_created": db.query(func.count(Invoice.id))
+            .filter(
                 and_(
                     Invoice.created_at >= period_start if period_start else True,
                     Invoice.created_at < period_end if period_end else True,
                 )
-            ).scalar() or 0,
+            )
+            .scalar()
+            or 0,
             "total_invoices_funded": repayment["total_funded"],
             "repayment_metrics": {
                 "total_repaid": repayment["total_repaid"],
@@ -389,63 +417,65 @@ class PlatformStatsService:
                 "active_investors": user_metrics["investors"],
             },
         }
-        
-        
+
         PlatformStatsService._cache_set(cache_key, result)
-        
+
         return result
 
     @staticmethod
     def get_time_series(
-        db: Session,
-        months: int = 12,
-        use_cache: bool = True
+        db: Session, months: int = 12, use_cache: bool = True
     ) -> List[Dict]:
-        
+
         cache_key = PlatformStatsService._get_cache_key("timeseries", f"last_{months}m")
-        
+
         if use_cache:
             cached_data = PlatformStatsService._cache_get(cache_key)
             if cached_data:
                 return cached_data
-        
+
         result = []
         now = datetime.now()
-        
+
         for i in range(months):
             month_dt = now - timedelta(days=30 * i)
             period_str = PlatformStatsService._get_period_string(month_dt, "monthly")
-            
+
             stats = PlatformStatsService.aggregate_stats(
                 db, period=period_str, period_type="monthly", use_cache=False
             )
-            result.insert(0, stats)  
-        
+            result.insert(0, stats)
+
         PlatformStatsService._cache_set(cache_key, result)
         return result
 
     @staticmethod
     def persist_stats_to_db(db: Session, period: Optional[str] = None) -> None:
-        
+
         stats = PlatformStatsService.aggregate_stats(db, period=period, use_cache=False)
-        
+
         period_str = stats["period"]
         period_type = stats["period_type"]
-        
-       
-        existing = db.query(PlatformStats).filter(
-            and_(
-                PlatformStats.period == period_str,
-                PlatformStats.period_type == period_type
+
+        existing = (
+            db.query(PlatformStats)
+            .filter(
+                and_(
+                    PlatformStats.period == period_str,
+                    PlatformStats.period_type == period_type,
+                )
             )
-        ).first()
-        
+            .first()
+        )
+
         if existing:
             existing.total_funded_volume = stats["total_funded_volume"]
             existing.total_invoices_created = stats["total_invoices_created"]
             existing.total_invoices_funded = stats["total_invoices_funded"]
             existing.total_invoices_repaid = stats["repayment_metrics"]["total_repaid"]
-            existing.total_invoices_defaulted = stats["repayment_metrics"]["total_defaulted"]
+            existing.total_invoices_defaulted = stats["repayment_metrics"][
+                "total_defaulted"
+            ]
             existing.repayment_rate = stats["repayment_metrics"]["repayment_rate"]
             existing.default_rate = stats["repayment_metrics"]["default_rate"]
             existing.platform_revenue = stats["platform_revenue"]
@@ -456,7 +486,9 @@ class PlatformStatsService:
             existing.low_risk_invoices = stats["risk_distribution"]["low"]
             existing.sector_exposure = stats["sector_exposure"]["sectors"]
             existing.top_sector = stats["sector_exposure"]["top_sector"]
-            existing.concentration_ratio = stats["sector_exposure"]["concentration_ratio"]
+            existing.concentration_ratio = stats["sector_exposure"][
+                "concentration_ratio"
+            ]
             existing.total_active_sellers = stats["user_metrics"]["active_sellers"]
             existing.total_active_investors = stats["user_metrics"]["active_investors"]
         else:
@@ -483,5 +515,5 @@ class PlatformStatsService:
                 total_active_investors=stats["user_metrics"]["active_investors"],
             )
             db.add(new_record)
-        
+
         db.commit()

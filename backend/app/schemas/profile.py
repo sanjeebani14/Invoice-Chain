@@ -42,4 +42,3 @@ class SellerRiskOnboardingResponse(BaseModel):
     seller_id: int
     composite_score: int
     risk_level: str
-

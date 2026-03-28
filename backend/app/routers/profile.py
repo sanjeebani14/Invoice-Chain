@@ -17,7 +17,6 @@ from ..schemas.profile import (
 from ..schemas.auth import UserOut
 from ..services.risk_scoring.risk_service import RiskScoringEngine
 
-
 router = APIRouter()
 WALLET_REGEX = re.compile(r"^0x[a-fA-F0-9]{40}$")
 risk_engine = RiskScoringEngine()
@@ -117,7 +116,10 @@ def update_profile_me(
                 .first()
             )
             if existing_wallet_owner:
-                raise HTTPException(status_code=400, detail="Wallet is already linked to another account")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Wallet is already linked to another account",
+                )
             current_user.wallet_address = candidate
 
     db.commit()
@@ -161,7 +163,9 @@ def upsert_risk_onboarding(
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role not in {UserRole.SELLER, UserRole.SME}:
-        raise HTTPException(status_code=403, detail="Only sellers/SMEs can submit risk profile")
+        raise HTTPException(
+            status_code=403, detail="Only sellers/SMEs can submit risk profile"
+        )
 
     record = _get_or_create_credit_history(db, current_user.id)
     record.payment_history_score = payload.payment_history_score
@@ -174,7 +178,6 @@ def upsert_risk_onboarding(
     record.logistics_consistency = payload.logistics_consistency
     record.esg_score = payload.esg_score
 
-    
     record.risk_input_signature = None
     db.add(record)
     db.commit()
@@ -188,4 +191,3 @@ def upsert_risk_onboarding(
         "composite_score": int(score.get("composite_score", 0)),
         "risk_level": str(score.get("risk_level", "Medium")),
     }
-
