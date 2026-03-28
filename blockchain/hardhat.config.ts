@@ -3,15 +3,30 @@ import hardhatToolboxViem from "@nomicfoundation/hardhat-toolbox-viem";
 import * as dotenv from "dotenv";
 
 dotenv.config();
-
 const config: HardhatUserConfig = {
   plugins: [hardhatToolboxViem],
-  solidity: "0.8.28",
+
+  solidity: {
+    profiles: {
+      default: {
+        version: "0.8.25",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+          viaIR: true,
+        },
+      },
+    },
+  },
+
   paths: {
     tests: {
       nodejs: "./test",
     },
   },
+
   networks: {
     baseSepolia: {
       type: "http",
