@@ -14,17 +14,19 @@ import type {
  * SELLER RISK
  */
 export const getSellerScore = async (sellerId: number): Promise<SellerScore> => {
-  const { data } = await riskApi.get(`/score/${sellerId}`);
+  const { data } = await withTimeoutRetry(
+    () => riskApi.get(`/score/${sellerId}`, { timeout: 30000 }),
+    2,
+  );
   return data;
 };
 
 export const getAllSellers = async (): Promise<SellerScore[]> => {
-  try {
-    const { data } = await riskApi.get("/sellers");
-    return data;
-  } catch {
-    return [];
-  }
+  const { data } = await withTimeoutRetry(
+    () => riskApi.get("/sellers", { timeout: 30000 }),
+    2,
+  );
+  return data;
 };
 
 /**
@@ -44,21 +46,23 @@ const formatFraudItem = (item: any): FraudQueueItem => ({
 });
 
 export const getFraudQueue = async (): Promise<FraudQueueItem[]> => {
-  try {
-    const { data } = await riskApi.get("/admin/fraud-queue");
-    return (data as any[]).map(formatFraudItem);
-  } catch {
-    return [];
-  }
+  const { data } = await withTimeoutRetry(
+    () => riskApi.get("/admin/fraud-queue", { timeout: 30000 }),
+    2,
+  );
+  return (data as any[]).map(formatFraudItem);
 };
 
 export const getSellerFraudFlags = async (sellerId: number): Promise<FraudQueueItem[]> => {
-  try {
-    const { data } = await riskApi.get("/admin/fraud-queue", { params: { seller_id: sellerId } });
-    return (data as any[]).map(formatFraudItem);
-  } catch {
-    return [];
-  }
+  const { data } = await withTimeoutRetry(
+    () =>
+      riskApi.get("/admin/fraud-queue", {
+        params: { seller_id: sellerId },
+        timeout: 30000,
+      }),
+    2,
+  );
+  return (data as any[]).map(formatFraudItem);
 };
 
 export const manualFraudFlag = async (payload: ManualFraudFlagPayload) => {
@@ -78,7 +82,10 @@ export const deleteFraudItem = async (id: number) => {
  */
 
 export const getRiskMetrics = async (): Promise<RiskMetrics> => {
-  const { data } = await riskApi.get("/admin/risk-metrics");
+  const { data } = await withTimeoutRetry(
+    () => riskApi.get("/admin/risk-metrics", { timeout: 30000 }),
+    2,
+  );
   return data;
 };
 

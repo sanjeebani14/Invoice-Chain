@@ -7,7 +7,14 @@ from sqlalchemy.orm import Session
 
 from ..models import Invoice, PlatformStats, User, UserRole, CreditHistory
 
-FINANCED_STATUSES = ["funded", "active", "settled", "defaulted", "repaid"]
+FINANCED_STATUSES = [
+    "funded",
+    "active",
+    "repayment_processing",
+    "settled",
+    "defaulted",
+    "repaid",
+]
 
 # Redis configuration
 REDIS_HOST = "localhost"

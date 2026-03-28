@@ -23,16 +23,38 @@ const statusColors: Record<string, string> = {
 export default function FraudQueue() {
   const [queue, setQueue] = useState<FraudQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedExplanation, setSelectedExplanation] =
     useState<InvoiceAnomalyExplanation | null>(null);
   const [explainLoading, setExplainLoading] = useState(false);
   const [actingId, setActingId] = useState<number | null>(null);
 
   useEffect(() => {
-    getFraudQueue().then((d) => {
-      setQueue(d);
-      setLoading(false);
-    });
+    let mounted = true;
+
+    const loadQueue = async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const data = await getFraudQueue();
+        if (!mounted) return;
+        setQueue(data);
+      } catch {
+        if (!mounted) return;
+        setQueue([]);
+        setLoadError("Unable to load the fraud review queue right now.");
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadQueue();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const handleAction = async (
@@ -143,6 +165,14 @@ export default function FraudQueue() {
       </div>
       {loading ? (
         <TableSkeleton />
+      ) : loadError ? (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {loadError}
+        </div>
+      ) : queue.length === 0 ? (
+        <div className="rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
+          No fraud review items are in the queue right now.
+        </div>
       ) : (
         <div className="grid gap-4">
           {queue.map((item) => (
@@ -158,7 +188,12 @@ export default function FraudQueue() {
                     {item.seller_id}
                   </p>
                   <div className="mt-1 flex items-center gap-2">
-                    <RiskBadge level={item.severity ?? "LOW"} />
+                    <RiskBadge
+                      level={item.severity ?? "LOW"}
+                      className={
+                        item.severity === "MEDIUM" ? "!text-amber-950" : undefined
+                      }
+                    />
                     <Badge
                       variant="outline"
                       className={statusColors[item.status]}

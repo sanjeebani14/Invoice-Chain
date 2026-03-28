@@ -34,6 +34,8 @@ def _status_to_message(invoice: Invoice) -> tuple[str, str]:
 
     if status in {"funded", "active"}:
         return (f"Invoice {invoice_no} funded by investor.", "success")
+    if status == "repayment_processing":
+        return (f"Repayment submitted for invoice {invoice_no}. Awaiting admin confirmation.", "warning")
     if status == "minted":
         return (f"Invoice {invoice_no} minted as NFT.", "success")
     if status == "flagged":
@@ -76,7 +78,8 @@ def get_sme_dashboard_summary(
     total_capital_raised = sum(
         float(inv.ask_price or inv.amount or 0.0)
         for inv in invoices
-        if (inv.status or "").lower() in {"funded", "active", "settled"}
+        if (inv.status or "").lower()
+        in {"funded", "active", "repayment_processing", "settled"}
     )
     pending_approvals = sum(
         1

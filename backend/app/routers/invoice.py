@@ -183,9 +183,11 @@ class ValidateFractionalPayload(BaseModel):
     num_shares: int
 
 
-class SettleInvoicePayload(BaseModel):
+class RepayInvoicePayload(BaseModel):
     repayment_amount: Optional[float] = None
     notes: Optional[str] = None
+    wallet_address: Optional[str] = None
+    tx_hash: Optional[str] = None
 
 
 class FundInvoicePayload(BaseModel):
@@ -701,6 +703,11 @@ def settlement_history(
                 "amount": row.amount,
                 "status": row.status,
                 "escrow_reference": row.escrow_reference,
+                "seller_wallet_address": row.seller_wallet_address,
+                "repayment_tx_hash": row.repayment_tx_hash,
+                "initiated_at": (
+                    row.initiated_at.isoformat() if row.initiated_at else None
+                ),
                 "confirmed_by": row.confirmed_by,
                 "confirmed_at": (
                     row.confirmed_at.isoformat() if row.confirmed_at else None
@@ -721,6 +728,10 @@ def confirm_settlement(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
     record = (
         db.query(models.SettlementRecord)
         .filter(models.SettlementRecord.invoice_id == invoice_id)
@@ -730,17 +741,59 @@ def confirm_settlement(
     if not record:
         raise HTTPException(status_code=404, detail="No settlement record found")
 
-    record.status = "confirmed"
-    record.confirmed_by = current_user.id
-    record.confirmed_at = datetime.now(timezone.utc)
-    if payload.notes is not None:
-        record.notes = payload.notes
+    if record.status == "confirmed" or invoice.status == "settled":
+        raise HTTPException(status_code=400, detail="Invoice already settled")
+
+    if record.status not in {"processing", "pending"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Settlement record in status '{record.status}' cannot be confirmed",
+        )
+
+    if invoice.status not in {"funded", "active", "repayment_processing"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invoice status '{invoice.status}' cannot be confirmed. "
+                "Expected funded, active, or repayment_processing."
+            ),
+        )
+
+    settlement_result = _complete_invoice_settlement(
+        db,
+        invoice,
+        record,
+        recorded_by=current_user.id,
+        confirmation_note=payload.notes,
+    )
 
     db.commit()
+    snapshot = settlement_result["snapshot"]
+    notification_hub.broadcast_from_sync(
+        "invoice_settled",
+        {
+            "invoice_id": invoice.id,
+            "status": invoice.status,
+            "days_late": settlement_result["days_late"],
+            "event_type": settlement_result["event_type"],
+            "settled_amount": settlement_result["settled_amount"],
+            "escrow_status": invoice.escrow_status,
+            "escrow_reference": invoice.escrow_reference,
+            "settled_by": current_user.id,
+        },
+        roles={"admin"},
+        user_ids={
+            uid
+            for uid in [invoice.seller_id, snapshot.investor_id if snapshot else None]
+            if uid is not None
+        },
+        invoice_id=invoice.id,
+    )
     return {
         "message": "Settlement confirmed",
         "settlement_id": record.id,
         "status": record.status,
+        "invoice_status": invoice.status,
     }
 
 
@@ -936,6 +989,152 @@ def _settlement_event_type(days_late: int) -> str:
     return "LATE_90_PLUS"
 
 
+def _resolve_repayment_amount(
+    invoice: Invoice, requested_amount: Optional[float] = None
+) -> float:
+    if requested_amount is not None:
+        if requested_amount <= 0:
+            raise HTTPException(
+                status_code=400, detail="repayment_amount must be greater than 0"
+            )
+        return float(requested_amount)
+
+    for candidate in (invoice.amount, invoice.ask_price):
+        if candidate is not None and float(candidate) > 0:
+            return float(candidate)
+
+    raise HTTPException(
+        status_code=400,
+        detail="Repayment amount is unavailable for this invoice",
+    )
+
+
+def _append_notes(existing: Optional[str], new_note: Optional[str]) -> Optional[str]:
+    clean_existing = (existing or "").strip()
+    clean_new = (new_note or "").strip()
+
+    if clean_existing and clean_new:
+        return f"{clean_existing}\n{clean_new}"
+    return clean_new or clean_existing or None
+
+
+def _latest_repayment_snapshot(
+    db: Session, invoice_id: int
+) -> Optional[models.RepaymentSnapshot]:
+    return (
+        db.query(models.RepaymentSnapshot)
+        .filter(models.RepaymentSnapshot.invoice_id == invoice_id)
+        .order_by(models.RepaymentSnapshot.created_at.desc())
+        .first()
+    )
+
+
+def _complete_invoice_settlement(
+    db: Session,
+    invoice: Invoice,
+    record: models.SettlementRecord,
+    *,
+    recorded_by: int,
+    confirmation_note: Optional[str] = None,
+) -> dict:
+    now = datetime.now(timezone.utc)
+    due_dt = _parse_date(invoice.due_date)
+    days_late = max((now.date() - due_dt).days, 0) if due_dt else 0
+    event_type = _settlement_event_type(days_late)
+    snapshot = _latest_repayment_snapshot(db, invoice.id)
+    settled_amount = _resolve_repayment_amount(invoice, record.amount)
+
+    if snapshot is not None:
+        snapshot.repaid_at = now
+        snapshot.repayment_amount = settled_amount
+        snapshot.weighted_average_days_late = float(days_late)
+        snapshot.impact_score = float(max(0, min(100, 100 - (days_late * 1.5))))
+
+    credit_event = models.CreditEvent(
+        invoice_id=invoice.id,
+        seller_id=invoice.seller_id,
+        investor_id=snapshot.investor_id if snapshot else None,
+        event_type=event_type,
+        days_late=days_late,
+        amount=float(settled_amount),
+        notes=record.notes,
+        recorded_by=recorded_by,
+    )
+    db.add(credit_event)
+
+    if invoice.seller_id is not None:
+        credit = (
+            db.query(models.CreditHistory)
+            .filter(models.CreditHistory.seller_id == invoice.seller_id)
+            .first()
+        )
+        if credit is not None:
+            delta = (
+                -2
+                if days_late <= 0
+                else 5 if days_late <= 30 else 10 if days_late <= 60 else 15
+            )
+            current_score = int(credit.composite_score or 0)
+            next_score = max(0, min(100, current_score + delta))
+            credit.composite_score = next_score
+
+            current_track = int(credit.seller_track_record or 50)
+            track_delta = (
+                2
+                if days_late <= 0
+                else -5 if days_late <= 30 else -10 if days_late <= 60 else -15
+            )
+            credit.seller_track_record = max(0, min(100, current_track + track_delta))
+
+            contributors = (
+                credit.risk_contributors
+                if isinstance(credit.risk_contributors, dict)
+                else {}
+            )
+            contributors["repayment_velocity_delta"] = float(delta)
+            contributors["settlement_impact_score"] = float(
+                max(0, min(100, 100 - (days_late * 1.5)))
+            )
+            credit.risk_contributors = contributors
+
+    invoice.status = "settled"
+    invoice.escrow_status = "released"
+    invoice.escrow_released_at = now
+
+    record.amount = float(settled_amount)
+    record.status = "confirmed"
+    record.confirmed_by = recorded_by
+    record.confirmed_at = now
+    record.initiated_at = record.initiated_at or now
+    record.notes = _append_notes(record.notes, confirmation_note)
+
+    db.add(
+        models.MarketplaceTransaction(
+            invoice_id=invoice.id,
+            buyer_id=snapshot.investor_id if snapshot else None,
+            seller_id=invoice.seller_id,
+            tx_type="settle",
+            amount=float(settled_amount),
+            status="completed",
+            reference=record.repayment_tx_hash or invoice.escrow_reference,
+            tx_metadata={
+                "event_type": event_type,
+                "days_late": days_late,
+                "repayment_tx_hash": record.repayment_tx_hash,
+                "seller_wallet_address": record.seller_wallet_address,
+            },
+        )
+    )
+
+    return {
+        "snapshot": snapshot,
+        "credit_event": credit_event,
+        "days_late": days_late,
+        "event_type": event_type,
+        "settled_amount": settled_amount,
+    }
+
+
 @router.get("/admin/pending-review")
 def list_pending_invoices_for_admin(
     skip: int = 0,
@@ -1045,7 +1244,7 @@ def settlement_tracker(
     current_user: User = Depends(require_admin),
 ):
     _ = current_user
-    statuses = ["funded", "active", "settled"]
+    statuses = ["funded", "active", "repayment_processing", "settled"]
 
     query = db.query(Invoice).filter(Invoice.status.in_(statuses))
     if status:
@@ -1067,12 +1266,26 @@ def settlement_tracker(
         if snapshot.invoice_id not in snapshot_by_invoice:
             snapshot_by_invoice[snapshot.invoice_id] = snapshot
 
+    settlement_records = (
+        db.query(models.SettlementRecord)
+        .filter(models.SettlementRecord.invoice_id.in_([inv.id for inv in invoices]))
+        .order_by(models.SettlementRecord.created_at.desc())
+        .all()
+        if invoices
+        else []
+    )
+    settlement_by_invoice: dict[int, models.SettlementRecord] = {}
+    for record in settlement_records:
+        if record.invoice_id not in settlement_by_invoice:
+            settlement_by_invoice[record.invoice_id] = record
+
     items = []
     for inv in invoices:
         due_date = _parse_date(inv.due_date)
         days_to_due = (due_date - now).days if due_date else None
         is_overdue = bool(due_date and due_date < now and inv.status != "settled")
         snapshot = snapshot_by_invoice.get(inv.id)
+        settlement = settlement_by_invoice.get(inv.id)
 
         items.append(
             {
@@ -1100,7 +1313,6 @@ def settlement_tracker(
                         )
                     )
                 ),
-                "can_settle": inv.status != "settled",
                 "escrow_status": inv.escrow_status,
                 "escrow_reference": inv.escrow_reference,
                 "escrow_held_at": (
@@ -1113,6 +1325,30 @@ def settlement_tracker(
                 ),
                 "investor_id": snapshot.investor_id if snapshot else None,
                 "funded_amount": snapshot.funded_amount if snapshot else inv.ask_price,
+                "settlement_id": settlement.id if settlement else None,
+                "settlement_status": settlement.status if settlement else None,
+                "can_confirm": bool(
+                    settlement
+                    and settlement.status in {"processing", "pending"}
+                    and inv.status == "repayment_processing"
+                ),
+                "seller_wallet_address": (
+                    settlement.seller_wallet_address if settlement else None
+                ),
+                "repayment_tx_hash": (
+                    settlement.repayment_tx_hash if settlement else None
+                ),
+                "repayment_initiated_at": (
+                    settlement.initiated_at.isoformat()
+                    if settlement and settlement.initiated_at
+                    else None
+                ),
+                "confirmed_at": (
+                    settlement.confirmed_at.isoformat()
+                    if settlement and settlement.confirmed_at
+                    else None
+                ),
+                "repayment_notes": settlement.notes if settlement else None,
                 "created_at": str(inv.created_at),
             }
         )
@@ -1126,145 +1362,70 @@ def settlement_tracker(
     return {"items": items, "total": query.count()}
 
 
-@router.post("/{invoice_id:int}/settle")
-def settle_invoice(
+@router.post("/{invoice_id:int}/repay")
+def repay_invoice(
     invoice_id: int,
-    payload: SettleInvoicePayload,
+    payload: RepayInvoicePayload,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_seller),
 ):
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    if invoice.status not in ["funded", "active", "settled"]:
+    if invoice.seller_id != current_user.id:
+        raise HTTPException(
+            status_code=403, detail="Not authorised to repay this invoice"
+        )
+
+    if invoice.status in {"repayment_processing"}:
         raise HTTPException(
             status_code=400,
-            detail=f"Invoice status '{invoice.status}' cannot be settled. Expected funded/active.",
+            detail="Repayment already initiated and awaiting admin confirmation",
         )
 
-    if invoice.status == "settled":
-        raise HTTPException(status_code=400, detail="Invoice already settled")
+    if invoice.status not in {"funded", "active"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invoice status '{invoice.status}' cannot enter repayment processing. "
+                "Expected funded/active."
+            ),
+        )
 
     now = datetime.now(timezone.utc)
-    due_dt = _parse_date(invoice.due_date)
-    days_late = max((now.date() - due_dt).days, 0) if due_dt else 0
-    event_type = _settlement_event_type(days_late)
+    snapshot = _latest_repayment_snapshot(db, invoice_id)
+    repayment_amount = _resolve_repayment_amount(invoice, payload.repayment_amount)
 
-    snapshot = (
-        db.query(models.RepaymentSnapshot)
-        .filter(models.RepaymentSnapshot.invoice_id == invoice_id)
-        .order_by(models.RepaymentSnapshot.created_at.desc())
-        .first()
-    )
-
-    settled_amount = (
-        payload.repayment_amount
-        if payload.repayment_amount is not None and payload.repayment_amount > 0
-        else (
-            invoice.amount
-            if invoice.amount is not None and invoice.amount > 0
-            else (
-                invoice.ask_price
-                if invoice.ask_price is not None and invoice.ask_price > 0
-                else 0.0
-            )
-        )
-    )
-
-    if snapshot is not None:
-        snapshot.repaid_at = now
-        snapshot.repayment_amount = settled_amount
-        snapshot.weighted_average_days_late = float(days_late)
-        snapshot.impact_score = float(max(0, min(100, 100 - (days_late * 1.5))))
-
-    credit_event = models.CreditEvent(
+    invoice.status = "repayment_processing"
+    record = models.SettlementRecord(
         invoice_id=invoice.id,
-        seller_id=invoice.seller_id,
         investor_id=snapshot.investor_id if snapshot else None,
-        event_type=event_type,
-        days_late=days_late,
-        amount=float(settled_amount or 0.0),
+        seller_id=invoice.seller_id,
+        amount=float(repayment_amount),
+        status="processing",
+        escrow_reference=invoice.escrow_reference,
+        seller_wallet_address=payload.wallet_address,
+        repayment_tx_hash=payload.tx_hash,
+        initiated_at=now,
         notes=payload.notes,
-        recorded_by=current_user.id,
     )
-    db.add(credit_event)
-
-    if invoice.seller_id is not None:
-        credit = (
-            db.query(models.CreditHistory)
-            .filter(models.CreditHistory.seller_id == invoice.seller_id)
-            .first()
-        )
-        if credit is not None:
-            delta = (
-                -2
-                if days_late <= 0
-                else 5 if days_late <= 30 else 10 if days_late <= 60 else 15
-            )
-            current_score = int(credit.composite_score or 0)
-            next_score = max(0, min(100, current_score + delta))
-            credit.composite_score = next_score
-
-            current_track = int(credit.seller_track_record or 50)
-            track_delta = (
-                2
-                if days_late <= 0
-                else -5 if days_late <= 30 else -10 if days_late <= 60 else -15
-            )
-            credit.seller_track_record = max(0, min(100, current_track + track_delta))
-
-            contributors = (
-                credit.risk_contributors
-                if isinstance(credit.risk_contributors, dict)
-                else {}
-            )
-            contributors["repayment_velocity_delta"] = float(delta)
-            contributors["settlement_impact_score"] = float(
-                max(0, min(100, 100 - (days_late * 1.5)))
-            )
-            credit.risk_contributors = contributors
-
-    invoice.status = "settled"
-    invoice.escrow_status = "released"
-    invoice.escrow_released_at = now
-
-    db.add(
-        models.SettlementRecord(
-            invoice_id=invoice.id,
-            investor_id=snapshot.investor_id if snapshot else None,
-            seller_id=invoice.seller_id,
-            amount=float(settled_amount or 0.0),
-            status="pending",
-            escrow_reference=invoice.escrow_reference,
-            notes=payload.notes,
-        )
-    )
-    db.add(
-        models.MarketplaceTransaction(
-            invoice_id=invoice.id,
-            buyer_id=snapshot.investor_id if snapshot else None,
-            seller_id=invoice.seller_id,
-            tx_type="settle",
-            amount=float(settled_amount or 0.0),
-            status="completed",
-            reference=invoice.escrow_reference,
-            tx_metadata={"event_type": event_type, "days_late": days_late},
-        )
-    )
+    db.add(record)
     db.commit()
+    db.refresh(record)
 
     notification_hub.broadcast_from_sync(
-        "invoice_settled",
+        "invoice_repayment_initiated",
         {
             "invoice_id": invoice.id,
             "status": invoice.status,
-            "days_late": days_late,
-            "event_type": event_type,
-            "settled_amount": settled_amount,
+            "repayment_amount": repayment_amount,
             "escrow_status": invoice.escrow_status,
             "escrow_reference": invoice.escrow_reference,
-            "settled_by": current_user.id,
+            "settlement_id": record.id,
+            "seller_wallet_address": record.seller_wallet_address,
+            "repayment_tx_hash": record.repayment_tx_hash,
+            "initiated_by": current_user.id,
         },
         roles={"admin"},
         user_ids={
@@ -1276,15 +1437,15 @@ def settle_invoice(
     )
 
     return {
-        "message": "Invoice settled successfully",
+        "message": "Repayment submitted and awaiting admin confirmation",
         "invoice_id": invoice.id,
         "status": invoice.status,
-        "days_late": days_late,
-        "event_type": event_type,
-        "settled_amount": settled_amount,
-        "credit_event_id": credit_event.id,
+        "settlement_id": record.id,
+        "repayment_amount": repayment_amount,
         "escrow_status": invoice.escrow_status,
         "escrow_reference": invoice.escrow_reference,
+        "seller_wallet_address": record.seller_wallet_address,
+        "repayment_tx_hash": record.repayment_tx_hash,
     }
 
 

@@ -98,6 +98,15 @@ def run_database_maintenance():
         ],
     )
 
+    _add_columns_if_missing(
+        "settlement_records",
+        [
+            ("seller_wallet_address", "VARCHAR"),
+            ("repayment_tx_hash", "VARCHAR"),
+            ("initiated_at", "TIMESTAMPTZ"),
+        ],
+    )
+
     if engine.dialect.name == "postgresql":
         _run_postgres_specific_maintenance()
 

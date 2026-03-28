@@ -10,10 +10,43 @@ export class InvalidAddressError extends Error { name = "InvalidAddressError"; }
 // --- TYPES ---
 type AccountsChangedHandler = (accounts: string[]) => void;
 type ChainChangedHandler = (chainId: string) => void;
+type WalletEvent = "accountsChanged" | "chainChanged";
+
+type AddEthereumChainParameter = {
+  chainId: string;
+  chainName: string;
+  nativeCurrency: {
+    name: string;
+    symbol: string;
+    decimals: number;
+  };
+  rpcUrls: string[];
+  blockExplorerUrls?: string[];
+};
+
+type EthereumRequestArgs = {
+  method: string;
+  params?: unknown[] | object;
+};
+
+type EthereumProvider = {
+  isMetaMask?: boolean;
+  request: (args: EthereumRequestArgs) => Promise<unknown>;
+  on: (event: WalletEvent, callback: (...args: unknown[]) => void) => void;
+  removeListener: (
+    event: WalletEvent,
+    callback: (...args: unknown[]) => void,
+  ) => void;
+};
+
+type ProviderRpcError = Error & {
+  code?: number;
+  data?: unknown;
+};
 
 declare global {
   interface Window {
-    ethereum?: any; // Keeping as 'any' per your preference to avoid type-casting overhead
+    ethereum?: EthereumProvider;
   }
 }
 
@@ -24,6 +57,77 @@ declare global {
 const getEthereum = () => {
   if (typeof window !== "undefined" && window.ethereum) return window.ethereum;
   return null;
+};
+
+const asProviderError = (error: unknown): ProviderRpcError => {
+  if (error instanceof Error) {
+    return error as ProviderRpcError;
+  }
+
+  if (typeof error === "object" && error !== null) {
+    const candidate = error as {
+      message?: unknown;
+      reason?: unknown;
+      code?: unknown;
+      data?: unknown;
+    };
+
+    const rawMessage =
+      typeof candidate.message === "string"
+        ? candidate.message
+        : typeof candidate.reason === "string"
+          ? candidate.reason
+          : typeof candidate.data === "object" &&
+              candidate.data !== null &&
+              "message" in candidate.data &&
+              typeof (candidate.data as { message?: unknown }).message === "string"
+            ? ((candidate.data as { message?: string }).message ?? "")
+            : "";
+
+    const normalized = new Error(
+      rawMessage || "Wallet request failed",
+    ) as ProviderRpcError;
+
+    if (typeof candidate.code === "number") {
+      normalized.code = candidate.code;
+    }
+    if (candidate.data !== undefined) {
+      normalized.data = candidate.data;
+    }
+
+    return normalized;
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return new Error(error) as ProviderRpcError;
+  }
+
+  return new Error("Wallet request failed") as ProviderRpcError;
+};
+
+const CHAIN_CONFIG: Record<number, AddEthereumChainParameter> = {
+  84532: {
+    chainId: "0x14a34",
+    chainName: "Base Sepolia",
+    nativeCurrency: {
+      name: "Ether",
+      symbol: "ETH",
+      decimals: 18,
+    },
+    rpcUrls: ["https://sepolia.base.org"],
+    blockExplorerUrls: ["https://sepolia.basescan.org"],
+  },
+  8453: {
+    chainId: "0x2105",
+    chainName: "Base Mainnet",
+    nativeCurrency: {
+      name: "Ether",
+      symbol: "ETH",
+      decimals: 18,
+    },
+    rpcUrls: ["https://mainnet.base.org"],
+    blockExplorerUrls: ["https://basescan.org"],
+  },
 };
 
 export const isMetaMaskAvailable = async (): Promise<boolean> => {
@@ -37,8 +141,9 @@ export const requestAccounts = async (): Promise<string[]> => {
   const eth = getEthereum();
   if (!eth) throw new MetaMaskNotInstalledError();
   try {
-    return await eth.request({ method: "eth_requestAccounts" });
-  } catch (err: any) {
+    return (await eth.request({ method: "eth_requestAccounts" })) as string[];
+  } catch (error: unknown) {
+    const err = asProviderError(error);
     throw new MetaMaskRejectedError(err.message || "User rejected request");
   }
 };
@@ -46,13 +151,13 @@ export const requestAccounts = async (): Promise<string[]> => {
 export const getConnectedAccounts = async (): Promise<string[]> => {
   const eth = getEthereum();
   if (!eth) return [];
-  return await eth.request({ method: "eth_accounts" });
+  return (await eth.request({ method: "eth_accounts" })) as string[];
 };
 
 export const getChainId = async (): Promise<number> => {
   const eth = getEthereum();
   if (!eth) throw new MetaMaskNotInstalledError();
-  const hex = await eth.request({ method: "eth_chainId" });
+  const hex = (await eth.request({ method: "eth_chainId" })) as string;
   return Number(hex);
 };
 
@@ -70,7 +175,29 @@ export const switchNetwork = async (chainId: number): Promise<boolean> => {
       params: [{ chainId: hex }],
     });
     return true;
-  } catch (err: any) {
+  } catch (error: unknown) {
+    const err = asProviderError(error);
+    if (err.code === 4902) {
+      const chainConfig = CHAIN_CONFIG[chainId];
+      if (!chainConfig) {
+        throw new InvalidNetworkError(`Unsupported chain ID: ${chainId}`);
+      }
+
+      try {
+        await eth.request({
+          method: "wallet_addEthereumChain",
+          params: [chainConfig],
+        });
+        return true;
+      } catch (addError: unknown) {
+        const addErr = asProviderError(addError);
+        if (addErr.code === 4001) {
+          throw new MetaMaskRejectedError(addErr.message);
+        }
+        throw addErr;
+      }
+    }
+
     // 4001 is the standard code for user rejection
     if (err.code === 4001) throw new MetaMaskRejectedError(err.message);
     throw err;
@@ -90,7 +217,8 @@ export const signMessage = async (message: string, account?: string): Promise<st
       params: [message, accounts[0]],
     });
     return String(signature);
-  } catch (err: any) {
+  } catch (error: unknown) {
+    const err = asProviderError(error);
     throw new MetaMaskRejectedError(err.message || "User rejected signature request");
   }
 };
@@ -126,7 +254,10 @@ export const onChainChanged = (callback: ChainChangedHandler) => {
   getEthereum()?.on("chainChanged", callback);
 };
 
-export const removeWalletListener = (event: string, callback: any) => {
+export const removeWalletListener = (
+  event: WalletEvent,
+  callback: (...args: unknown[]) => void,
+) => {
   getEthereum()?.removeListener(event, callback);
 };
 

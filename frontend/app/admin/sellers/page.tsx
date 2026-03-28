@@ -42,6 +42,7 @@ function formatEmploymentYears(value?: number) {
 export default function SellerExplorer() {
   const [sellers, setSellers] = useState<SellerScore[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState<string>("all");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -50,10 +51,16 @@ export default function SellerExplorer() {
   const pageSize = 10;
 
   useEffect(() => {
-    getAllSellers().then((data) => {
-      setSellers(data);
-      setLoading(false);
-    });
+    getAllSellers()
+      .then((data) => {
+        setSellers(data);
+        setLoadError(null);
+      })
+      .catch(() => {
+        setSellers([]);
+        setLoadError("Unable to load sellers right now.");
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = sellers
@@ -160,6 +167,10 @@ export default function SellerExplorer() {
 
       {loading ? (
         <TableSkeleton />
+      ) : loadError ? (
+        <div className="rounded-3xl border border-red-200 bg-red-50 px-4 py-6 text-sm text-red-700 shadow-sm">
+          {loadError}
+        </div>
       ) : (
         <>
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">

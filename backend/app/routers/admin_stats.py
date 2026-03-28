@@ -52,7 +52,7 @@ def get_admin_overview(
     )
     funded_live = (
         db.query(func.count(Invoice.id))
-        .filter(Invoice.status.in_(["funded", "active"]))
+        .filter(Invoice.status.in_(["funded", "active", "repayment_processing"]))
         .scalar()
         or 0
     )
@@ -87,7 +87,9 @@ def get_admin_overview(
     )
 
     live_invoices = (
-        db.query(Invoice).filter(Invoice.status.in_(["funded", "active"])).all()
+        db.query(Invoice)
+        .filter(Invoice.status.in_(["funded", "active", "repayment_processing"]))
+        .all()
     )
     today = datetime.utcnow().date()
     overdue_live = 0
@@ -128,7 +130,7 @@ def get_admin_overview(
                 "type": "settlement",
                 "priority": "high",
                 "title": "Overdue settlements",
-                "description": f"{overdue_live} funded invoices are past due and still unsettled.",
+                "description": f"{overdue_live} live invoices are past due and still awaiting settlement confirmation.",
                 "cta_path": "/admin/settlement-tracker",
             }
         )

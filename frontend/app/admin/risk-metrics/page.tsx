@@ -15,10 +15,18 @@ import { getRiskMetrics, type RiskMetrics } from "@/lib/api";
 export default function RiskMetricsPage() {
   const [data, setData] = useState<RiskMetrics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getRiskMetrics()
-      .then(setData)
+      .then((payload) => {
+        setData(payload);
+        setError(null);
+      })
+      .catch(() => {
+        setData(null);
+        setError("Unable to load risk metrics right now.");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -29,7 +37,7 @@ export default function RiskMetricsPage() {
   if (!data) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
-        No risk metrics available.
+        {error ?? "No risk metrics available."}
       </div>
     );
   }

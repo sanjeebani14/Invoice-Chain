@@ -45,6 +45,9 @@ export function TopNavbar({ autoRefresh, onToggleRefresh }: TopNavbarProps) {
     } else if (event === "invoice_settled") {
       title = "Settlement complete";
       detail = `Invoice #${invoiceId} was settled and escrow released.`;
+    } else if (event === "invoice_repayment_initiated") {
+      title = "Repayment submitted";
+      detail = `Invoice #${invoiceId} is awaiting admin confirmation.`;
     } else if (event === "invoice_uploaded") {
       title = "Invoice uploaded";
       detail = `A new invoice upload was received for review.`;

@@ -535,6 +535,9 @@ class SettlementRecord(Base):
         String, nullable=False, default="pending", index=True
     )  # pending,confirmed,failed
     escrow_reference = Column(String, nullable=True, index=True)
+    seller_wallet_address = Column(String, nullable=True)
+    repayment_tx_hash = Column(String, nullable=True, index=True)
+    initiated_at = Column(DateTime(timezone=True), nullable=True)
     confirmed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     confirmed_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
