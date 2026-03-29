@@ -305,6 +305,22 @@ npm run dev
 
 ### Investor
 
+#### Investor Marketplace
+<p align="center">
+  <img src="frontend/ui-previews/investor_marketplace.png" width="80%" />
+</p>
+
+#### Investor Portfolio
+<p align="center">
+  <img src="frontend/ui-previews/investor_portfolio.png" width="80%" />
+</p>
+
+#### Invoice Transaction
+<p align="center">
+  <img src="frontend/ui-previews/invoice_transaction.png" width="80%" />
+</p>
+
+
 ### Admin
 
 #### Admin Dashboard
@@ -329,3 +345,5 @@ npm run dev
 </p>
 
 ## Demo Video
+
+Demo Video Link:
