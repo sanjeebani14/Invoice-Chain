@@ -1,5 +1,19 @@
 # InvoiceChain - A Decentralized Marketplace for Fractionalized SME Receivables
 
+## Table of Contents
+
+- [Project Summary](#project-summary)
+- [Problem Statement and Existing Challenges](#problem-statement-and-existing-challenges)
+- [How InvoiceChain Does It](#how-invoicechain-does-it)
+- [Folder Structure](#folder-structure)
+- [Technology Stack](#technology-stack)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Running the Application](#running-the-application)
+- [UI Previews](#ui-previews)
+- [Demo Video](#demo-video)
+
 ## Project summary
 
 InvoiceChain is a decentralized marketplace that enables Small and Medium Enterprises (SMEs) to tokenize their outstanding invoices as ERC-1155 multi-token assets on blockchain, providing immediate liquidity while offering investors fractional ownership opportunities in revenue-generating receivables.
