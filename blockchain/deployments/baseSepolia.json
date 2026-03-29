@@ -1,12 +1,12 @@
 {
   "network": "baseSepolia",
   "chainId": 84532,
-  "deployedAt": "2026-03-28T18:54:21.081Z",
+  "deployedAt": "2026-03-29T08:05:36.500Z",
   "deployer": "0xaf8a698bfa17ab5d528999146137bed8325ab128",
   "version": "1.0.0",
   "contracts": {
     "InvoiceNFT": {
-      "address": "0x81ff3a847c8dd39f276ac3b9d6b9c2256a7f7b9b",
+      "address": "0xde076e81b052d5a9f57d6d3ef06c144a14e33372",
       "abi": [
         {
           "inputs": [
@@ -1310,7 +1310,7 @@
       "description": "ERC1155 token for invoice NFTs with burn/settlement support"
     },
     "Escrow": {
-      "address": "0xdf07f87072dfc8aa156cae9662aba0fcc613c43c",
+      "address": "0x9817c8e0858285e994f373e3ed7be7a5ac80938c",
       "abi": [
         {
           "inputs": [
@@ -2204,7 +2204,7 @@
       "description": "Multi-sig escrow for secure fund management and settlement"
     },
     "Marketplace": {
-      "address": "0x16da1b4f093c347bc5fb44c81f916855eaceb9d1",
+      "address": "0xdd6c4ea7054624f46353c0220b7b9234dc4283ab",
       "abi": [
         {
           "inputs": [
@@ -2872,7 +2872,7 @@
       "description": "Fixed-price marketplace for invoice share trading"
     },
     "Auction": {
-      "address": "0x5681ced96f7836473ab8addea71ef66c0e413c0f",
+      "address": "0x159cdb92fdd7c18c607f83f4cab1983e08b25abd",
       "abi": [
         {
           "inputs": [

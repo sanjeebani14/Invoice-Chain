@@ -1,57 +1,54 @@
-# Sample Hardhat 3 Beta Project (`node:test` and `viem`)
+# Invoice-Chain Smart Contracts
 
-This project showcases a Hardhat 3 Beta project using the native Node.js test runner (`node:test`) and the `viem` library for Ethereum interactions.
+This directory contains the smart contracts that power the Invoice-Chain platform. The project is built using Hardhat, Solidity, and `viem`.
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+## Core Contracts
+- **InvoiceNFT.sol**: Represents an invoice on the blockchain with fractional share support.
+- **Escrow.sol**: Holds user funds securely until transactions are settled.
+- **Marketplace.sol**: Facilitates buying and selling of fractional invoice shares.
+- **Auction.sol**: Manages bidding and settlement for high-demand invoice shares.
 
-## Project Overview
+---
 
-This example project includes:
+## Environment Setup & API Keys
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using [`node:test`](nodejs.org/api/test.html), the new Node.js native test runner, and [`viem`](https://viem.sh/).
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+Before you can deploy these contracts or verify them on Blockscout/Basescan, you must configure your local environment.
 
-## Usage
+1. Create a `.env` file in this directory (you can use your `deployments/.env.example` as a template).
+2. **Obtain your required keys:**
 
-### Running Tests
+   * **`BASE_SEPOLIA_RPC_URL`**: You need a connection to the Base Sepolia testnet blockchain. Go to an RPC provider like [Alchemy](https://alchemy.com/) or [QuickNode](https://quicknode.com/), create an account, spin up a new "Base Sepolia" application, and copy the HTTPS API Key URL.
+   * **`DEPLOYER_PRIVATE_KEY`**: This is the private key of the exact wallet that will deploy and own the smart contracts. You can create a fresh wallet in [MetaMask](https://metamask.io/), go to Account Details, and click "Export Private Key". **NEVER commit this key to GitHub or share it publicly.**
+   * **`BASESCAN_API_KEY`**: This is required so Hardhat can automatically upload your source code to the block explorer for public transparency. Go to [Basescan.org](https://basescan.org/), create an account, and generate a new API key under your profile settings.
 
-To run all the tests in the project, execute the following command:
+*(Optional Production Governance Keys)*
+   * **`MULTISIG_ADDRESS` & `FEE_RECIPIENT_ADDRESS`**: For production deployments, governance powers and protocol fees should not be handled by a single person. Create a Multi-Signature wallet on [Safe](https://app.safe.global/) (e.g. 2 out of 3 founders). Set this Safe address as your protocol's fee recipient to securely collect marketplace revenue into a decentralized treasury. For local testing, any standard wallet address will work.
 
-```shell
+---
+
+## Usage Guide
+
+### 1. Compile
+Compile the smart contracts (this will generate the needed `.json` ABIs):
+```bash
+npx hardhat clean
+npx hardhat compile
+```
+
+### 2. Test
+Run the full test suite locally. *(Note: Testing runs on a local hardhat node and does not require setting up the `.env` keys above)*
+```bash
 npx hardhat test
 ```
 
-You can also selectively run the Solidity or `node:test` tests:
-
-```shell
-npx hardhat test solidity
-npx hardhat test nodejs
+### 3. Deploy
+Deploy the smart contracts to the Base Sepolia testnet using real test-ETH:
+```bash
+npx hardhat run scripts/deploy.ts --network baseSepolia
 ```
 
-### Make a deployment to Sepolia
-
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
-
-To run the deployment to a local chain:
-
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
-```
-
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
-
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
-
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
-
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
-```
-
-After setting the variable, you can run the deployment with the Sepolia network:
-
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
+### 4. Verify
+If verification failed during the deployment script, you can manually trigger a verification request:
+```bash
+npx hardhat verify --network baseSepolia <NEW_CONTRACT_ADDRESS> <CONSTRUCTOR_ARGS>
 ```
