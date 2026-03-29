@@ -188,7 +188,7 @@ cd ..
 Copy the example files, then update the values for your environment:
 
 - `backend/.env.example` -> `backend/.env`
-- `blockchain/deployements/.env.example` -> `blockchain/.env`
+- `blockchain/deployments/.env.example` -> `blockchain/.env`
 
 #### backend/.env (**create this file**)
 
@@ -196,7 +196,7 @@ Refer to `backend/.env.example`.
 
 #### blockchain/.env (**create this file**)
 
-Refer to `blockchain/deployements/.env.example`.
+Refer to `blockchain/deployments/.env.example`.
 
 ---
 
