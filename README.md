@@ -202,7 +202,7 @@ cd ..
 Copy the example files, then update the values for your environment:
 
 - `backend/.env.example` -> `backend/.env`
-- `blockchain/deployments/.env.example` -> `blockchain/.env`
+- `blockchain/deployments/.env.example` -> `blockchain/deployments/.env`
 
 #### 1. Backend Environment Variables (`backend/.env`)
 
