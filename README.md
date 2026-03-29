@@ -1,5 +1,19 @@
 # InvoiceChain - A Decentralized Marketplace for Fractionalized SME Receivables
 
+## Table of Contents
+
+- [Project Summary](#project-summary)
+- [Problem Statement and Existing Challenges](#problem-statement-and-existing-challenges)
+- [How InvoiceChain Does It](#how-invoicechain-does-it)
+- [Folder Structure](#folder-structure)
+- [Technology Stack](#technology-stack)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Running the Application](#running-the-application)
+- [UI Previews](#ui-previews)
+- [Demo Video](#demo-video)
+
 ## Project summary
 
 InvoiceChain is a decentralized marketplace that enables Small and Medium Enterprises (SMEs) to tokenize their outstanding invoices as ERC-1155 multi-token assets on blockchain, providing immediate liquidity while offering investors fractional ownership opportunities in revenue-generating receivables.
@@ -131,7 +145,7 @@ Invoice-Chain/
 - Development Environment: Hardhat
 - Client Library: Ethers.js / Viem
 - Network: Base Sepolia (Testnet)
-- Token Standard: ERC-721 (Invoice NFTs)
+- Token Standard: ERC-1155 (Invoice NFTs)
 
 Git-based feature branch workflow was followed throughout the development lifecycle, with each member working on dedicated feature branches and merging via pull requests to the main branch. GitHub served as the central collaboration hub - GitHub Issues were used to track tasks and bugs, GitHub Project Boards were used for planning and progress tracking.
 
@@ -185,11 +199,10 @@ cd ..
 
 ### 1. Environment Variables
 
-#### For Team Collaboration:
-- **Copy the example file**: `cp backend/.env.example backend/.env`
-- **Never commit `.env` files** (they contain secrets)
-- **Share sensitive values securely** (team password manager, or generate individual keys)
-- **Update `.env.example`** when adding new required variables
+Copy the example files, then update the values for your environment:
+
+- `backend/.env.example` -> `backend/.env`
+- `blockchain/deployments/.env.example` -> `blockchain/.env`
 
 #### 1. Backend Environment Variables (`backend/.env`)
 
@@ -307,6 +320,22 @@ npm run dev
 
 ### Investor
 
+#### Investor Marketplace
+<p align="center">
+  <img src="frontend/ui-previews/investor_marketplace.png" width="80%" />
+</p>
+
+#### Investor Portfolio
+<p align="center">
+  <img src="frontend/ui-previews/investor_portfolio.png" width="80%" />
+</p>
+
+#### Invoice Transaction
+<p align="center">
+  <img src="frontend/ui-previews/invoice_transaction.png" width="80%" />
+</p>
+
+
 ### Admin
 
 #### Admin Dashboard
@@ -331,3 +360,5 @@ npm run dev
 </p>
 
 ## Demo Video
+
+Demo Video Link:
