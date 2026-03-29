@@ -204,13 +204,28 @@ Copy the example files, then update the values for your environment:
 - `backend/.env.example` -> `backend/.env`
 - `blockchain/deployments/.env.example` -> `blockchain/.env`
 
-#### backend/.env (**create this file**)
+#### 1. Backend Environment Variables (`backend/.env`)
 
-Refer to `backend/.env.example`.
+1. Copy the example file: `cp backend/.env.example backend/.env`
+2. Open `backend/.env` and populate the placeholders with your actual keys:
+   - **`DATABASE_URL`**: Your PostgreSQL connection string. You can use a local database or a cloud provider like Neon.
+   - **`JWT_SECRET`**: Generate a secure random string for signing JWT tokens.
+   - **`INVOICE_NFT_CONTRACT_ADDRESS`**: Update this after deploying the smart contracts (see Blockchain Setup section below).
+   - **`MINTER_PRIVATE_KEY` / `DEPLOYER_PRIVATE_KEY`**: Your wallet private keys without the `0x` prefix. You can generate a testing wallet with:
+     ```bash
+     python -c "from eth_account import Account; a = Account.create(); print(f'Address: {a.address}'); print(f'Private Key: {a.key.hex()}')"
+     ```
+   - **`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`**: S3 or local MinIO credentials for file uploads.
+   - **`TESSERACT_CMD` / `TESSDATA_PREFIX`**: Set the paths pointing to your local Tesseract OCR executable and its language data folder.
+   - **`SMTP_USERNAME` / `SMTP_PASSWORD`**: Your email configuration (e.g., Gmail with App Passwords) for sending verification emails.
 
-#### blockchain/.env (**create this file**)
+#### 2. Blockchain Environment Variables (`blockchain/deployments/.env`)
 
-Refer to `blockchain/deployments/.env.example`.
+1. Copy the example file: `cp blockchain/deployments/.env.example blockchain/deployments/.env`
+2. Open `blockchain/deployments/.env` and configure accordingly:
+   - **Contract Addresses**: Use the addresses printed in the console after completing the Hardhat deployment script.
+   - **`MINTER_PRIVATE_KEY` / `DEPLOYER_PRIVATE_KEY`**: Matching the private keys you configured for the backend for permissions execution.
+   - **`FEE_RECIPIENT_ADDRESS` / `MULTISIG_ADDRESS`**: A valid wallet address matching your network configuration that will receive marketplace fees.
 
 ---
 

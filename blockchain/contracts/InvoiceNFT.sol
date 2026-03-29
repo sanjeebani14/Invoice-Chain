@@ -81,16 +81,9 @@ contract InvoiceNFT is ERC1155, AccessControl, ReentrancyGuard, Pausable {
     // Minting
 
     /**
-<<<<<<< Updated upstream
-     * @notice Mint an invoice NFT.
-    * @param to          The seller wallet receiving the token.
-     * @param invoiceHash keccak256 hash of the canonical invoice string
-     *                    (computed off-chain).
-=======
      * @notice Mint an invoice NFT with fractional share support.
      * @param to          The seller wallet receiving the token.
      * @param invoiceHash keccak256 hash of the canonical invoice string (computed off-chain).
->>>>>>> Stashed changes
      * @param faceValue   Invoice amount in wei.
      * @param dueDate     Unix timestamp of invoice due date.
      * @param supply      1 for whole ownership; N for fractional shares.

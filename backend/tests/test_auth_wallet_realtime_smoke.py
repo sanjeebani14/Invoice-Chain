@@ -90,7 +90,7 @@ def test_password_reset_wallet_and_realtime_smoke_flow():
 
     try:
         forgot = client.post(
-            "/auth/forgot-password",
+            "/api/v1/auth/forgot-password",
             json={"email": user.email},
         )
         assert forgot.status_code == 200
@@ -108,7 +108,7 @@ def test_password_reset_wallet_and_realtime_smoke_flow():
             db.close()
 
         reset = client.post(
-            "/auth/reset-password",
+            "/api/v1/auth/reset-password",
             json={"token": "smoke-reset-token", "new_password": "new_password_123"},
         )
         assert reset.status_code == 200
@@ -129,13 +129,13 @@ def test_password_reset_wallet_and_realtime_smoke_flow():
             db.close()
 
         old_login = client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={"email": user.email, "password": "old_password_123"},
         )
         assert old_login.status_code == 401
 
         new_login = client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={"email": user.email, "password": "new_password_123"},
         )
         assert new_login.status_code == 200
